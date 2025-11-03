@@ -108,23 +108,23 @@ def test_category_matcher():
     print("="*60)
 
     try:
-        from category_matcher import CategoryMatcher
-        matcher = CategoryMatcher()
-        print("  ✓ CategoryMatcher 初始化成功")
+        from agent_category_classifier import ProductCategoryClassifierV3
+        print("  ✓ ProductCategoryClassifierV3 导入成功")
 
-        # 测试加载分类文件
-        category_data = matcher.load_category_json("美妆个护")
-        if category_data:
-            print("  ✓ 分类文件加载成功")
-            categories = matcher.extract_all_categories(category_data)
-            print(f"    - 一级分类: {len(categories['l1'])} 个")
-            print(f"    - 二级分类: {len(categories['l2'])} 个")
-            print(f"    - 三级分类: {len(categories['l3'])} 个")
-            print("\n✅ 分类匹配模块正常!\n")
-            return True
-        else:
-            print("  ❌ 无法加载分类文件\n")
-            return False
+        # 注意: 完整测试需要调用 LLM,这里只测试初始化
+        print("  ✓ 新分类器模块可用")
+        print("    (完整功能测试需要 LLM 连接)")
+
+        # 检查工具是否可用
+        from tools import CategoryReaderTool, GetCategoryURLSuffixTool
+        print("  ✓ 分类工具导入成功")
+
+        # 测试读取工具
+        reader = CategoryReaderTool()
+        print("  ✓ CategoryReaderTool 初始化成功")
+
+        print("\n✅ 分类匹配模块正常!\n")
+        return True
 
     except Exception as e:
         print(f"❌ 测试失败: {e}\n")

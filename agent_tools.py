@@ -19,7 +19,58 @@ from main import (
     initialize_playwright,
     navigate_to_url
 )
-from category_matcher import match_product_category
+from agent_category_classifier import ProductCategoryClassifierV3
+import re
+
+# 创建全局分类器实例（单例模式）
+_classifier_instance = None
+
+def get_classifier():
+    """获取分类器单例实例"""
+    global _classifier_instance
+    if _classifier_instance is None:
+        _classifier_instance = ProductCategoryClassifierV3(verbose=False)
+    return _classifier_instance
+
+def match_product_category(product_name: str) -> Optional[Dict]:
+    """
+    适配器函数：将新分类器包装成兼容旧接口的形式
+
+    Args:
+        product_name: 商品名称
+
+    Returns:
+        兼容旧格式的分类结果字典，或 None
+    """
+    try:
+        classifier = get_classifier()
+        result = classifier.classify(text=product_name)
+
+        # 检查分类是否成功
+        if result.get('status') != 'success':
+            return None
+
+        # 转换为旧格式
+        # 从 url_suffix 中提取 category_id
+        url_suffix = result.get('url_suffix', '')
+        category_id = ''
+        if url_suffix:
+            match = re.search(r'=(\d+)', url_suffix)
+            if match:
+                category_id = match.group(1)
+
+        return {
+            'level': result.get('category_level', '').lower(),  # L3 -> l3
+            'category_name': result.get('selected_category', ''),
+            'category_id': category_id,
+            'url_suffix': url_suffix,
+            'main_category': result.get('main_category', ''),
+            'reasoning': result.get('reasoning', '')
+        }
+
+    except Exception as e:
+        print(f"分类器错误: {str(e)}")
+        return None
 
 
 # ==================== 输入模型定义 ====================
