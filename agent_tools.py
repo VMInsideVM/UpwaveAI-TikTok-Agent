@@ -239,23 +239,36 @@ class GetMaxPageTool(BaseTool):
     def _run(self, url: str) -> str:
         """执行获取最大页数"""
         try:
-            # 初始化 Playwright(如果还没初始化)
-            try:
-                initialize_playwright()
-            except:
-                pass  # 可能已经初始化过了
+            # 检查 Playwright 是否已初始化
+            from main import page as playwright_page
+            if playwright_page is None:
+                try:
+                    print("⚙️ 初始化 Playwright...")
+                    initialize_playwright()
+                    print("✅ Playwright 初始化成功")
+                except Exception as init_error:
+                    return f"❌ Playwright 初始化失败: {str(init_error)}\n请确保 Chrome 浏览器已在 CDP 端口 9224 运行"
 
             # 访问 URL
             print(f"🌐 正在访问: {url}")
             if not navigate_to_url(url):
-                return "❌ 无法访问搜索页面,请检查 URL 是否正确"
+                return "❌ 无法访问搜索页面。可能原因:\n1. URL 格式不正确\n2. 网络连接问题\n3. 页面加载超时\n请检查 URL 是否完整(包含分类后缀)"
 
             # 获取最大页数
+            print("📊 正在获取最大页数...")
             max_page = get_max_page_number()
+
+            if max_page <= 1:
+                return f"⚠️ 当前筛选条件下只找到 1 页数据(约10个达人)。\n建议:\n1. 检查 URL 是否包含正确的分类后缀\n2. 尝试放宽筛选条件"
+
             estimated_count = max_page * 10
             return f"✅ 最大页数: {max_page}, 预计约有 {estimated_count} 个达人"
+
         except Exception as e:
-            return f"❌ 获取最大页数失败: {str(e)}"
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"详细错误信息:\n{error_details}")
+            return f"❌ 获取最大页数失败: {str(e)}\n请检查:\n1. Chrome 浏览器是否正在运行\n2. CDP 端口 9224 是否可访问\n3. URL 是否正确"
 
 
 class GetSortSuffixTool(BaseTool):

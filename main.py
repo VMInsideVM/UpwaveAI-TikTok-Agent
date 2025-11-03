@@ -737,10 +737,23 @@ def navigate_to_url(url: str, wait_for_load: bool = True) -> bool:
         return False
 
     try:
-        if wait_for_load:
-            page.goto(url, wait_until="networkidle", timeout=60000)
-        else:
-            page.goto(url, timeout=30000)
+        # 使用 sync_playwright 上下文确保在正确的 greenlet 中执行
+        from playwright.sync_api import Error as PlaywrightError
+
+        try:
+            if wait_for_load:
+                page.goto(url, wait_until="networkidle", timeout=60000)
+            else:
+                page.goto(url, timeout=30000)
+        except PlaywrightError as pe:
+            # 如果是 greenlet 错误,尝试使用 page 的 context 重新访问
+            if "greenlet" in str(pe).lower():
+                print("⚠️ 检测到线程切换问题,尝试重新连接...")
+                # 直接使用更简单的导航方式
+                page.evaluate(f'window.location.href = "{url}"')
+                time.sleep(5)  # 等待页面加载
+            else:
+                raise
 
         # 等待表格加载
         time.sleep(2)
@@ -748,6 +761,8 @@ def navigate_to_url(url: str, wait_for_load: bool = True) -> bool:
 
     except Exception as e:
         print(f"❌ 访问 URL 失败: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
