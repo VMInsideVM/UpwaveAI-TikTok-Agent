@@ -50,6 +50,11 @@ class SortSuffixInput(BaseModel):
     sort_param: str = Field(description="排序参数中文名,如'粉丝数'、'互动率'等")
 
 
+class MaxPageInput(BaseModel):
+    """获取最大页数的输入参数"""
+    url: str = Field(description="搜索页面的完整 URL")
+
+
 class ScrapeInput(BaseModel):
     """爬取数据的输入参数"""
     base_url: str = Field(description="基础搜索 URL")
@@ -144,13 +149,16 @@ class CategoryMatchTool(BaseTool):
             if result is None:
                 return f"❌ 很抱歉,无法为商品 '{product_name}' 找到合适的分类。请检查商品名称或联系管理员。"
 
-            # 返回格式化的结果
+            # 返回格式化的结果，包含推理过程
+            reasoning = result.get('reasoning', '无')
             return f"""✅ 分类匹配成功!
 - 商品: {product_name}
 - 一级分类: {result.get('main_category', '未知')}
 - 匹配层级: {result.get('level', '未知')}
 - 分类名称: {result.get('category_name', '未知')}
-- URL后缀: {result.get('url_suffix', '')}"""
+- URL后缀: {result.get('url_suffix', '')}
+
+💡 推理过程: {reasoning}"""
 
         except Exception as e:
             return f"❌ 匹配分类时出错: {str(e)}"
@@ -160,21 +168,38 @@ class GetMaxPageTool(BaseTool):
     """获取最大页数的工具"""
     name: str = "get_max_page_number"
     description: str = """
-    获取当前搜索结果的最大页数。
-    需要先初始化 Playwright 并访问搜索页面。
+    获取搜索结果的最大页数。
+    需要提供完整的搜索 URL（包括所有筛选条件）。
+
+    参数:
+    - url: 完整的搜索 URL
 
     工作流程:
-    1. 自动滚动到页面底部
-    2. 等待网页加载完成
-    3. 读取分页元素获取最大页数
+    1. 访问指定的 URL
+    2. 自动滚动到页面底部
+    3. 等待网页加载完成
+    4. 读取分页元素获取最大页数
 
     返回整数表示最大页数。
     每页通常有 10 个达人,所以总达人数约为 max_page * 10。
     """
+    args_schema: type[BaseModel] = MaxPageInput
 
-    def _run(self) -> str:
+    def _run(self, url: str) -> str:
         """执行获取最大页数"""
         try:
+            # 初始化 Playwright(如果还没初始化)
+            try:
+                initialize_playwright()
+            except:
+                pass  # 可能已经初始化过了
+
+            # 访问 URL
+            print(f"🌐 正在访问: {url}")
+            if not navigate_to_url(url):
+                return "❌ 无法访问搜索页面,请检查 URL 是否正确"
+
+            # 获取最大页数
             max_page = get_max_page_number()
             estimated_count = max_page * 10
             return f"✅ 最大页数: {max_page}, 预计约有 {estimated_count} 个达人"
@@ -256,6 +281,105 @@ class ScrapeInfluencersTool(BaseTool):
             return f"❌ 爬取数据失败: {str(e)}"
 
 
+class AnalyzeQuantityInput(BaseModel):
+    """分析数量缺口的输入参数"""
+    max_pages: int = Field(description="最大页数")
+    user_needs: int = Field(description="用户需要的达人数量")
+
+
+class AnalyzeQuantityTool(BaseTool):
+    """分析达人数量是否足够的工具"""
+    name: str = "analyze_quantity_gap"
+    description: str = """
+    分析当前找到的达人数量是否满足用户需求。
+
+    判断标准:
+    - 可用数量 = 最大页数 × 5（保守估计，每页约5个有效达人）
+    - 充足：可用数 ≥ 用户需求
+    - 可接受：可用数 ≥ 用户需求 × 50%
+    - 严重不足：可用数 < 用户需求 × 50%
+
+    参数:
+    - max_pages: 最大页数
+    - user_needs: 用户需要的达人数量
+
+    返回：状态判断和给用户的建议信息
+    """
+    args_schema: type[BaseModel] = AnalyzeQuantityInput
+
+    def _run(self, max_pages: int, user_needs: int) -> str:
+        """执行数量分析"""
+        try:
+            from adjustment_helper import analyze_quantity_gap
+            result = analyze_quantity_gap(max_pages, user_needs)
+            return result['message']
+        except Exception as e:
+            return f"❌ 分析数量时出错: {str(e)}"
+
+
+class AdjustmentSuggestionInput(BaseModel):
+    """调整建议的输入参数"""
+    current_params: Dict = Field(description="当前筛选参数JSON字典")
+    target_count: int = Field(description="用户需要的达人数量")
+    current_count: int = Field(description="当前可用达人数量")
+
+
+class SuggestAdjustmentsTool(BaseTool):
+    """生成筛选条件调整建议的工具"""
+    name: str = "suggest_parameter_adjustments"
+    description: str = """
+    当达人数量不足时，自动生成结构化的调整建议。
+
+    会按优先级返回 3-5 个调整方案：
+    1. 放宽粉丝数范围（效果最好）
+    2. 移除新增粉丝数限制
+    3. 移除联盟达人限制
+    4. 移除认证类型限制
+    5. 移除账号类型限制
+
+    每个方案包含：
+    - 具体改动内容
+    - 当前值 vs 新值对比
+    - 预期增加的达人数量
+    - 调整理由
+
+    参数:
+    - current_params: 当前的筛选参数（JSON格式字典）
+    - target_count: 用户需要的达人数量
+    - current_count: 当前可用的达人数量
+
+    注意：绝对不会修改国家地区和商品分类
+    """
+    args_schema: type[BaseModel] = AdjustmentSuggestionInput
+
+    def _run(self, current_params: Dict, target_count: int, current_count: int) -> str:
+        """执行调整建议生成"""
+        try:
+            from adjustment_helper import suggest_adjustments
+
+            suggestions = suggest_adjustments(current_params, target_count, current_count)
+
+            if not suggestions:
+                return "当前筛选条件已经比较宽松，没有更多调整建议。"
+
+            # 格式化输出
+            output = f"📊 为您生成 {len(suggestions)} 个调整方案：\n\n"
+
+            for i, sugg in enumerate(suggestions, 1):
+                output += f"**方案 {i}: {sugg['name']}**\n"
+                output += f"  • 当前: {sugg['current']}\n"
+                output += f"  • 调整后: {sugg['new']}\n"
+                output += f"  • 预期效果: {sugg['expected_increase']}\n"
+                output += f"  • 理由: {sugg['reason']}\n\n"
+
+            output += "请告诉我您想选择哪个方案，或者让我自动选择最优方案。"
+
+            return output
+
+        except Exception as e:
+            return f"❌ 生成调整建议时出错: {str(e)}"
+
+
 class ExportExcelTool(BaseTool):
     """导出 Excel 的工具"""
     name: str = "export_to_excel"
@@ -311,6 +435,8 @@ def get_all_tools() -> List[BaseTool]:
         BuildURLTool(),
         CategoryMatchTool(),
         GetMaxPageTool(),
+        AnalyzeQuantityTool(),         # 新增：分析数量缺口
+        SuggestAdjustmentsTool(),      # 新增：生成调整建议
         GetSortSuffixTool(),
         ScrapeInfluencersTool(),
         ExportExcelTool()
