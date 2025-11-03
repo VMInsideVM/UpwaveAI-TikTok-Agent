@@ -5,18 +5,29 @@ TikTok 达人推荐 Agent 启动脚本
 
 import sys
 import os
-from agent import create_agent
+
+# 尝试导入完整版 Agent,如果失败则使用简化版
+try:
+    from agent import create_agent
+    AGENT_TYPE = "完整版"
+except Exception as e:
+    print(f"⚠️ 完整版 Agent 加载失败: {e}")
+    print("🔄 切换到简化版 Agent...")
+    from agent_simple import create_agent
+    AGENT_TYPE = "简化版"
+
 from main import initialize_playwright
 
 
 def print_banner():
     """打印启动横幅"""
-    banner = """
+    banner = f"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
 ║      🚀 TikTok 达人推荐智能助手 v1.0 🚀                      ║
 ║                                                               ║
 ║      基于 LangChain + Qwen3-VL-30B 构建                       ║
+║      当前版本: {AGENT_TYPE:^20s}                             ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 """

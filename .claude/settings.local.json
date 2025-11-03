@@ -3,7 +3,10 @@
     "allow": [
       "Bash(if [ ! -d \"output\" ])",
       "Bash(then mkdir output)",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(python -c:*)",
+      "Bash(python agent.py:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

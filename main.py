@@ -185,23 +185,10 @@ def affiliate_type(promotion_channel='all', check=False):
         # 不启用带货达人筛选
         return ''
 
-creator_cantact_options = {
-  "Email": 3,
-  "Whatsapp": 4,
-  "Instagram": 1,
-  "Twitter": 2,
-  "Youtube": 5,
-  "Line": 6,
-  "Zalo": 7,
-  "Facebook": 8,
-  "Viber": 9,
-  "Bio": 10,
-}
-
-def creator_filter(account_type='all', cap_status='all', auth_type='all', creator_cantact=[]):
+def creator_filter(account_type='all', cap_status='all', auth_type='all'):
     """
     达人筛选过滤器函数，用于生成达人筛选的URL参数
-    
+
     Args:
         account_type (str): 账户类型筛选
             - 'all': 全部账户
@@ -215,16 +202,13 @@ def creator_filter(account_type='all', cap_status='all', auth_type='all', creato
             - 'all': 全部认证状态
             - 'personal': 个人认证 (verify=1)
             - 'verified': 官方认证 (verify=2)
-        creator_cantact (list): 联系方式筛选列表
-            - 支持的联系方式: ['Email', 'Whatsapp', 'Instagram', 'Twitter', 'Youtube', 'Line', 'Zalo', 'Facebook', 'Viber', 'Bio']
-            - 例如: ['Email', 'Instagram'] 会生成 contact=3,1
-    
+
     Returns:
-        str: 组合后的URL参数字符串，格式如 "&contact=3,1&is_shop=1&has_partner=1&verify=2"
-    
+        str: 组合后的URL参数字符串，格式如 "&is_shop=1&has_partner=1&verify=2"
+
     Examples:
-        >>> creator_filter('personal', 'signed', 'verified', ['Email', 'Instagram'])
-        '&contact=3,1&is_shop=2&has_partner=1&verify=2'
+        >>> creator_filter('personal', 'signed', 'verified')
+        '&is_shop=2&has_partner=1&verify=2'
         >>> creator_filter()
         ''
     """
@@ -257,22 +241,9 @@ def creator_filter(account_type='all', cap_status='all', auth_type='all', creato
         url_params2 = '&verify=2'
     else:
         url_params2 = ''
-    
-    # 处理联系方式筛选
-    if creator_cantact == []:
-        url_params3 = ''
-    else:
-        contact_ids = []
-        for contact in creator_cantact:
-            if contact in creator_cantact_options:
-                contact_ids.append(str(creator_cantact_options[contact]))
-        if contact_ids:
-            url_params3 = f"&contact={','.join(contact_ids)}"
-        else:
-            url_params3 = ''
-    
+
     # 组合所有URL参数并返回
-    return f"{url_params0}{url_params1}{url_params2}{url_params3}"
+    return f"{url_params0}{url_params1}{url_params2}"
 
 def follower_demographic(followers=[], followers_gender='all', followers_age='all', new_followers=[]):
     """
@@ -385,6 +356,10 @@ def get_max_page_number():
         # 等待页面加载完成
         page.wait_for_load_state('networkidle')
 
+        # 滚动到页面底部以确保分页元素加载完成
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(1)  # 滚动后等待1秒确保内容加载
+
         # 显式等待分页元素出现（最多等待10秒）
         try:
             page.wait_for_selector('.ant-pagination.ant-table-pagination.ant-table-pagination-right', timeout=10000)
@@ -435,8 +410,6 @@ def get_max_page_number():
     except Exception as e:
         # 静默处理错误
         return 1
-
-
 
 
 def get_table_data_as_dataframe(max_pages=None):
@@ -668,7 +641,6 @@ def build_complete_url(
         account_type='all',
         cap_status='all',
         auth_type='all',
-        creator_cantact=[],
         followers=[],
         followers_gender='all',
         followers_age='all',
@@ -685,7 +657,6 @@ def build_complete_url(
         account_type (str): 账户类型筛选，默认'all'
         cap_status (str): 合作状态筛选，默认'all'
         auth_type (str): 认证类型筛选，默认'all'
-        creator_cantact (list): 联系方式筛选列表，默认[]
         followers (list): 粉丝数量范围筛选，默认[]
         followers_gender (str): 粉丝性别筛选，默认'all'
         followers_age (str): 粉丝年龄筛选，默认'all'
@@ -719,7 +690,7 @@ def build_complete_url(
         url_suffixes.append(affiliate_suffix)
 
     # 4. 调用 creator_filter 获取创作者过滤后缀
-    filter_suffix = creator_filter(account_type, cap_status, auth_type, creator_cantact)
+    filter_suffix = creator_filter(account_type, cap_status, auth_type)
     if filter_suffix:
         url_suffixes.append(filter_suffix)
 

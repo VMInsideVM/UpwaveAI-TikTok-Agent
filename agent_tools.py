@@ -32,7 +32,6 @@ class BuildURLInput(BaseModel):
     account_type: str = Field(default="all", description="账号类型: all/personal/business")
     cap_status: str = Field(default="all", description="联盟上限状态: all/not_full/full")
     auth_type: str = Field(default="all", description="认证类型: all/verified/not_verified")
-    creator_contact: List[str] = Field(default_factory=list, description="联系方式列表")
     followers_min: Optional[int] = Field(default=None, description="最小粉丝数")
     followers_max: Optional[int] = Field(default=None, description="最大粉丝数")
     followers_gender: str = Field(default="all", description="粉丝性别: all/male/female")
@@ -72,7 +71,6 @@ class BuildURLTool(BaseTool):
     - promotion_channel: "all"(全部)/"video"(短视频)/"live"(直播)
     - affiliate_check: True=只显示联盟达人, False=不限制
     - followers_min/max: 粉丝数范围,如 100000, 500000
-    - creator_contact: 联系方式列表,如 ["email", "whatsapp"]
     """
     args_schema: type[BaseModel] = BuildURLInput
 
@@ -84,7 +82,6 @@ class BuildURLTool(BaseTool):
         account_type: str = "all",
         cap_status: str = "all",
         auth_type: str = "all",
-        creator_contact: List[str] = [],
         followers_min: Optional[int] = None,
         followers_max: Optional[int] = None,
         followers_gender: str = "all",
@@ -113,7 +110,6 @@ class BuildURLTool(BaseTool):
                 account_type=account_type,
                 cap_status=cap_status,
                 auth_type=auth_type,
-                creator_cantact=creator_contact,
                 followers=followers,
                 followers_gender=followers_gender,
                 followers_age=followers_age,
@@ -166,6 +162,12 @@ class GetMaxPageTool(BaseTool):
     description: str = """
     获取当前搜索结果的最大页数。
     需要先初始化 Playwright 并访问搜索页面。
+
+    工作流程:
+    1. 自动滚动到页面底部
+    2. 等待网页加载完成
+    3. 读取分页元素获取最大页数
+
     返回整数表示最大页数。
     每页通常有 10 个达人,所以总达人数约为 max_page * 10。
     """
