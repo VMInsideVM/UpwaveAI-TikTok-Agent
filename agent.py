@@ -1,19 +1,18 @@
 """
 TikTok 达人推荐 LangChain Agent 主控制器
+使用 LangChain 1.0 的 create_agent API
 """
 
 import os
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
+from langchain.agents import create_agent as langchain_create_agent
 import pandas as pd
 from datetime import datetime
 
 from agent_tools import get_all_tools
-from main import initialize_playwright, page
+from main import initialize_playwright, navigate_to_url
 
 # 加载环境变量
 load_dotenv()
@@ -26,11 +25,7 @@ class TikTokInfluencerAgent:
         """初始化 Agent"""
         self.llm = self._init_llm()
         self.tools = get_all_tools()
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-        self.agent_executor = self._create_agent()
+        self.agent = self._create_agent()
         self.scraped_dataframes = []  # 存储爬取的数据
         self.current_product = None  # 当前商品名
         self.current_url = None  # 当前搜索 URL
@@ -52,93 +47,52 @@ class TikTokInfluencerAgent:
         kb_path = "knowledge_base.md"
         try:
             with open(kb_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                content = f.read()
+                # 限制长度以避免超出 token 限制
+                return content[:3000] if len(content) > 3000 else content
         except Exception as e:
             print(f"⚠️ 无法加载知识库: {e}")
             return ""
 
-    def _create_agent(self) -> AgentExecutor:
-        """创建 ReAct Agent"""
+    def _create_agent(self):
+        """创建 Agent 使用 LangChain 1.0 API"""
         knowledge_base = self._load_knowledge_base()
 
-        # 构建详细的 System Prompt
+        # 构建系统提示
         system_prompt = f"""你是一个专业的 TikTok 达人推荐助手,帮助用户找到最合适的达人进行商品推广。
 
-## 你的能力:
-你可以使用以下工具来完成任务:
-{{tools}}
-
-## 知识库:
+## 知识库摘要:
 {knowledge_base}
 
-## 工作流程:
-1. **欢迎并引导**: 向用户展示可用参数列表(用通俗易懂的方式,带示例)
-2. **收集需求**: 询问用户要推广的商品、希望找的达人类型、数量等
-3. **分类推理**: 使用 match_product_category 工具根据商品名推断分类
+## 你的工作流程:
+1. **理解需求**: 询问用户的商品名称、目标国家、达人数量、粉丝要求等
+2. **匹配分类**: 使用 match_product_category 工具推断商品分类
    - 如果找不到分类,礼貌地告知用户并结束对话
-4. **构建 URL**: 使用 build_search_url 工具构建基础 URL
-5. **添加分类后缀**: 将分类工具返回的 url_suffix 追加到基础 URL
-6. **检查数量**: 使用 get_max_page_number 工具检查可用达人数量
-7. **处理不足**: 如果数量不足,思考如何调整参数:
-   - 可以调整: 粉丝数范围(扩大)、新增粉丝数(移除)、联盟限制(移除)
-   - **绝对不能调整**: 国家地区
-   - 向用户说明调整建议,征求同意后重新构建 URL
-8. **多维度排序**: 如果用户关注多个方面:
-   - 为每个排序参数使用 get_sort_suffix 获取后缀
-   - 对每个排序维度调用 scrape_influencer_data 爬取数据
-   - 数据会自动合并去重
-9. **导出 Excel**: 使用 export_to_excel 工具导出最终结果
+3. **构建搜索**: 使用 build_search_url 工具构建 URL
+4. **添加分类**: 将分类工具返回的 url_suffix 追加到 URL
+5. **检查数量**: 使用 get_max_page_number 检查可用达人数
+6. **处理不足**: 如果数量不足,建议调整参数(但**绝对不修改国家**)
+7. **爬取数据**: 使用 scrape_influencer_data 爬取数据
+8. **导出结果**: 使用 export_to_excel 导出 Excel
 
 ## 重要规则:
 - 国家地区一旦确定,**绝对不能修改**
 - 找不到商品分类时,立即礼貌地结束对话
-- 爬取失败时自动重试,最多 3 次
+- 所有回复要友好、专业、简洁
 - 多维度排序时保留第一次出现的达人(去重)
-- 输出的 Excel 只有一个工作表
-- 所有回复都要友好、专业、简洁
 
-## 工具使用格式:
-使用以下格式:
+## 可用工具:
+你有 6 个工具可以使用,它们的描述已经包含在工具定义中。"""
 
-Question: 用户的输入问题
-Thought: 你应该思考要做什么
-Action: 工具名称
-Action Input: 工具的输入参数(JSON 格式)
-Observation: 工具的返回结果
-... (这个 Thought/Action/Action Input/Observation 可以重复多次)
-Thought: 我现在知道最终答案了
-Final Answer: 给用户的最终回复
-
-开始!
-
-Previous conversation:
-{{chat_history}}
-
-Question: {{input}}
-Thought: {{agent_scratchpad}}"""
-
-        prompt = PromptTemplate(
-            template=system_prompt,
-            input_variables=["input", "chat_history", "agent_scratchpad"],
-            partial_variables={
-                "tools": "\n".join([f"- {tool.name}: {tool.description}" for tool in self.tools])
-            }
+        # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
+        agent = langchain_create_agent(
+            self.llm,  # 位置参数
+            self.tools,  # 位置参数
+            system_prompt=system_prompt,
+            debug=True  # 开启调试模式
         )
 
-        agent = create_react_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=prompt
-        )
-
-        return AgentExecutor(
-            agent=agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True,
-            max_iterations=15,
-            handle_parsing_errors=True
-        )
+        return agent
 
     def welcome_message(self) -> str:
         """生成欢迎消息"""
@@ -209,10 +163,47 @@ Thought: {{agent_scratchpad}}"""
             Agent 的回复
         """
         try:
-            result = self.agent_executor.invoke({"input": user_input})
-            return result.get("output", "抱歉,我无法处理你的请求。")
+            # LangChain 1.0 的 agent 返回的是 CompiledStateGraph
+            # 需要调用 invoke 方法
+            result = self.agent.invoke({
+                "messages": [{"role": "user", "content": user_input}]
+            })
+
+            # 提取 AI 的回复
+            if "messages" in result and len(result["messages"]) > 0:
+                messages = result["messages"]
+
+                # 收集所有 AI 消息的内容
+                ai_responses = []
+                for msg in messages:
+                    if hasattr(msg, 'type') and msg.type == 'ai':
+                        # 检查是否有内容
+                        if hasattr(msg, 'content') and msg.content:
+                            ai_responses.append(msg.content)
+                        # 检查是否有工具调用
+                        elif hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            tool_info = f"[正在调用工具: {', '.join([tc['name'] for tc in msg.tool_calls])}]"
+                            ai_responses.append(tool_info)
+
+                # 如果有回复,返回最后一个
+                if ai_responses:
+                    return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
+
+                # 检查是否有工具返回消息
+                tool_messages = [msg for msg in messages if hasattr(msg, 'type') and msg.type == 'tool']
+                if tool_messages:
+                    last_tool = tool_messages[-1]
+                    if hasattr(last_tool, 'content'):
+                        return f"工具执行结果:\n{last_tool.content}"
+
+            return "抱歉,我无法处理你的请求。Agent 没有返回有效响应。"
+
         except Exception as e:
-            return f"❌ 处理时出错: {str(e)}\n请重新描述你的需求。"
+            error_msg = f"❌ 处理时出错: {str(e)}\n请重新描述你的需求。"
+            print(f"Error details: {e}")
+            import traceback
+            traceback.print_exc()
+            return error_msg
 
     def scrape_with_retry(self, url: str, max_pages: int) -> Optional[pd.DataFrame]:
         """
@@ -230,8 +221,9 @@ Thought: {{agent_scratchpad}}"""
                 print(f"🔄 尝试爬取数据 (第 {attempt + 1}/{self.max_retries} 次)...")
 
                 # 访问 URL
-                if page:
-                    page.goto(url, wait_until="networkidle", timeout=60000)
+                if not navigate_to_url(url):
+                    print(f"⚠️ 第 {attempt + 1} 次访问URL失败")
+                    continue
 
                 # 导入并调用爬取函数
                 from main import get_table_data_as_dataframe
@@ -313,10 +305,12 @@ if __name__ == "__main__":
         print("\n" + agent.welcome_message())
 
         # 简单的测试对话
-        test_input = "我要推广口红,在美国找 20 个达人,粉丝 10 万到 50 万"
+        test_input = "你好"
         print(f"\n📝 测试输入: {test_input}")
         response = agent.run(test_input)
         print(f"\n🤖 Agent 回复:\n{response}")
 
     except Exception as e:
         print(f"❌ 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
