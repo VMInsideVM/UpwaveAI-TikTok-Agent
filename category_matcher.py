@@ -139,7 +139,7 @@ class CategoryMatcher:
 
         return result
 
-    def find_best_match(self, product_name: str, category_data: Dict) -> Tuple[str, str]:
+    def find_best_match(self, product_name: str, category_data: Dict) -> Tuple[str, str, str]:
         """
         步骤4: 使用 LLM 深度推理找到最佳匹配的分类层级
 
@@ -148,7 +148,7 @@ class CategoryMatcher:
             category_data: 分类 JSON 数据
 
         Returns:
-            (层级, 分类名称) 如 ('l3', '口红') 或 ('l2', '彩妆') 或 ('l1', '美妆个护')
+            (层级, 分类名称, 推理过程) 如 ('l3', '口红', '分析过程...')
         """
         categories = self.extract_all_categories(category_data)
 
@@ -159,31 +159,31 @@ class CategoryMatcher:
 
         # 首先尝试匹配三级分类
         if l3_candidates:
-            l3_match = self._match_to_candidates(
+            l3_match, reasoning = self._match_to_candidates(
                 product_name,
                 l3_candidates,
                 "三级分类(最精确)",
                 categories
             )
             if l3_match:
-                return ('l3', l3_match)
+                return ('l3', l3_match, reasoning)
 
         # 如果三级分类没有合适的,尝试二级分类
         if l2_candidates:
-            l2_match = self._match_to_candidates(
+            l2_match, reasoning = self._match_to_candidates(
                 product_name,
                 l2_candidates,
                 "二级分类(较精确)",
                 categories
             )
             if l2_match:
-                return ('l2', l2_match)
+                return ('l2', l2_match, reasoning)
 
         # 最后返回一级分类
         if l1_candidates:
-            return ('l1', l1_candidates[0])
+            return ('l1', l1_candidates[0], "使用一级分类作为备选")
 
-        return ('l1', list(category_data.keys())[0])
+        return ('l1', list(category_data.keys())[0], "使用默认一级分类")
 
     def _match_to_candidates(
         self,
@@ -191,9 +191,9 @@ class CategoryMatcher:
         candidates: List[str],
         level_name: str,
         all_categories: Dict
-    ) -> Optional[str]:
+    ) -> tuple[Optional[str], Optional[str]]:
         """
-        使用 LLM 从候选分类中选择最佳匹配
+        两阶段匹配：先找出所有可能的候选，再深度对比选择最佳
 
         Args:
             product_name: 商品名称
@@ -202,47 +202,105 @@ class CategoryMatcher:
             all_categories: 所有分类数据(用于获取父级关系)
 
         Returns:
-            最佳匹配的分类名称,如果没有合适的返回 None
+            (最佳匹配的分类名称, 推理过程), 如果没有合适的返回 (None, None)
         """
-        # 如果候选太多,分批处理
+        # 如果候选太多,限制数量
         if len(candidates) > 50:
-            candidates = candidates[:50]  # 限制候选数量
+            candidates = candidates[:50]
 
         candidates_str = '\n'.join([f"- {cat}" for cat in candidates])
 
-        prompt = f"""你是电商商品分类专家。请判断商品"{product_name}"最适合以下哪个{level_name}:
+        # ===== 阶段1: 找出所有可能匹配的候选 =====
+        stage1_prompt = f"""你是电商商品分类专家。请从以下{level_name}中找出**所有可能**适合商品"{product_name}"的分类。
 
 {candidates_str}
 
-请仔细思考商品的特性,选择最精确匹配的分类。如果以上分类都不太合适,请回答"无合适分类"。
+请列出所有可能相关的分类（可以是1-5个），如果都不合适就回答"无合适分类"。
 
-只需回答分类名称,不要解释。
+格式：用逗号分隔的分类名称列表
+示例：口红, 唇彩, 唇釉
 
 商品: {product_name}
-最佳{level_name}:"""
+可能的{level_name}:"""
 
         try:
-            response = self.llm.invoke(prompt)
-            match = response.content.strip()
-
-            # 检查是否是有效的候选分类
-            if match in candidates:
-                return match
-
-            # 尝试模糊匹配
-            for candidate in candidates:
-                if candidate in match or match in candidate:
-                    return candidate
+            # 调用 LLM 获取候选列表
+            response = self.llm.invoke(stage1_prompt)
+            possible_matches = response.content.strip()
 
             # 检查是否明确表示无合适分类
-            if "无" in match or "不" in match or "没有" in match:
-                return None
+            if "无合适分类" in possible_matches or "无" in possible_matches and len(possible_matches) < 10:
+                return (None, "未找到合适的分类")
 
-            return None
+            # 解析出候选列表
+            candidate_list = [c.strip() for c in possible_matches.split(',')]
+            # 过滤无效的候选
+            candidate_list = [c for c in candidate_list if c in candidates]
+
+            if not candidate_list:
+                return (None, "解析候选列表失败")
+
+            # 如果只有一个候选，直接返回
+            if len(candidate_list) == 1:
+                reasoning = f"在{level_name}中找到唯一匹配: {candidate_list[0]}"
+                return (candidate_list[0], reasoning)
+
+            # ===== 阶段2: 深度对比分析 =====
+            candidate_list_str = '\n'.join([f"- {cat}" for cat in candidate_list])
+
+            stage2_prompt = f"""你是电商商品分类专家。商品"{product_name}"有以下几个可能的{level_name}:
+
+{candidate_list_str}
+
+请深度分析：
+1. 商品"{product_name}"的核心特征和用途是什么？
+2. 每个候选分类的典型商品是什么？
+3. 哪个分类最贴近"{product_name}"的语义？
+
+请按照以下格式回答：
+分析过程: [详细的对比分析，说明为什么选择这个分类]
+最佳分类: [选择的分类名称]
+
+商品: {product_name}
+你的分析:"""
+
+            # 调用 LLM 进行深度对比
+            response = self.llm.invoke(stage2_prompt)
+            full_response = response.content.strip()
+
+            # 解析响应，提取"最佳分类"和"分析过程"
+            analysis = ""
+            best_match = None
+
+            if "分析过程:" in full_response and "最佳分类:" in full_response:
+                parts = full_response.split("最佳分类:")
+                analysis = parts[0].replace("分析过程:", "").strip()
+                best_match_text = parts[1].strip()
+
+                # 从最佳分类文本中提取分类名称
+                for candidate in candidate_list:
+                    if candidate in best_match_text:
+                        best_match = candidate
+                        break
+
+            # 如果解析失败，尝试直接从响应中匹配
+            if not best_match:
+                for candidate in candidate_list:
+                    if candidate in full_response:
+                        best_match = candidate
+                        analysis = full_response
+                        break
+
+            # 如果还是没有匹配，返回第一个候选
+            if not best_match:
+                best_match = candidate_list[0]
+                analysis = f"从候选中选择: {', '.join(candidate_list)}"
+
+            return (best_match, analysis)
 
         except Exception as e:
             print(f"❌ 匹配分类时出错: {e}")
-            return None
+            return (None, f"错误: {str(e)}")
 
     def match_product_category(self, product_name: str) -> Optional[Dict]:
         """
@@ -258,7 +316,8 @@ class CategoryMatcher:
                 'category_name': '口红',
                 'category_id': '123456',
                 'url_suffix': '&sale_category_l3=123456',
-                'main_category': '美妆个护'
+                'main_category': '美妆个护',
+                'reasoning': '推理过程...'
             }
         """
         print(f"🔍 开始分析商品: {product_name}")
@@ -278,8 +337,9 @@ class CategoryMatcher:
             return None
 
         # 步骤3: 深度推理找到最佳匹配
-        level, category_name = self.find_best_match(product_name, category_data)
+        level, category_name, reasoning = self.find_best_match(product_name, category_data)
         print(f"✅ 匹配到{level}分类: {category_name}")
+        print(f"💡 推理过程: {reasoning}")
 
         # 步骤4: 调用现有函数获取 URL 后缀
         try:
@@ -291,6 +351,7 @@ class CategoryMatcher:
 
             if result:
                 result['main_category'] = main_category
+                result['reasoning'] = reasoning  # 添加推理过程
                 print(f"✅ URL 后缀: {result.get('url_suffix', '')}")
                 return result
             else:
