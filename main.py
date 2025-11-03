@@ -748,5 +748,35 @@ def build_complete_url(
     return complete_url
 
 
+def navigate_to_url(url: str, wait_for_load: bool = True) -> bool:
+    """
+    导航到指定的 URL
+
+    Args:
+        url: 要访问的 URL
+        wait_for_load: 是否等待页面完全加载
+
+    Returns:
+        bool: 是否成功访问
+    """
+    global page
+
+    if page is None:
+        print("❌ Playwright 未初始化,请先调用 initialize_playwright()")
+        return False
+
+    try:
+        if wait_for_load:
+            page.goto(url, wait_until="networkidle", timeout=60000)
+        else:
+            page.goto(url, timeout=30000)
+
+        # 等待表格加载
+        time.sleep(2)
+        return True
+
+    except Exception as e:
+        print(f"❌ 访问 URL 失败: {e}")
+        return False
 
 
