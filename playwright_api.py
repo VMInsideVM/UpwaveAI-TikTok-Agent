@@ -757,123 +757,72 @@ async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
         # 设置响应监听器
         _page.on("response", handle_response)
 
-        # 访问目标网页
+        # 访问目标网页（使用 networkidle 确保基础数据加载完成）
         await _page.goto(target_url, wait_until="networkidle", timeout=60000)
 
-        # 执行全面滚动策略
-        page_height = await _page.evaluate("document.body.scrollHeight")
-
-        # 慢速滚动策略：分步滚动，每次滚动300px
-        scroll_step = 300
-        current_position = 0
-        scroll_count = 0
-
-        while current_position < page_height:
-            scroll_count += 1
-            next_position = min(current_position + scroll_step, page_height)
-
-            # 滚动到下一个位置
-            await _page.evaluate(f"window.scrollTo(0, {next_position})")
-            await asyncio.sleep(0.5)
-
-            # 检查是否有"加载更多"按钮并点击
-            try:
-                load_more_selectors = [
-                    'button:has-text("加载更多")',
-                    'button:has-text("Load More")',
-                    'button:has-text("查看更多")',
-                    'button:has-text("显示更多")',
-                    '.load-more',
-                    '.load-more-btn',
-                    '[data-testid="load-more"]',
-                    '.ant-btn:has-text("加载更多")',
-                    '.ant-btn:has-text("查看更多")'
-                ]
-
-                for selector in load_more_selectors:
-                    try:
-                        load_more_btn = await _page.query_selector(selector)
-                        if load_more_btn and await load_more_btn.is_visible():
-                            await load_more_btn.click()
-                            await asyncio.sleep(2)
-                            new_height = await _page.evaluate("document.body.scrollHeight")
-                            if new_height > page_height:
-                                page_height = new_height
-                            break
-                    except:
-                        continue
-
-            except:
-                pass
-
-            current_position = next_position
-
-            # 每滚动10次检查一次页面高度
-            if scroll_count % 10 == 0:
-                new_height = await _page.evaluate("document.body.scrollHeight")
-                if new_height > page_height:
-                    page_height = new_height
-
-        # 滚动到顶部
-        await _page.evaluate("window.scrollTo(0, 0)")
+        # 等待页面稳定
         await asyncio.sleep(2)
 
-        # 最终滚动到底部
-        await _page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await asyncio.sleep(3)
+        # 分段滚动策略：逐步触发各区域的懒加载
+        # 滚动5次，每次滚动页面高度的20%，确保所有区域都被访问到
+        for i in range(5):
+            scroll_position = f"window.scrollTo(0, document.body.scrollHeight * {(i + 1) * 0.2})"
+            await _page.evaluate(scroll_position)
+            await asyncio.sleep(1)  # 等待该区域的 API 请求触发
 
         # 点击近90天选项
         try:
-            ninety_days_spans = await _page.locator("label.ant-radio-button-wrapper:has-text('近90天')").all()
-            for span in ninety_days_spans:
-                await span.click()
-                await asyncio.sleep(1)
+            ninety_days_button = await _page.query_selector("label.ant-radio-button-wrapper:has-text('近90天')")
+            if ninety_days_button:
+                await ninety_days_button.click()
+                await asyncio.sleep(1.5)  # 等待近90天数据加载
         except:
             pass
 
-        # 处理下拉菜单
-        async def process_dropdown_menu(section_name):
-            """处理指定区域的下拉菜单选项"""
+        # 下拉菜单处理函数
+        async def process_dropdown_menu(section_name, index):
+            """处理下拉菜单，点击所有选项以触发API请求"""
             try:
-                section_div = _page.locator(f'div.flex.justify-between.items-center:has-text("{section_name}")').first
-                selector_div = section_div.locator('div.ant-select-selector').first
-
-                # 点击展开下拉菜单
-                await selector_div.click()
-                await asyncio.sleep(1)
-
-                # 获取下拉菜单的所有子div元素
-                if section_name == "近期数据":
-                    dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').first
-                elif section_name == "带货数据":
-                    dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').nth(1)
-                else:
+                # 查找下拉菜单选择器
+                selector_div = await _page.query_selector(f'div.flex.justify-between.items-center:has-text("{section_name}") div.ant-select-selector')
+                if not selector_div:
                     return
 
+                # 点击展开
+                await selector_div.click()
+                await asyncio.sleep(0.5)
+
+                # 获取下拉选项
+                dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').nth(index)
                 child_divs = await dropdown_holder.locator('> div').all()
                 total_divs = len(child_divs)
 
-                # 从第二个div开始遍历
-                for i in range(1, total_divs):
-                    child_divs = await dropdown_holder.locator('> div').all()
-                    await child_divs[i].click()
-                    await asyncio.sleep(1.5)
+                # 点击所有选项以触发所有 API 请求
+                for i in range(total_divs):
+                    try:
+                        await child_divs[i].click()
+                        await asyncio.sleep(1.5)  # 等待API响应
 
-                    # 如果不是最后一个元素，重新点击selector展开下拉菜单
-                    if i < total_divs - 1:
-                        await selector_div.click()
-                        await asyncio.sleep(1)
-                        if section_name == "近期数据":
-                            dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').first
-                        elif section_name == "带货数据":
-                            dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').nth(1)
+                        # 重新打开下拉菜单（如果不是最后一个）
+                        if i < total_divs - 1:
+                            await selector_div.click()
+                            await asyncio.sleep(0.3)
+                            # 重新获取选项列表（DOM可能更新）
+                            child_divs = await dropdown_holder.locator('> div').all()
+                    except Exception as e:
+                        print(f"   ⚠️ 点击第{i+1}个选项时出错: {e}")
+                        continue
 
             except Exception as e:
-                print(f"   ⚠️ 处理{section_name}区域的下拉菜单时出错: {e}")
+                print(f"   ⚠️ 处理{section_name}菜单时出错: {e}")
 
-        # 处理"近期数据"和"带货数据"区域
-        await process_dropdown_menu("近期数据")
-        await process_dropdown_menu("带货数据")
+        # 处理两个下拉菜单
+        await process_dropdown_menu("近期数据", 0)
+        await process_dropdown_menu("带货数据", 1)
+
+        # 最后再滚动到底部确保所有内容加载
+        await _page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await asyncio.sleep(2)
 
         # 重组datalist数据：按field_type分组，只保留data字段
         datalist_by_field_type = {}
