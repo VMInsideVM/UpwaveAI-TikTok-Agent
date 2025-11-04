@@ -6,6 +6,10 @@ import pandas as pd
 from datetime import datetime
 import os
 
+# 解决 asyncio 和同步 Playwright 的冲突
+import nest_asyncio
+nest_asyncio.apply()
+
 
 # 全局变量
 playwright_instance = None
@@ -14,15 +18,36 @@ context = None
 page = None
 main_url = 'https://www.fastmoss.com/zh/influencer/search?'
 
+# 线程安全：记录初始化的线程
+import threading
+_init_thread_id = None
+_playwright_lock = threading.RLock()  # 递归锁，防止死锁
+
 
 
 def initialize_playwright():
-    """初始化Playwright连接"""
-    global playwright_instance, browser, context, page
-    playwright_instance = sync_playwright().start()
-    browser = playwright_instance.chromium.connect_over_cdp("http://localhost:9224")
-    context = browser.contexts[0]
-    page = context.pages[0]
+    """初始化Playwright连接（单例模式，线程安全）"""
+    global playwright_instance, browser, context, page, _init_thread_id
+
+    with _playwright_lock:
+        # 如果已经初始化，检查是否在同一线程
+        if playwright_instance is not None and page is not None:
+            current_thread = threading.current_thread().ident
+            if _init_thread_id != current_thread:
+                print(f"⚠️ 警告：Playwright 在不同线程中被调用")
+                print(f"   初始化线程: {_init_thread_id}")
+                print(f"   当前线程: {current_thread}")
+                # 不重新初始化，使用现有实例（可能会出错，但至少有提示）
+            return
+
+        # 记录初始化线程
+        _init_thread_id = threading.current_thread().ident
+        print(f"🔧 在线程 {_init_thread_id} 中初始化 Playwright")
+
+        playwright_instance = sync_playwright().start()
+        browser = playwright_instance.chromium.connect_over_cdp("http://localhost:9224")
+        context = browser.contexts[0]
+        page = context.pages[0]
 
 def cleanup_playwright():
     """清理Playwright资源"""
@@ -732,9 +757,7 @@ def navigate_to_url(url: str, wait_for_load: bool = True) -> bool:
     """
     global page
 
-    if page is None:
-        print("❌ Playwright 未初始化,请先调用 initialize_playwright()")
-        return False
+    initialize_playwright()
 
     try:
         # 使用 sync_playwright 上下文确保在正确的 greenlet 中执行
@@ -758,11 +781,8 @@ def navigate_to_url(url: str, wait_for_load: bool = True) -> bool:
         # 等待表格加载
         time.sleep(2)
         return True
-
     except Exception as e:
         print(f"❌ 访问 URL 失败: {e}")
         import traceback
         traceback.print_exc()
         return False
-
-

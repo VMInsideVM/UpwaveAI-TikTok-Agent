@@ -3,6 +3,10 @@ TikTok 达人推荐智能助手
 简化版本 - 不使用复杂的 Agent 框架
 """
 
+# 解决 asyncio 和同步 Playwright 的冲突
+import nest_asyncio
+nest_asyncio.apply()
+
 import os
 import json
 from typing import List, Dict, Optional

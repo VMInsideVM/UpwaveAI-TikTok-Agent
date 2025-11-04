@@ -11,10 +11,11 @@ def analyze_quantity_gap(max_pages: int, user_needs: int) -> Dict:
     分析数量缺口
 
     判断标准：
-    - 可用达人数 = 最大页数 × 5（保守估计，每页约5个有效达人）
-    - 充足：可用数 ≥ 用户需求
-    - 可接受：可用数 ≥ 用户需求 × 50%
-    - 严重不足：可用数 < 用户需求 × 50%
+    - 真实达人数 = 最大页数 × 10（每页约10个达人，展示给用户）
+    - 保守估计 = 最大页数 × 5（用于内部判断是否需要调整参数）
+    - 充足：保守估计 ≥ 用户需求
+    - 可接受：保守估计 ≥ 用户需求 × 50%
+    - 严重不足：保守估计 < 用户需求 × 50%
 
     Args:
         max_pages: 最大页数
@@ -23,30 +24,37 @@ def analyze_quantity_gap(max_pages: int, user_needs: int) -> Dict:
     Returns:
         {
             'status': 'sufficient' | 'acceptable' | 'insufficient',
-            'available': 实际可用数量（保守估计 max_pages × 5），
+            'available_real': 真实达人数（max_pages × 10，展示给用户）,
+            'available_conservative': 保守估计（max_pages × 5，内部判断用）,
             'message': 给用户的提示信息
         }
     """
-    # 保守估计：每页约5个有效达人
-    available = max_pages * 5
+    # 真实数量：每页约10个达人（展示给用户）
+    available_real = max_pages * 10
 
-    if available >= user_needs:
+    # 保守估计：每页约5个有效达人（用于判断是否需要调整）
+    available_conservative = max_pages * 5
+
+    if available_conservative >= user_needs:
         return {
             'status': 'sufficient',
-            'available': available,
-            'message': f'✅ 找到足够的达人！预计有 {available} 个可用达人，满足您需要的 {user_needs} 个。'
+            'available_real': available_real,
+            'available_conservative': available_conservative,
+            'message': f'✅ 找到足够的达人！约 {available_real} 个可用达人，满足您需要的 {user_needs} 个。'
         }
-    elif available >= user_needs * 0.5:  # 至少有需求的50%
+    elif available_conservative >= user_needs * 0.5:  # 至少有需求的50%
         return {
             'status': 'acceptable',
-            'available': available,
-            'message': f'⚠️ 当前找到约 {available} 个达人，略少于您需要的 {user_needs} 个。\n\n您可以：\n1. 接受当前数量（{available} 个）\n2. 调整筛选条件以找到更多达人\n\n请问您想怎么做？'
+            'available_real': available_real,
+            'available_conservative': available_conservative,
+            'message': f'⚠️ 当前找到约 {available_real} 个达人，略少于您需要的 {user_needs} 个。\n\n您可以：\n1. 接受当前数量（约 {available_real} 个）\n2. 调整筛选条件以找到更多达人\n\n请问您想怎么做？'
         }
     else:
         return {
             'status': 'insufficient',
-            'available': available,
-            'message': f'❌ 当前只找到约 {available} 个达人，远少于您需要的 {user_needs} 个。\n强烈建议调整筛选条件以增加候选达人数量。'
+            'available_real': available_real,
+            'available_conservative': available_conservative,
+            'message': f'❌ 当前只找到约 {available_real} 个达人，远少于您需要的 {user_needs} 个。\n强烈建议调整筛选条件以增加候选达人数量。'
         }
 
 
@@ -93,7 +101,7 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
         else:  # 缺口适中
             new_min = int(min_f * 0.7)  # 下限降低30%
             new_max = int(max_f * 1.5)  # 上限扩大50%
-            expected = '预计增加 50-80%'
+            expected = '预计增加 50-50%'
 
         suggestions.append({
             'priority': 1,

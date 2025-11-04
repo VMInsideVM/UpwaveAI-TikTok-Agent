@@ -3,6 +3,10 @@ LangChain Tools 封装
 将现有的爬虫函数封装为 LangChain 可用的工具
 """
 
+# 解决 asyncio 和同步 Playwright 的冲突
+import nest_asyncio
+nest_asyncio.apply()
+
 from typing import Optional, List, Dict, Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -10,20 +14,75 @@ import pandas as pd
 from datetime import datetime
 import os
 
-# 导入现有函数
+# 导入现有函数（非 Playwright 相关）
 from main import (
     build_complete_url,
-    get_max_page_number,
-    get_sort_suffix,
-    get_table_data_as_dataframe,
-    initialize_playwright,
-    navigate_to_url
+    get_sort_suffix
 )
 from agent_category_classifier import ProductCategoryClassifierV3
 import re
+import requests  # 用于调用 API
+
+# ============================================================================
+# API 配置
+# ============================================================================
+API_BASE_URL = "http://127.0.0.1:8000"  # Playwright API 服务地址
+
+def call_api(endpoint: str, method: str = "GET", data: Optional[Dict] = None, timeout: int = 120) -> Dict:
+    """
+    调用 Playwright API 的辅助函数
+
+    Args:
+        endpoint: API 端点（例如 "/navigate"）
+        method: HTTP 方法（GET 或 POST）
+        data: POST 请求的数据（字典）
+        timeout: 超时时间（秒）
+
+    Returns:
+        API 响应的 JSON 数据
+
+    Raises:
+        Exception: API 调用失败时抛出异常
+    """
+    url = f"{API_BASE_URL}{endpoint}"
+
+    try:
+        if method.upper() == "POST":
+            response = requests.post(url, json=data, timeout=timeout)
+        else:
+            response = requests.get(url, timeout=timeout)
+
+        response.raise_for_status()  # 如果状态码不是 2xx，抛出异常
+        return response.json()
+
+    except requests.exceptions.ConnectionError:
+        raise Exception(
+            f"❌ 无法连接到 Playwright API 服务 ({API_BASE_URL})。\n"
+            "请确保:\n"
+            "1. API 服务已启动（python playwright_api.py）\n"
+            "2. 服务运行在 127.0.0.1:8000"
+        )
+    except requests.exceptions.Timeout:
+        raise Exception(f"❌ API 请求超时（{timeout}秒）")
+    except requests.exceptions.HTTPError as e:
+        error_detail = "未知错误"
+        try:
+            error_detail = response.json().get("detail", str(e))
+        except:
+            pass
+        raise Exception(f"❌ API 请求失败: {error_detail}")
+    except Exception as e:
+        raise Exception(f"❌ API 调用异常: {str(e)}")
+
+# ============================================================================
+# 原有代码
+# ============================================================================
 
 # 创建全局分类器实例（单例模式）
 _classifier_instance = None
+
+# 全局变量：存储爬取的数据（临时方案）
+_scraped_data = None
 
 def get_classifier():
     """获取分类器单例实例"""
@@ -237,38 +296,35 @@ class GetMaxPageTool(BaseTool):
     args_schema: type[BaseModel] = MaxPageInput
 
     def _run(self, url: str) -> str:
-        """执行获取最大页数"""
+        """执行获取最大页数（通过 API）"""
         try:
-            # 检查 Playwright 是否已初始化
-            from main import page as playwright_page
-            if playwright_page is None:
-                try:
-                    print("⚙️ 初始化 Playwright...")
-                    initialize_playwright()
-                    print("✅ Playwright 初始化成功")
-                except Exception as init_error:
-                    return f"❌ Playwright 初始化失败: {str(init_error)}\n请确保 Chrome 浏览器已在 CDP 端口 9224 运行"
-
-            # 访问 URL
+            # 调用 API 导航到 URL
             print(f"🌐 正在访问: {url}")
-            if not navigate_to_url(url):
+            nav_result = call_api("/navigate", method="POST", data={"url": url, "wait_for_load": True})
+
+            if not nav_result.get("success"):
                 return "❌ 无法访问搜索页面。可能原因:\n1. URL 格式不正确\n2. 网络连接问题\n3. 页面加载超时\n请检查 URL 是否完整(包含分类后缀)"
 
-            # 获取最大页数
+            # 调用 API 获取最大页数
             print("📊 正在获取最大页数...")
-            max_page = get_max_page_number()
+            result = call_api("/max_page", method="GET")
+
+            if not result.get("success"):
+                return "❌ 获取最大页数失败"
+
+            max_page = result.get("max_page", 0)
+            estimated_count = result.get("estimated_count", 0)
 
             if max_page <= 1:
                 return f"⚠️ 当前筛选条件下只找到 1 页数据(约10个达人)。\n建议:\n1. 检查 URL 是否包含正确的分类后缀\n2. 尝试放宽筛选条件"
 
-            estimated_count = max_page * 10
             return f"✅ 最大页数: {max_page}, 预计约有 {estimated_count} 个达人"
 
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
             print(f"详细错误信息:\n{error_details}")
-            return f"❌ 获取最大页数失败: {str(e)}\n请检查:\n1. Chrome 浏览器是否正在运行\n2. CDP 端口 9224 是否可访问\n3. URL 是否正确"
+            return f"❌ 获取最大页数失败: {str(e)}\n请检查:\n1. Playwright API 服务是否已启动\n2. Chrome 浏览器是否正在运行\n3. URL 是否正确"
 
 
 class GetSortSuffixTool(BaseTool):
@@ -315,33 +371,49 @@ class ScrapeInfluencersTool(BaseTool):
     args_schema: type[BaseModel] = ScrapeInput
 
     def _run(self, base_url: str, max_pages: int = 10) -> str:
-        """执行数据爬取"""
+        """执行数据爬取（通过 API）"""
         try:
-            # 初始化 Playwright(如果还没初始化)
-            try:
-                initialize_playwright()
-            except:
-                pass  # 可能已经初始化过了
+            # 调用 API 爬取数据
+            print(f"📊 开始爬取数据（最多 {max_pages} 页）...")
+            result = call_api(
+                "/scrape",
+                method="POST",
+                data={"url": base_url, "max_pages": max_pages},
+                timeout=max_pages * 30  # 每页约 30 秒超时
+            )
 
-            # 访问 URL
-            print(f"🌐 正在访问: {base_url}")
-            if not navigate_to_url(base_url):
-                return "❌ 无法访问搜索页面,请检查 URL 是否正确"
-
-            # 爬取数据
-            df = get_table_data_as_dataframe(max_pages=max_pages)
-
-            if df is None or df.empty:
+            if not result.get("success"):
                 return "❌ 未能爬取到数据,可能是筛选条件太严格或网站响应异常"
 
-            # 返回统计信息
-            count = len(df)
+            # 获取数据并转换回 DataFrame（如果需要本地存储）
+            data = result.get("data", [])
+            row_count = result.get("row_count", 0)
+            columns = result.get("columns", [])
+
+            if row_count == 0:
+                return "❌ 未能爬取到数据,可能是筛选条件太严格或网站响应异常"
+
+            # 将数据转换为 DataFrame 并存储（供后续导出使用）
+            df = pd.DataFrame(data)
+
+            # 这里需要访问 agent 实例来存储数据
+            # 由于工具无法直接访问 agent，我们将数据临时保存为全局变量
+            # 或者返回给 agent 让其处理
+            global _scraped_data
+            _scraped_data = df
+
+            print(f"✅ 爬取成功! 获得 {row_count} 个达人，{len(columns)} 列数据")
+
             return f"""✅ 数据爬取成功!
 - 爬取页数: {max_pages}
-- 获得达人数: {count}
+- 获得达人数: {row_count}
+- 数据列: {len(columns)}
 - 数据已暂存,可以导出为 Excel"""
 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"详细错误信息:\n{error_details}")
             return f"❌ 爬取数据失败: {str(e)}"
 
 

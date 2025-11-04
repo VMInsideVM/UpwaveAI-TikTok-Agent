@@ -6,7 +6,8 @@
       "Bash(fi)",
       "Bash(python -c:*)",
       "Bash(python agent.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []

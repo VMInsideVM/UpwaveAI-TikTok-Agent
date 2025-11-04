@@ -3,8 +3,17 @@ TikTok 达人推荐 Agent 启动脚本
 命令行交互式对话界面
 """
 
+# CRITICAL: 必须在最开始就应用 nest_asyncio，在任何其他导入之前
+import nest_asyncio
+nest_asyncio.apply()
+
 import sys
 import os
+
+# 强制单线程执行（解决 Playwright greenlet 线程切换错误）
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OMP_NUM_THREADS'] = '1'
 
 # 尝试导入完整版 Agent,如果失败则使用简化版
 try:
@@ -16,7 +25,8 @@ except Exception as e:
     from agent_simple import create_agent
     AGENT_TYPE = "简化版"
 
-from main import initialize_playwright
+# API 模式不需要直接初始化 Playwright
+# from main import initialize_playwright
 
 
 def print_banner():
@@ -65,17 +75,32 @@ def main():
     """主函数"""
     print_banner()
 
-    # 初始化 Playwright
-    print("🔧 正在初始化浏览器...")
+    # 检查 Playwright API 服务是否运行
+    print("🔧 正在检查 Playwright API 服务...")
     try:
-        initialize_playwright()
-        print("✅ 浏览器初始化成功!\n")
+        import requests
+        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        health_data = response.json()
+
+        if health_data.get("playwright_initialized"):
+            print("✅ Playwright API 服务已就绪!\n")
+        else:
+            print("❌ Playwright API 服务未初始化")
+            print("请检查 API 服务的启动日志")
+            sys.exit(1)
+
+    except requests.exceptions.ConnectionError:
+        print("❌ 无法连接到 Playwright API 服务")
+        print("请先启动 API 服务:")
+        print("  方式 1: python start_api.py")
+        print("  方式 2: python playwright_api.py")
+        print("\n确保:")
+        print("  1. API 服务已启动")
+        print("  2. Chrome 浏览器已启动（CDP 端口 9224）")
+        print("  3. 服务运行在 127.0.0.1:8000")
+        sys.exit(1)
     except Exception as e:
-        print(f"❌ 浏览器初始化失败: {e}")
-        print("请确保:")
-        print("  1. Chrome 浏览器已启动")
-        print("  2. CDP 端口 9224 已开放")
-        print("  3. 使用命令: chrome.exe --remote-debugging-port=9224")
+        print(f"❌ 检查 API 服务时出错: {e}")
         sys.exit(1)
 
     # 创建 Agent
@@ -179,8 +204,20 @@ def test_mode():
         index = int(choice) - 1
         print(f"\n执行测试用例 {choice}: {test_cases[index]}\n")
 
-        # 初始化
-        initialize_playwright()
+        # 检查 API 服务
+        print("🔧 正在检查 Playwright API 服务...")
+        try:
+            import requests
+            response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+            if not response.json().get("playwright_initialized"):
+                print("❌ Playwright API 服务未就绪，请先启动: python start_api.py")
+                return
+            print("✅ API 服务已就绪\n")
+        except:
+            print("❌ 无法连接到 API 服务，请先启动: python start_api.py")
+            return
+
+        # 创建 Agent
         agent = create_agent()
 
         # 运行测试

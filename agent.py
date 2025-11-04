@@ -11,6 +11,10 @@ from langchain.agents import create_agent as langchain_create_agent
 import pandas as pd
 from datetime import datetime
 
+# 解决 asyncio 和同步 Playwright 的冲突
+import nest_asyncio
+nest_asyncio.apply()
+
 from agent_tools import get_all_tools
 from main import initialize_playwright, navigate_to_url
 
@@ -31,6 +35,7 @@ class TikTokInfluencerAgent:
         self.current_url = None  # 当前搜索 URL
         self.retry_count = 0  # 重试计数
         self.max_retries = 3  # 最大重试次数
+        self.chat_history = []  # 存储对话历史
 
     def _init_llm(self) -> ChatOpenAI:
         """初始化 LLM"""
@@ -82,8 +87,19 @@ class TikTokInfluencerAgent:
 7. **根据状态处理**:
 
    **情况A - 数量充足** (可用数 ≥ 用户需求):
-   - 告知用户找到足够的达人
-   - 询问是否开始爬取数据
+   - 告知用户找到足够的达人（显示真实数量 available_real）
+   - 询问用户希望按什么标准筛选，提供带序号的排序选项：
+     "现在可以开始为您爬取数据。为了给您提供更好的推荐，请选择排序方式：
+
+     1. 粉丝数 - 按粉丝数量排序
+     2. 近28天涨粉数 - 选择近期活跃的达人
+     3. 互动率 - 选择粉丝互动度高的达人
+     4. 赞粉比 - 选择内容质量高的达人
+     5. 近28天视频平均播放量 - 选择视频曝光度高的达人
+     6. 近28天总销量 - 选择带货能力强的达人
+
+     请输入序号（1-6）或直接说明您的需求。"
+   - **等待用户回复排序方式**
 
    **情况B - 数量可接受** (可用数 ≥ 用户需求 × 50%):
    - 展示: "找到约 X 个达人,略少于您需要的 Y 个"
@@ -107,15 +123,46 @@ class TikTokInfluencerAgent:
    - 重新检查数量 (回到步骤5)
    - **重复步骤6-7,直到用户满意**
 
-9. **爬取数据**: 用户确认满意后,开始爬取
-10. **导出结果**: 导出 Excel
+9. **处理排序选择**:
+   - 当用户输入序号（如"1"、"2"、"1,2"等）时，识别为排序选择
+   - 映射规则：
+     1 → "粉丝数"
+     2 → "近28天涨粉数"
+     3 → "互动率"
+     4 → "赞粉比"
+     5 → "近28天视频平均播放量"
+     6 → "近28天总销量"
+   - 如果用户选择多个（如"1,2"），需要分别处理：
+     a. 对每个排序维度，使用 get_sort_suffix 获取 URL 后缀
+     b. 将后缀追加到之前构建的完整 URL（基础 URL + 分类后缀）
+     c. 使用 scrape_influencer_data 爬取该排序维度的数据
+     d. 重复以上步骤爬取所有选择的排序维度
+   - 所有爬取的数据会自动合并去重
+
+10. **爬取数据**:
+   - **计算爬取页数**:
+     * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
+     * 实际页数 = min(目标页数, 最大可用页数)
+     * 例如: 用户要 50 个达人 → 目标 50 页，如果只有 30 页可用 → 爬取 30 页
+   - 使用之前保存的完整 URL（基础 URL + 分类后缀）
+   - 追加排序后缀后调用 scrape_influencer_data，传入计算出的实际页数
+   - 如果有多个排序维度，每个维度都使用相同的页数依次爬取
+
+11. **导出结果**:
+   - 爬取完成后，使用 export_to_excel 导出
+   - 系统会自动合并多个排序维度的数据并去重
 
 ## 重要规则:
+- **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
+- **爬取页数计算**: 必须根据用户需求的达人数量计算爬取页数（用户要 X 个达人就爬 X 页，但不超过最大可用页数）
 - 国家地区一旦确定,**绝对不能修改**
 - 商品分类一旦确定,**绝对不能修改**
 - 找不到商品分类时,立即礼貌地结束对话
 - **绝对不能自动调整参数**,必须先询问用户意见
-- 数量判断标准: 可用达人数 = 最大页数 × 5 (保守估计)
+- 数量展示: 使用 analyze_quantity_gap 返回的 available_real (真实数量) 展示给用户
+- 数量判断: 内部使用 available_conservative (保守估计) 判断是否需要调整参数
+- 排序选项: 必须提供带序号的选项(1-6),方便用户输入数字选择
+- **识别用户意图**: 当用户输入"1,2"或"1, 2"等数字组合时，理解为排序选择而非新的需求
 - 所有回复要友好、专业、简洁
 - 多维度排序时保留第一次出现的达人(去重)
 
@@ -201,15 +248,22 @@ class TikTokInfluencerAgent:
             Agent 的回复
         """
         try:
+            # 将用户输入添加到历史记录
+            from langchain_core.messages import HumanMessage
+            self.chat_history.append(HumanMessage(content=user_input))
+
             # LangChain 1.0 的 agent 返回的是 CompiledStateGraph
-            # 需要调用 invoke 方法
+            # 需要调用 invoke 方法，传入完整的对话历史
             result = self.agent.invoke({
-                "messages": [{"role": "user", "content": user_input}]
+                "messages": self.chat_history
             })
 
             # 提取 AI 的回复
             if "messages" in result and len(result["messages"]) > 0:
                 messages = result["messages"]
+
+                # 更新对话历史（保留 agent 返回的完整消息列表）
+                self.chat_history = messages
 
                 # 收集所有 AI 消息的内容
                 ai_responses = []
