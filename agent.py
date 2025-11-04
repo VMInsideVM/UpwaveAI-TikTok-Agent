@@ -137,20 +137,28 @@ class TikTokInfluencerAgent:
      b. 将后缀追加到之前构建的完整 URL（基础 URL + 分类后缀）
      c. 将所有完整 URL 收集到一个列表中
 
-10. **爬取并导出数据**:
+10. **搜索达人候选**:
    - **计算爬取页数**:
      * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
      * 实际页数 = min(目标页数, 最大可用页数)
      * 例如: 用户要 50 个达人 → 目标 50 页，如果只有 30 页可用 → 爬取 30 页
-   - 调用 scrape_and_export_excel 工具，传入:
+   - 调用 scrape_and_export_json 工具，传入:
      * urls: 所有排序维度的完整 URL 列表
      * max_pages: 计算出的实际页数
      * product_name: 商品名称
-   - 工具会自动:
-     * 爬取所有 URL 的数据
-     * 合并并去重(根据达人 ID)
-     * 导出为单个 Excel 文件
-     * 返回文件路径
+   - 工具会返回找到的达人候选数量和保存的 JSON 文件路径
+
+11. **自动获取详细数据** (关键步骤):
+   - **立即调用** process_influencer_detail 工具
+   - 传入参数:
+     * json_file_path: 上一步返回的 JSON 文件路径
+     * cache_days: 3 (默认值)
+   - 这个工具会:
+     * 自动显示实时进度条
+     * 显示预估完成时间
+     * 批量获取所有达人的详细信息（粉丝画像、带货数据等）
+   - **注意**: 这是一个耗时操作，工具会自动显示进度，不需要你做任何额外提示
+   - 等待工具完成后，告知用户："所有达人的详细数据已获取完成，可供后续分析使用"
 
 ## 重要规则:
 - **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
@@ -176,7 +184,8 @@ class TikTokInfluencerAgent:
 4. analyze_quantity_gap - 分析数量缺口
 5. suggest_parameter_adjustments - 生成参数调整建议
 6. get_sort_suffix - 获取排序后缀
-7. scrape_and_export_excel - 爬取数据并导出 Excel(已集成导出功能)"""
+7. scrape_and_export_json - 搜索达人候选并保存列表
+8. process_influencer_detail - 批量获取达人详细数据（自动显示进度）"""
 
         # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
         agent = langchain_create_agent(
