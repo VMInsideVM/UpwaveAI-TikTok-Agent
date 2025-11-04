@@ -167,8 +167,9 @@ class MaxPageInput(BaseModel):
 
 class ScrapeInput(BaseModel):
     """爬取数据的输入参数"""
-    base_url: str = Field(description="基础搜索 URL")
-    max_pages: int = Field(default=10, description="最多爬取的页数")
+    urls: List[str] = Field(description="URL 列表(可以是多个排序维度的 URL)")
+    max_pages: int = Field(default=10, description="每个 URL 的最大爬取页数")
+    product_name: str = Field(description="商品名称,用于 Excel 文件命名")
 
 
 # ==================== 工具类定义 ====================
@@ -355,60 +356,64 @@ class GetSortSuffixTool(BaseTool):
 
 
 class ScrapeInfluencersTool(BaseTool):
-    """爬取达人数据的工具"""
-    name: str = "scrape_influencer_data"
+    """爬取达人数据并导出 Excel 的工具"""
+    name: str = "scrape_and_export_excel"
     description: str = """
-    爬取 TikTok 达人数据并返回 DataFrame。
-    需要提供完整的搜索 URL(包括所有筛选条件和排序参数)。
+    爬取 TikTok 达人数据并自动导出为 Excel 文件。
+    支持多个排序维度的 URL,会自动合并去重并导出为单个 Excel 文件。
 
     参数:
-    - base_url: 完整的搜索 URL
-    - max_pages: 最多爬取的页数(默认 10)
+    - urls: URL 列表(可以是多个排序维度的完整 URL)
+    - max_pages: 每个 URL 最多爬取的页数
+    - product_name: 商品名称(用于 Excel 文件命名)
 
-    返回爬取到的达人数量和基本统计信息。
-    数据会暂存在内存中,供后续导出使用。
+    返回 Excel 文件路径和达人数量统计信息。
     """
     args_schema: type[BaseModel] = ScrapeInput
 
-    def _run(self, base_url: str, max_pages: int = 10) -> str:
-        """执行数据爬取（通过 API）"""
+    def _run(self, urls: List[str], max_pages: int, product_name: str) -> str:
+        """执行数据爬取和导出（通过 API）"""
         try:
-            # 调用 API 爬取数据
-            print(f"📊 开始爬取数据（最多 {max_pages} 页）...")
+            print(f"📊 开始爬取并导出数据...")
+            print(f"   - URL 数量: {len(urls)}")
+            print(f"   - 每个 URL 最多: {max_pages} 页")
+            print(f"   - 商品名称: {product_name}")
+
+            # 调用 API 爬取数据并导出 Excel
             result = call_api(
                 "/scrape",
                 method="POST",
-                data={"url": base_url, "max_pages": max_pages},
-                timeout=max_pages * 30  # 每页约 30 秒超时
+                data={
+                    "urls": urls,
+                    "max_pages": max_pages,
+                    "product_name": product_name
+                },
+                timeout=len(urls) * max_pages * 30  # 每个 URL 每页约 30 秒
             )
 
             if not result.get("success"):
                 return "❌ 未能爬取到数据,可能是筛选条件太严格或网站响应异常"
 
-            # 获取数据并转换回 DataFrame（如果需要本地存储）
-            data = result.get("data", [])
-            row_count = result.get("row_count", 0)
-            columns = result.get("columns", [])
+            # 获取结果信息
+            filepath = result.get("filepath", "")
+            total_rows = result.get("total_rows", 0)
+            source_count = result.get("source_count", 0)
+            scraped_count = result.get("scraped_count", 0)
 
-            if row_count == 0:
+            if total_rows == 0:
                 return "❌ 未能爬取到数据,可能是筛选条件太严格或网站响应异常"
 
-            # 将数据转换为 DataFrame 并存储（供后续导出使用）
-            df = pd.DataFrame(data)
+            print(f"✅ 爬取并导出成功!")
+            print(f"   - 文件路径: {filepath}")
+            print(f"   - 达人总数: {total_rows}")
 
-            # 这里需要访问 agent 实例来存储数据
-            # 由于工具无法直接访问 agent，我们将数据临时保存为全局变量
-            # 或者返回给 agent 让其处理
-            global _scraped_data
-            _scraped_data = df
+            return f"""✅ 数据爬取和导出成功!
+📁 文件路径: {filepath}
+📊 达人总数: {total_rows}(已去重)
+🔗 URL 数量: {source_count}
+✓ 成功爬取: {scraped_count}/{source_count} 个 URL
 
-            print(f"✅ 爬取成功! 获得 {row_count} 个达人，{len(columns)} 列数据")
-
-            return f"""✅ 数据爬取成功!
-- 爬取页数: {max_pages}
-- 获得达人数: {row_count}
-- 数据列: {len(columns)}
-- 数据已暂存,可以导出为 Excel"""
+🎉 你可以在 output 文件夹中找到这个 Excel 文件!"""
 
         except Exception as e:
             import traceback
@@ -516,53 +521,6 @@ class SuggestAdjustmentsTool(BaseTool):
             return f"❌ 生成调整建议时出错: {str(e)}"
 
 
-class ExportExcelTool(BaseTool):
-    """导出 Excel 的工具"""
-    name: str = "export_to_excel"
-    description: str = """
-    将爬取的达人数据导出为 Excel 文件。
-    文件会保存到 output/ 目录下。
-
-    文件名格式: tiktok_达人推荐_{商品名}_{日期时间}.xlsx
-
-    返回保存的文件路径。
-    """
-
-    class ExportInput(BaseModel):
-        product_name: str = Field(description="商品名称,用于文件命名")
-        dataframe_list: List[Any] = Field(description="DataFrame 列表(如果有多个排序维度)")
-
-    args_schema: type[BaseModel] = ExportInput
-
-    def _run(self, product_name: str, dataframe_list: List[pd.DataFrame]) -> str:
-        """执行 Excel 导出"""
-        try:
-            # 创建 output 目录
-            output_dir = "output"
-            os.makedirs(output_dir, exist_ok=True)
-
-            # 合并所有 DataFrame 并去重
-            if len(dataframe_list) == 1:
-                final_df = dataframe_list[0]
-            else:
-                final_df = pd.concat(dataframe_list, ignore_index=True)
-                # 假设第一列是达人 ID 或唯一标识
-                final_df = final_df.drop_duplicates(subset=final_df.columns[0], keep='first')
-
-            # 生成文件名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"tiktok_达人推荐_{product_name}_{timestamp}.xlsx"
-            filepath = os.path.join(output_dir, filename)
-
-            # 导出 Excel
-            final_df.to_excel(filepath, index=False, engine='openpyxl')
-
-            return f"✅ Excel 导出成功!\n文件路径: {filepath}\n共 {len(final_df)} 个达人"
-
-        except Exception as e:
-            return f"❌ 导出 Excel 失败: {str(e)}"
-
-
 # ==================== 工具列表 ====================
 
 def get_all_tools() -> List[BaseTool]:
@@ -571,11 +529,10 @@ def get_all_tools() -> List[BaseTool]:
         BuildURLTool(),
         CategoryMatchTool(),
         GetMaxPageTool(),
-        AnalyzeQuantityTool(),         # 新增：分析数量缺口
-        SuggestAdjustmentsTool(),      # 新增：生成调整建议
+        AnalyzeQuantityTool(),         # 分析数量缺口
+        SuggestAdjustmentsTool(),      # 生成调整建议
         GetSortSuffixTool(),
-        ScrapeInfluencersTool(),
-        ExportExcelTool()
+        ScrapeInfluencersTool()        # 爬取并导出 Excel(已集成导出功能)
     ]
 
 

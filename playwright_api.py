@@ -14,6 +14,8 @@ import pandas as pd
 import asyncio
 import sys
 import re
+from datetime import datetime
+import os
 
 # 导入路径设置
 sys.path.insert(0, '.')
@@ -44,8 +46,9 @@ class NavigateRequest(BaseModel):
 
 class ScrapeRequest(BaseModel):
     """爬取请求"""
-    url: str = Field(..., description="搜索页面 URL")
-    max_pages: int = Field(..., ge=1, le=100, description="最大爬取页数（1-100）")
+    urls: List[str] = Field(..., description="搜索页面 URL 列表(支持多个排序维度)")
+    max_pages: int = Field(..., ge=1, le=100, description="每个 URL 的最大爬取页数（1-100）")
+    product_name: str = Field(..., description="商品名称(用于文件命名)")
 
 class HealthResponse(BaseModel):
     """健康检查响应"""
@@ -220,33 +223,91 @@ async def get_max_page():
 @app.post("/scrape")
 async def scrape_pages(req: ScrapeRequest):
     """
-    爬取多页达人数据 (Async)
+    爬取多个 URL 的达人数据,合并去重后导出为 Excel 文件 (Async)
 
-    自动导航到指定 URL 并爬取多页数据，返回 JSON 格式的达人信息。
+    支持多个排序维度的 URL,自动合并数据并去重,最终导出为单个 Excel 文件。
     """
     check_initialized()
 
     try:
-        print(f"📊 开始爬取数据（最多 {req.max_pages} 页）...")
+        print(f"📊 开始爬取数据...")
+        print(f"   - URL 数量: {len(req.urls)}")
+        print(f"   - 每个 URL 最多爬取: {req.max_pages} 页")
+        print(f"   - 商品名称: {req.product_name}")
 
-        # 调用异步函数并传入 URL 参数
-        df = await get_table_data_as_dataframe(url=req.url, max_pages=req.max_pages)
+        # 存储所有爬取的 DataFrame
+        all_dataframes = []
 
-        if df is None or df.empty:
-            raise HTTPException(status_code=404, detail="未能爬取到数据")
+        # 依次爬取每个 URL
+        for idx, url in enumerate(req.urls, 1):
+            print(f"\n🔄 正在爬取第 {idx}/{len(req.urls)} 个 URL...")
+            print(f"   URL: {url}")
 
-        # 将 DataFrame 转换为 JSON 格式返回
-        data_dict = df.to_dict(orient='records')
+            df = await get_table_data_as_dataframe(url=url, max_pages=req.max_pages)
 
-        print(f"✅ 爬取成功: {len(data_dict)} 条数据")
+            if df is not None and not df.empty:
+                all_dataframes.append(df)
+                print(f"   ✅ 爬取成功: {len(df)} 条数据")
+            else:
+                print(f"   ⚠️ 该 URL 未获取到数据,跳过")
+
+        # 检查是否有数据
+        if not all_dataframes:
+            raise HTTPException(status_code=404, detail="所有 URL 均未能爬取到数据")
+
+        # 合并所有 DataFrame
+        print(f"\n🔗 正在合并数据...")
+        if len(all_dataframes) == 1:
+            final_df = all_dataframes[0]
+            print(f"   只有一个数据源,无需合并")
+        else:
+            # 检查所有 DataFrame 的列是否一致
+            first_columns = list(all_dataframes[0].columns)
+
+            # 对齐所有 DataFrame 的列顺序
+            aligned_dataframes = [all_dataframes[0]]
+            for idx, df in enumerate(all_dataframes[1:], 2):
+                if list(df.columns) != first_columns:
+                    print(f"   ⚠️ 警告: 第 {idx} 个 DataFrame 的列名与第一个不一致")
+                    print(f"      第1个列: {first_columns[:3]}...")
+                    print(f"      第{idx}个列: {list(df.columns)[:3]}...")
+                    # 只保留共同的列,并按第一个 DataFrame 的顺序排列
+                    common_cols = [col for col in first_columns if col in df.columns]
+                    aligned_dataframes.append(df[common_cols])
+                else:
+                    aligned_dataframes.append(df)
+
+            # 使用 concat 合并,忽略索引
+            final_df = pd.concat(aligned_dataframes, ignore_index=True)
+            print(f"   合并前总数: {len(final_df)} 条")
+
+            # 去重(根据第一列,通常是 data-row-key)
+            if len(final_df.columns) > 0:
+                first_column = final_df.columns[0]
+                final_df = final_df.drop_duplicates(subset=[first_column], keep='first')
+                print(f"   去重后总数: {len(final_df)} 条")
+
+        # 创建 output 目录
+        output_dir = "output"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 生成文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"tiktok_达人推荐_{req.product_name}_{timestamp}.xlsx"
+        filepath = os.path.join(output_dir, filename)
+
+        # 导出 Excel
+        print(f"\n💾 正在导出 Excel...")
+        final_df.to_excel(filepath, index=False, engine='openpyxl')
+        print(f"   ✅ 导出成功: {filepath}")
 
         return {
             "success": True,
-            "data": data_dict,
-            "row_count": len(data_dict),
-            "column_count": len(df.columns),
-            "columns": list(df.columns),
-            "message": f"成功爬取 {len(data_dict)} 条数据"
+            "filepath": filepath,
+            "total_rows": len(final_df),
+            "source_count": len(req.urls),
+            "scraped_count": len(all_dataframes),
+            "message": f"成功导出 {len(final_df)} 个达人数据到 {filename}"
         }
 
     except PlaywrightError as e:
@@ -381,14 +442,19 @@ async def get_table_data_as_dataframe(url, max_pages=None):
             else:
                 page_url = f"{base_url}?page={page_num}"
 
-            # 导航到当前页
-            await _page.goto(page_url)
+            print(f"   📄 正在爬取第 {page_num}/{max_pages} 页...")
+            if page_num <= 2:  # 只打印前两页的完整 URL
+                print(f"      URL: {page_url}")
 
-            # 等待页面加载完成
-            await _page.wait_for_load_state('networkidle')
+            # 导航到当前页
+            await _page.goto(page_url, wait_until="networkidle", timeout=60000)
+
+            # 额外等待,确保页面完全加载
+            await asyncio.sleep(1)
 
             # 滚动到页面底部以触发懒加载
             await _page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(0.5)
 
             # 查找class="ant-table-container"的元素
             table_container = await _page.query_selector('.ant-table-container')
@@ -420,10 +486,14 @@ async def get_table_data_as_dataframe(url, max_pages=None):
                     # 检查是否是表头行（没有data-row-key属性）
                     if not row_key:
                         if page_num == 1:  # 只在第一页时保存表头
-                            headers = row_data
-                            # 为表头添加data-row-key列名
-                            if len(headers) > 0:
-                                headers.append('data-row-key')
+                            # 只在第一次遇到表头时保存(避免重复)
+                            if not headers:
+                                headers = row_data.copy()  # 使用 copy 避免引用问题
+                                # 为表头添加data-row-key列名
+                                if len(headers) > 0:
+                                    headers.append('data-row-key')
+                                print(f"      ✓ 提取表头: {len(headers)} 列")
+                                print(f"         前5列: {headers[:5]}")
                         # 跳过所有页面的表头行，不添加到page_data中
                         continue
                     else:
@@ -433,17 +503,42 @@ async def get_table_data_as_dataframe(url, max_pages=None):
 
             # 如果当前页没有数据，说明已经到最后一页了
             if not page_data:
+                print(f"      ⚠️ 第 {page_num} 页没有数据,停止爬取")
                 break
+
+            # 检查是否与上一页数据重复(用于调试)
+            if page_num > 1 and page_data:
+                # 比较第一条数据的 data-row-key
+                current_first_key = page_data[0][-1] if page_data[0] else None
+                previous_first_key = all_data[-1][-1] if all_data else None
+                if current_first_key and current_first_key == previous_first_key:
+                    print(f"      ⚠️ 警告: 第 {page_num} 页的数据与第 {page_num-1} 页重复!")
+                    print(f"         重复的 data-row-key: {current_first_key}")
 
             # 将当前页数据添加到总数据中
             all_data.extend(page_data)
             total_rows += len(page_data)
+            print(f"      ✓ 本页获取 {len(page_data)} 条数据,累计 {total_rows} 条")
 
         # 如果没有获取到任何数据，返回None
         if not all_data:
             return None
 
         # 创建DataFrame
+        print(f"\n📋 正在创建 DataFrame...")
+        print(f"   表头数量: {len(headers)}")
+        print(f"   表头: {headers[:5]}..." if len(headers) > 5 else f"   表头: {headers}")
+        print(f"   数据行数: {len(all_data)}")
+        if all_data:
+            print(f"   每行数据长度: {len(all_data[0])}")
+
+        # 检查表头是否有重复
+        if len(headers) != len(set(headers)):
+            print(f"   ⚠️ 警告: 表头中有重复的列名!")
+            from collections import Counter
+            duplicates = [name for name, count in Counter(headers).items() if count > 1]
+            print(f"   重复的列名: {duplicates}")
+
         df = pd.DataFrame(all_data, columns=headers)
 
         # 清洗"带货品类"列的数据
