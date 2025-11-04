@@ -16,6 +16,7 @@ import sys
 import re
 from datetime import datetime
 import os
+import json
 
 # 导入路径设置
 sys.path.insert(0, '.')
@@ -223,9 +224,9 @@ async def get_max_page():
 @app.post("/scrape")
 async def scrape_pages(req: ScrapeRequest):
     """
-    爬取多个 URL 的达人数据,合并去重后导出为 Excel 文件 (Async)
+    爬取多个 URL 的达人数据,提取 data-row-key 并保存到 JSON 文件 (Async)
 
-    支持多个排序维度的 URL,自动合并数据并去重,最终导出为单个 Excel 文件。
+    支持多个排序维度的 URL,自动合并数据并去重,最终保存为 JSON 文件。
     """
     check_initialized()
 
@@ -235,57 +236,31 @@ async def scrape_pages(req: ScrapeRequest):
         print(f"   - 每个 URL 最多爬取: {req.max_pages} 页")
         print(f"   - 商品名称: {req.product_name}")
 
-        # 存储所有爬取的 DataFrame
-        all_dataframes = []
+        # 存储所有爬取的 data-row-key
+        all_row_keys = []
 
         # 依次爬取每个 URL
         for idx, url in enumerate(req.urls, 1):
             print(f"\n🔄 正在爬取第 {idx}/{len(req.urls)} 个 URL...")
             print(f"   URL: {url}")
 
-            df = await get_table_data_as_dataframe(url=url, max_pages=req.max_pages)
+            row_keys = await get_data_row_keys(url=url, max_pages=req.max_pages)
 
-            if df is not None and not df.empty:
-                all_dataframes.append(df)
-                print(f"   ✅ 爬取成功: {len(df)} 条数据")
+            if row_keys:
+                all_row_keys.extend(row_keys)
+                print(f"   ✅ 爬取成功: {len(row_keys)} 个 data-row-key")
             else:
                 print(f"   ⚠️ 该 URL 未获取到数据,跳过")
 
         # 检查是否有数据
-        if not all_dataframes:
+        if not all_row_keys:
             raise HTTPException(status_code=404, detail="所有 URL 均未能爬取到数据")
 
-        # 合并所有 DataFrame
-        print(f"\n🔗 正在合并数据...")
-        if len(all_dataframes) == 1:
-            final_df = all_dataframes[0]
-            print(f"   只有一个数据源,无需合并")
-        else:
-            # 检查所有 DataFrame 的列是否一致
-            first_columns = list(all_dataframes[0].columns)
-
-            # 对齐所有 DataFrame 的列顺序
-            aligned_dataframes = [all_dataframes[0]]
-            for idx, df in enumerate(all_dataframes[1:], 2):
-                if list(df.columns) != first_columns:
-                    print(f"   ⚠️ 警告: 第 {idx} 个 DataFrame 的列名与第一个不一致")
-                    print(f"      第1个列: {first_columns[:3]}...")
-                    print(f"      第{idx}个列: {list(df.columns)[:3]}...")
-                    # 只保留共同的列,并按第一个 DataFrame 的顺序排列
-                    common_cols = [col for col in first_columns if col in df.columns]
-                    aligned_dataframes.append(df[common_cols])
-                else:
-                    aligned_dataframes.append(df)
-
-            # 使用 concat 合并,忽略索引
-            final_df = pd.concat(aligned_dataframes, ignore_index=True)
-            print(f"   合并前总数: {len(final_df)} 条")
-
-            # 去重(根据第一列,通常是 data-row-key)
-            if len(final_df.columns) > 0:
-                first_column = final_df.columns[0]
-                final_df = final_df.drop_duplicates(subset=[first_column], keep='first')
-                print(f"   去重后总数: {len(final_df)} 条")
+        # 去重
+        print(f"\n🔗 正在去重...")
+        print(f"   去重前总数: {len(all_row_keys)} 个")
+        unique_row_keys = list(dict.fromkeys(all_row_keys))  # 保持顺序去重
+        print(f"   去重后总数: {len(unique_row_keys)} 个")
 
         # 创建 output 目录
         output_dir = "output"
@@ -293,21 +268,27 @@ async def scrape_pages(req: ScrapeRequest):
 
         # 生成文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"tiktok_达人推荐_{req.product_name}_{timestamp}.xlsx"
+        filename = f"tiktok_达人推荐_{req.product_name}_{timestamp}.json"
         filepath = os.path.join(output_dir, filename)
 
-        # 导出 Excel
-        print(f"\n💾 正在导出 Excel...")
-        final_df.to_excel(filepath, index=False, engine='openpyxl')
+        # 导出 JSON
+        print(f"\n💾 正在导出 JSON...")
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump({
+                "product_name": req.product_name,
+                "timestamp": timestamp,
+                "total_count": len(unique_row_keys),
+                "data_row_keys": unique_row_keys
+            }, f, ensure_ascii=False, indent=2)
         print(f"   ✅ 导出成功: {filepath}")
 
         return {
             "success": True,
             "filepath": filepath,
-            "total_rows": len(final_df),
+            "total_rows": len(unique_row_keys),
             "source_count": len(req.urls),
-            "scraped_count": len(all_dataframes),
-            "message": f"成功导出 {len(final_df)} 个达人数据到 {filename}"
+            "scraped_count": len(req.urls),
+            "message": f"成功导出 {len(unique_row_keys)} 个达人 data-row-key 到 {filename}"
         }
 
     except PlaywrightError as e:
@@ -396,6 +377,104 @@ async def get_max_page_number_async() -> int:
     except Exception as e:
         print(f"获取最大页数时出错: {e}")
         return 1
+
+
+async def get_data_row_keys(url: str, max_pages: int) -> List[str]:
+    """
+    循环获取多页的 data-row-key 属性值
+
+    Args:
+        url (str): 要爬取的起始 URL
+        max_pages (int): 最大爬取页数
+
+    Returns:
+        List[str]: data-row-key 列表，如果失败则返回空列表
+    """
+    try:
+        # 导航到指定 URL
+        print(f"🌐 正在访问: {url}")
+        await _page.goto(url, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(2)
+
+        # 获取当前URL
+        current_url = url
+
+        # 检查URL中是否已有page参数
+        if '&page=' in current_url:
+            # 如果已有page参数，替换为page=1
+            base_url = re.sub(r'&page=\d+', '', current_url)
+        else:
+            # 如果没有page参数，直接使用当前URL
+            base_url = current_url
+
+        # 汇总所有页面的 data-row-key
+        all_row_keys = []
+
+        for page_num in range(1, max_pages + 1):
+            # 构建当前页的URL
+            if '?' in base_url:
+                page_url = f"{base_url}&page={page_num}"
+            else:
+                page_url = f"{base_url}?page={page_num}"
+
+            print(f"   📄 正在爬取第 {page_num}/{max_pages} 页...")
+            if page_num <= 2:  # 只打印前两页的完整 URL
+                print(f"      URL: {page_url}")
+
+            # 导航到当前页
+            await _page.goto(page_url, wait_until="networkidle", timeout=60000)
+
+            # 额外等待,确保页面完全加载
+            await asyncio.sleep(1)
+
+            # 滚动到页面底部以触发懒加载
+            await _page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(0.5)
+
+            # 查找class="ant-table-container"的元素
+            table_container = await _page.query_selector('.ant-table-container')
+
+            if not table_container:
+                print(f"      ⚠️ 第 {page_num} 页未找到表格容器,停止爬取")
+                break
+
+            # 获取所有带有 data-row-key 属性的表格行
+            rows = await table_container.query_selector_all('tr[data-row-key]')
+
+            if not rows:
+                print(f"      ⚠️ 第 {page_num} 页没有数据行,停止爬取")
+                break
+
+            # 提取当前页的 data-row-key
+            page_row_keys = []
+            for row in rows:
+                row_key = await row.get_attribute('data-row-key')
+                if row_key:
+                    page_row_keys.append(row_key)
+
+            # 如果当前页没有数据，说明已经到最后一页了
+            if not page_row_keys:
+                print(f"      ⚠️ 第 {page_num} 页没有有效数据,停止爬取")
+                break
+
+            # 检查是否与上一页数据重复
+            if page_num > 1 and page_row_keys and all_row_keys:
+                if page_row_keys[0] == all_row_keys[-1]:
+                    print(f"      ⚠️ 警告: 第 {page_num} 页的数据与第 {page_num-1} 页重复!")
+                    print(f"         重复的 data-row-key: {page_row_keys[0]}")
+
+            # 将当前页数据添加到总数据中
+            all_row_keys.extend(page_row_keys)
+            print(f"      ✓ 本页获取 {len(page_row_keys)} 个 data-row-key,累计 {len(all_row_keys)} 个")
+
+        print(f"\n📋 data-row-key 获取完成: 共 {len(all_row_keys)} 个")
+        return all_row_keys
+
+    except Exception as e:
+        print(f"获取 data-row-key 时出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 async def get_table_data_as_dataframe(url, max_pages=None):

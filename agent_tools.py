@@ -356,18 +356,18 @@ class GetSortSuffixTool(BaseTool):
 
 
 class ScrapeInfluencersTool(BaseTool):
-    """爬取达人数据并导出 Excel 的工具"""
-    name: str = "scrape_and_export_excel"
+    """爬取达人数据并导出 JSON 的工具"""
+    name: str = "scrape_and_export_json"
     description: str = """
-    爬取 TikTok 达人数据并自动导出为 Excel 文件。
-    支持多个排序维度的 URL,会自动合并去重并导出为单个 Excel 文件。
+    爬取 TikTok 达人的 data-row-key 并自动导出为 JSON 文件。
+    支持多个排序维度的 URL,会自动合并去重并导出为单个 JSON 文件。
 
     参数:
     - urls: URL 列表(可以是多个排序维度的完整 URL)
     - max_pages: 每个 URL 最多爬取的页数
-    - product_name: 商品名称(用于 Excel 文件命名)
+    - product_name: 商品名称(用于 JSON 文件命名)
 
-    返回 Excel 文件路径和达人数量统计信息。
+    返回 JSON 文件路径和达人数量统计信息。
     """
     args_schema: type[BaseModel] = ScrapeInput
 
@@ -379,7 +379,7 @@ class ScrapeInfluencersTool(BaseTool):
             print(f"   - 每个 URL 最多: {max_pages} 页")
             print(f"   - 商品名称: {product_name}")
 
-            # 调用 API 爬取数据并导出 Excel
+            # 调用 API 爬取数据并导出 JSON
             result = call_api(
                 "/scrape",
                 method="POST",
@@ -405,15 +405,15 @@ class ScrapeInfluencersTool(BaseTool):
 
             print(f"✅ 爬取并导出成功!")
             print(f"   - 文件路径: {filepath}")
-            print(f"   - 达人总数: {total_rows}")
+            print(f"   - data-row-key 总数: {total_rows}")
 
             return f"""✅ 数据爬取和导出成功!
 📁 文件路径: {filepath}
-📊 达人总数: {total_rows}(已去重)
+📊 data-row-key 总数: {total_rows}(已去重)
 🔗 URL 数量: {source_count}
 ✓ 成功爬取: {scraped_count}/{source_count} 个 URL
 
-🎉 你可以在 output 文件夹中找到这个 Excel 文件!"""
+🎉 你可以在 output 文件夹中找到这个 JSON 文件!"""
 
         except Exception as e:
             import traceback
@@ -532,7 +532,7 @@ def get_all_tools() -> List[BaseTool]:
         AnalyzeQuantityTool(),         # 分析数量缺口
         SuggestAdjustmentsTool(),      # 生成调整建议
         GetSortSuffixTool(),
-        ScrapeInfluencersTool()        # 爬取并导出 Excel(已集成导出功能)
+        ScrapeInfluencersTool()        # 爬取并导出 JSON(只保存 data-row-key)
     ]
 
 
