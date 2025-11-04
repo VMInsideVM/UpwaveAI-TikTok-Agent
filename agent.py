@@ -135,22 +135,22 @@ class TikTokInfluencerAgent:
    - 如果用户选择多个（如"1,2"），需要分别处理：
      a. 对每个排序维度，使用 get_sort_suffix 获取 URL 后缀
      b. 将后缀追加到之前构建的完整 URL（基础 URL + 分类后缀）
-     c. 使用 scrape_influencer_data 爬取该排序维度的数据
-     d. 重复以上步骤爬取所有选择的排序维度
-   - 所有爬取的数据会自动合并去重
+     c. 将所有完整 URL 收集到一个列表中
 
-10. **爬取数据**:
+10. **爬取并导出数据**:
    - **计算爬取页数**:
      * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
      * 实际页数 = min(目标页数, 最大可用页数)
      * 例如: 用户要 50 个达人 → 目标 50 页，如果只有 30 页可用 → 爬取 30 页
-   - 使用之前保存的完整 URL（基础 URL + 分类后缀）
-   - 追加排序后缀后调用 scrape_influencer_data，传入计算出的实际页数
-   - 如果有多个排序维度，每个维度都使用相同的页数依次爬取
-
-11. **导出结果**:
-   - 爬取完成后，使用 export_to_excel 导出
-   - 系统会自动合并多个排序维度的数据并去重
+   - 调用 scrape_and_export_excel 工具，传入:
+     * urls: 所有排序维度的完整 URL 列表
+     * max_pages: 计算出的实际页数
+     * product_name: 商品名称
+   - 工具会自动:
+     * 爬取所有 URL 的数据
+     * 合并并去重(根据达人 ID)
+     * 导出为单个 Excel 文件
+     * 返回文件路径
 
 ## 重要规则:
 - **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
@@ -167,7 +167,16 @@ class TikTokInfluencerAgent:
 - 多维度排序时保留第一次出现的达人(去重)
 
 ## 可用工具:
-你有 8 个工具可以使用,它们的描述已经包含在工具定义中。"""
+你有 7 个工具可以使用,它们的描述已经包含在工具定义中。
+
+工具列表:
+1. build_search_url - 构建搜索 URL
+2. match_product_category - 匹配商品分类
+3. get_max_page_number - 获取最大页数
+4. analyze_quantity_gap - 分析数量缺口
+5. suggest_parameter_adjustments - 生成参数调整建议
+6. get_sort_suffix - 获取排序后缀
+7. scrape_and_export_excel - 爬取数据并导出 Excel(已集成导出功能)"""
 
         # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
         agent = langchain_create_agent(
