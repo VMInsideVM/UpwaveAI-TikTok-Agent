@@ -262,15 +262,19 @@ class CategoryMatchTool(BaseTool):
             if result is None:
                 return f"❌ 很抱歉,无法为商品 '{product_name}' 找到合适的分类。请检查商品名称或联系管理员。"
 
-            # 返回格式化的结果，包含推理过程
+            # 返回格式化的结果，包含推理过程和 URL 后缀
             reasoning = result.get('reasoning', '无')
+            url_suffix = result.get('url_suffix', '')
             return f"""✅ 分类匹配成功!
 - 商品: {product_name}
 - 一级分类: {result.get('main_category', '未知')}
 - 匹配层级: {result.get('level', '未知')}
 - 分类名称: {result.get('category_name', '未知')}
+- URL后缀: {url_suffix}
 
-💡 推理过程: {reasoning}"""
+💡 推理过程: {reasoning}
+
+⚠️ 重要: 构建完整URL时，必须将上面的URL后缀追加到基础URL后面"""
 
         except Exception as e:
             return f"❌ 匹配分类时出错: {str(e)}"
@@ -394,14 +398,18 @@ class ScrapeInfluencersTool(BaseTool):
 
             # 获取结果信息
             total_rows = result.get("total_rows", 0)
+            filepath = result.get("filepath", "")
 
             if total_rows == 0:
                 return "❌ 未能获取到达人数据，可能是筛选条件太严格或网络异常"
 
             print(f"✅ 搜索完成！")
 
+            # 返回包含文件路径的信息（用于 agent 传递给下一个工具）
             return f"""✅ 成功获取 {total_rows} 个达人候选
-📁 数据已保存，准备获取详细信息"""
+📁 数据已保存到: {filepath}
+
+请立即调用 process_influencer_detail 工具获取详细数据"""
 
         except Exception as e:
             import traceback
