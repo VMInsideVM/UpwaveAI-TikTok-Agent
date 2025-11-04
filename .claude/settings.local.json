@@ -8,7 +8,8 @@
       "Bash(python agent.py:*)",
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(powershell -Command:*)"
     ],
     "deny": [],
     "ask": []

@@ -5,7 +5,7 @@ Playwright 爬虫 API 服务 (Async 版本)
 """
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import uvicorn
@@ -459,6 +459,112 @@ async def process_influencer_list_endpoint(req: ProcessInfluencerListRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_msg)
+
+@app.get("/process_influencer_list_stream")
+async def process_influencer_list_stream_endpoint(
+    json_file_path: str,
+    cache_days: int = 3
+):
+    """
+    流式批量处理导出的 JSON 文件，获取达人详细数据 (SSE)
+
+    使用 Server-Sent Events 实时推送处理进度
+    """
+    check_initialized()
+
+    async def generate():
+        """SSE 事件生成器"""
+        try:
+            # 读取 JSON 文件
+            if not os.path.exists(json_file_path):
+                yield f"data: {json.dumps({'type': 'error', 'message': f'文件不存在: {json_file_path}'})}\n\n"
+                return
+
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            data_row_keys = data.get("data_row_keys", [])
+            product_name = data.get("product_name", "未知商品")
+            total_count = len(data_row_keys)
+
+            if total_count == 0:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'JSON 文件中没有达人数据'})}\n\n"
+                return
+
+            # 发送初始化事件
+            yield f"data: {json.dumps({'type': 'init', 'total': total_count, 'product_name': product_name})}\n\n"
+
+            # 统计信息
+            cached_count = 0
+            fetched_count = 0
+            failed_count = 0
+            failed_ids = []
+
+            start_time = datetime.now()
+
+            # 创建 influencer 目录
+            influencer_dir = "influencer"
+            os.makedirs(influencer_dir, exist_ok=True)
+
+            # 遍历每个达人
+            for idx, influencer_id in enumerate(data_row_keys, 1):
+                # 检查缓存
+                cached_path = check_influencer_cache(influencer_id, cache_days)
+                if cached_path:
+                    cached_count += 1
+                else:
+                    # 重新爬取
+                    try:
+                        result = await fetch_influencer_detail_async(influencer_id)
+                        if result["success"]:
+                            fetched_count += 1
+                        else:
+                            failed_ids.append(influencer_id)
+                            failed_count += 1
+                    except Exception as e:
+                        failed_ids.append(influencer_id)
+                        failed_count += 1
+
+                    # 间隔延迟
+                    if idx < total_count:
+                        await asyncio.sleep(2)
+
+                # 推送进度事件
+                elapsed = (datetime.now() - start_time).total_seconds()
+                yield f"data: {json.dumps({
+                    'type': 'progress',
+                    'current': idx,
+                    'total': total_count,
+                    'success': fetched_count,
+                    'cached': cached_count,
+                    'failed': failed_count,
+                    'elapsed_seconds': int(elapsed)
+                })}\n\n"
+
+            # 计算总耗时
+            end_time = datetime.now()
+            elapsed_time = end_time - start_time
+            elapsed_str = str(elapsed_time).split('.')[0]
+
+            # 发送完成事件
+            yield f"data: {json.dumps({
+                'type': 'complete',
+                'stats': {
+                    'total': total_count,
+                    'success': fetched_count,
+                    'cached': cached_count,
+                    'failed': failed_count,
+                    'elapsed_time': elapsed_str,
+                    'failed_ids': failed_ids
+                }
+            })}\n\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': f'处理失败: {str(e)}'})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 # ============================================================================
 # 异步爬取函数（从 main.py 移植）

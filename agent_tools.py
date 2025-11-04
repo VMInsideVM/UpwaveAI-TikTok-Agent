@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 import pandas as pd
 from datetime import datetime
 import os
+import time
+import json
 
 # 导入现有函数（非 Playwright 相关）
 from main import (
@@ -267,7 +269,6 @@ class CategoryMatchTool(BaseTool):
 - 一级分类: {result.get('main_category', '未知')}
 - 匹配层级: {result.get('level', '未知')}
 - 分类名称: {result.get('category_name', '未知')}
-- URL后缀: {result.get('url_suffix', '')}
 
 💡 推理过程: {reasoning}"""
 
@@ -356,28 +357,25 @@ class GetSortSuffixTool(BaseTool):
 
 
 class ScrapeInfluencersTool(BaseTool):
-    """爬取达人数据并导出 JSON 的工具"""
+    """搜索并保存达人候选列表的工具"""
     name: str = "scrape_and_export_json"
     description: str = """
-    爬取 TikTok 达人的 data-row-key 并自动导出为 JSON 文件。
-    支持多个排序维度的 URL,会自动合并去重并导出为单个 JSON 文件。
+    根据筛选条件搜索 TikTok 达人候选并保存列表。
+    支持多个排序维度的 URL,会自动合并去重。
 
     参数:
     - urls: URL 列表(可以是多个排序维度的完整 URL)
     - max_pages: 每个 URL 最多爬取的页数
-    - product_name: 商品名称(用于 JSON 文件命名)
+    - product_name: 商品名称(用于数据标识)
 
-    返回 JSON 文件路径和达人数量统计信息。
+    返回达人候选数量统计信息。
     """
     args_schema: type[BaseModel] = ScrapeInput
 
     def _run(self, urls: List[str], max_pages: int, product_name: str) -> str:
         """执行数据爬取和导出（通过 API）"""
         try:
-            print(f"📊 开始爬取并导出数据...")
-            print(f"   - URL 数量: {len(urls)}")
-            print(f"   - 每个 URL 最多: {max_pages} 页")
-            print(f"   - 商品名称: {product_name}")
+            print(f"📊 开始搜索达人候选...")
 
             # 调用 API 爬取数据并导出 JSON
             result = call_api(
@@ -392,34 +390,24 @@ class ScrapeInfluencersTool(BaseTool):
             )
 
             if not result.get("success"):
-                return "❌ 未能爬取到数据,可能是筛选条件太严格或网站响应异常"
+                return "❌ 未能获取到达人数据，可能是筛选条件太严格或网络异常"
 
             # 获取结果信息
-            filepath = result.get("filepath", "")
             total_rows = result.get("total_rows", 0)
-            source_count = result.get("source_count", 0)
-            scraped_count = result.get("scraped_count", 0)
 
             if total_rows == 0:
-                return "❌ 未能爬取到数据,可能是筛选条件太严格或网站响应异常"
+                return "❌ 未能获取到达人数据，可能是筛选条件太严格或网络异常"
 
-            print(f"✅ 爬取并导出成功!")
-            print(f"   - 文件路径: {filepath}")
-            print(f"   - data-row-key 总数: {total_rows}")
+            print(f"✅ 搜索完成！")
 
-            return f"""✅ 数据爬取和导出成功!
-📁 文件路径: {filepath}
-📊 data-row-key 总数: {total_rows}(已去重)
-🔗 URL 数量: {source_count}
-✓ 成功爬取: {scraped_count}/{source_count} 个 URL
-
-🎉 你可以在 output 文件夹中找到这个 JSON 文件!"""
+            return f"""✅ 成功获取 {total_rows} 个达人候选
+📁 数据已保存，准备获取详细信息"""
 
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
             print(f"详细错误信息:\n{error_details}")
-            return f"❌ 爬取数据失败: {str(e)}"
+            return f"❌ 搜索达人失败: {str(e)}"
 
 
 class AnalyzeQuantityInput(BaseModel):
@@ -531,96 +519,145 @@ class ProcessInfluencerListTool(BaseTool):
     """批量获取达人详细数据的工具"""
     name: str = "process_influencer_detail"
     description: str = """
-    根据导出的 JSON 文件，批量获取达人详细数据并保存到 influencer 目录。
+    批量获取达人候选的详细信息，包含粉丝画像、带货数据等。
 
     功能：
-    - 读取 JSON 文件中的 data_row_keys（达人 ID 列表）
-    - 自动检查 influencer 目录中的缓存（默认 3 天有效）
-    - 顺序爬取缺失/过期的达人详情（避免触发反爬）
-    - 保存到 influencer/{id}.json，包含完整的 API 响应数据
+    - 自动检查已有数据缓存（默认 3 天有效）
+    - 批量获取缺失或过期的达人详情
+    - 实时显示处理进度和预估完成时间
 
     参数：
-    - json_file_path: JSON 文件路径（如 output/tiktok_达人推荐_女士香水_20251104_165214.json）
-    - cache_days: 缓存有效天数（可选，默认 3 天）
+    - json_file_path: 之前保存的达人候选列表路径
+    - cache_days: 数据有效天数（可选，默认 3 天）
 
     注意：
-    - 这是一个耗时操作，处理大量达人时可能需要数分钟到数小时
-    - 每个达人需要 3-5 秒爬取，加上 2 秒间隔延迟
-    - 单个失败不影响整体流程，会继续处理其他达人
-    - 返回详细的统计信息（缓存/获取/失败数量）
+    - 这是一个耗时操作，大量达人可能需要数分钟到数小时
+    - 单个达人获取失败不影响整体流程
+    - 自动显示实时进度条和统计信息
     """
     args_schema: type[BaseModel] = ProcessInfluencerListInput
 
     def _run(self, json_file_path: str, cache_days: int = 3) -> str:
-        """执行批量处理（通过 API）"""
+        """执行批量处理（流式接收，实时显示进度）"""
         try:
             print(f"📊 开始批量获取达人详细数据...")
-            print(f"   - 文件: {json_file_path}")
-            print(f"   - 缓存有效期: {cache_days} 天")
 
             # 验证文件存在
             if not os.path.exists(json_file_path):
-                return f"❌ 文件不存在: {json_file_path}"
+                return f"❌ 文件不存在"
 
-            # 调用 API 批量处理
-            # 注意：这可能是一个非常耗时的操作
-            result = call_api(
-                "/process_influencer_list",
-                method="POST",
-                data={
-                    "json_file_path": json_file_path,
-                    "cache_days": cache_days
-                },
-                timeout=3600  # 设置 1 小时超时（处理大量达人可能很耗时）
-            )
+            # 使用流式 API
+            url = f"{API_BASE_URL}/process_influencer_list_stream"
+            params = {
+                "json_file_path": json_file_path,
+                "cache_days": cache_days
+            }
 
-            if not result.get("success"):
-                return f"❌ 批量处理失败: {result.get('message', '未知错误')}"
+            print(f"⏳ 正在处理，请稍候...\n")
 
-            # 获取统计信息
-            total_count = result.get("total_count", 0)
-            cached_count = result.get("cached_count", 0)
-            fetched_count = result.get("fetched_count", 0)
-            failed_count = result.get("failed_count", 0)
-            failed_ids = result.get("failed_ids", [])
-            elapsed_time = result.get("elapsed_time", "未知")
+            start_time = time.time()
+            last_percent = -1
+            stats = None
 
-            print(f"✅ 批量处理完成!")
-            print(f"   - 总数: {total_count}")
-            print(f"   - 使用缓存: {cached_count}")
-            print(f"   - 重新获取: {fetched_count}")
-            print(f"   - 失败: {failed_count}")
-            print(f"   - 耗时: {elapsed_time}")
+            # 流式接收进度
+            with requests.get(url, params=params, stream=True, timeout=3600) as response:
+                response.raise_for_status()
 
-            # 格式化返回消息
-            output = f"""✅ 达人详细数据批量处理完成！
+                for line in response.iter_lines():
+                    if not line:
+                        continue
 
-📊 统计信息：
-   • 总达人数: {total_count}
-   • 使用缓存: {cached_count}
-   • 重新获取: {fetched_count}
-   • 失败: {failed_count}
-   • 处理耗时: {elapsed_time}
+                    # 解析 SSE 事件
+                    line_str = line.decode('utf-8')
+                    if not line_str.startswith('data: '):
+                        continue
 
-📁 数据保存位置: influencer/ 目录
-   格式: influencer/{{达人ID}}.json"""
+                    event_data = line_str[6:]  # 移除 "data: " 前缀
+                    event = json.loads(event_data)
 
-            if failed_count > 0:
-                output += f"\n\n⚠️ 失败的达人 ID（共 {failed_count} 个）："
-                # 只显示前 10 个失败 ID
-                display_failed = failed_ids[:10]
-                for fid in display_failed:
-                    output += f"\n   - {fid}"
-                if len(failed_ids) > 10:
-                    output += f"\n   ... 还有 {len(failed_ids) - 10} 个"
+                    if event["type"] == "init":
+                        total = event["total"]
+                        print(f"⏳ 共需处理 {total} 个达人，请耐心等待\n")
 
-            return output
+                    elif event["type"] == "progress":
+                        current = event["current"]
+                        total = event["total"]
+                        success = event["success"]
+                        cached = event["cached"]
+                        failed = event["failed"]
+                        elapsed = event["elapsed_seconds"]
 
+                        # 计算进度
+                        percent = int(current / total * 100)
+
+                        # 每 10% 显示一次进度条
+                        if percent >= last_percent + 10 or current == total:
+                            last_percent = percent
+
+                            # 绘制进度条
+                            bar_len = 30
+                            filled = int(bar_len * percent / 100)
+                            bar = '█' * filled + '░' * (bar_len - filled)
+
+                            # 计算预估时间
+                            if current > 0 and elapsed > 0:
+                                avg_time = elapsed / current
+                                remaining = int((total - current) * avg_time)
+                                elapsed_str = self._format_time(elapsed)
+                                remaining_str = self._format_time(remaining)
+                                time_info = f"⏱️ 已用时: {elapsed_str} | 预计剩余: {remaining_str}"
+                            else:
+                                time_info = f"⏱️ 处理中..."
+
+                            print(f"处理进度: {bar} {percent}% ({current}/{total})")
+                            print(time_info)
+                            print(f"✓ 成功: {success}  |  ⚡ 缓存: {cached}  |  ✗ 失败: {failed}\n")
+
+                    elif event["type"] == "complete":
+                        stats = event["stats"]
+                        total_elapsed = time.time() - start_time
+                        print(f"处理进度: {'█' * 30} 100% ({stats['total']}/{stats['total']})")
+                        print(f"⏱️ 总耗时: {self._format_time(int(total_elapsed))}\n")
+
+                    elif event["type"] == "error":
+                        return f"❌ 处理失败: {event['message']}"
+
+            # 显示最终统计
+            if stats:
+                output = f"✅ 完成！\n"
+                output += f"   共处理 {stats['total']} 个达人\n"
+                output += f"   成功获取 {stats['success']} 个\n"
+                if stats['cached'] > 0:
+                    output += f"   使用缓存 {stats['cached']} 个\n"
+                if stats['failed'] > 0:
+                    output += f"   失败 {stats['failed']} 个\n"
+                output += f"\n📁 详细数据已保存，可供后续分析"
+                return output
+            else:
+                return "✅ 处理完成"
+
+        except requests.exceptions.Timeout:
+            return "❌ 处理超时，请稍后重试"
+        except requests.exceptions.ConnectionError:
+            return "❌ 无法连接到服务，请确认 API 服务已启动"
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
             print(f"详细错误信息:\n{error_details}")
             return f"❌ 批量处理失败: {str(e)}"
+
+    def _format_time(self, seconds: int) -> str:
+        """格式化时间显示"""
+        if seconds < 60:
+            return f"{seconds} 秒"
+        elif seconds < 3600:
+            minutes = seconds // 60
+            secs = seconds % 60
+            return f"{minutes} 分 {secs} 秒"
+        else:
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            return f"{hours} 小时 {minutes} 分"
 
 
 # ==================== 工具列表 ====================
@@ -634,7 +671,7 @@ def get_all_tools() -> List[BaseTool]:
         AnalyzeQuantityTool(),            # 分析数量缺口
         SuggestAdjustmentsTool(),         # 生成调整建议
         GetSortSuffixTool(),
-        ScrapeInfluencersTool(),          # 爬取并导出 JSON(只保存 data-row-key)
+        ScrapeInfluencersTool(),          # 搜索并保存达人候选
         ProcessInfluencerListTool()       # 批量获取达人详细数据
     ]
 
