@@ -564,7 +564,14 @@ async def process_influencer_list_stream_endpoint(
             traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'message': f'处理失败: {str(e)}'})}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"  # 禁用 nginx 缓冲
+        }
+    )
 
 # ============================================================================
 # 异步爬取函数（从 main.py 移植）
