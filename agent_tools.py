@@ -465,6 +465,12 @@ class AdjustmentSuggestionInput(BaseModel):
     current_count: int = Field(description="当前可用达人数量")
 
 
+class ProcessInfluencerListInput(BaseModel):
+    """处理达人列表的输入参数"""
+    json_file_path: str = Field(description="导出的 JSON 文件路径")
+    cache_days: int = Field(3, ge=1, le=30, description="缓存有效天数（1-30天，默认3天）")
+
+
 class SuggestAdjustmentsTool(BaseTool):
     """生成筛选条件调整建议的工具"""
     name: str = "suggest_parameter_adjustments"
@@ -521,6 +527,102 @@ class SuggestAdjustmentsTool(BaseTool):
             return f"❌ 生成调整建议时出错: {str(e)}"
 
 
+class ProcessInfluencerListTool(BaseTool):
+    """批量获取达人详细数据的工具"""
+    name: str = "process_influencer_detail"
+    description: str = """
+    根据导出的 JSON 文件，批量获取达人详细数据并保存到 influencer 目录。
+
+    功能：
+    - 读取 JSON 文件中的 data_row_keys（达人 ID 列表）
+    - 自动检查 influencer 目录中的缓存（默认 3 天有效）
+    - 顺序爬取缺失/过期的达人详情（避免触发反爬）
+    - 保存到 influencer/{id}.json，包含完整的 API 响应数据
+
+    参数：
+    - json_file_path: JSON 文件路径（如 output/tiktok_达人推荐_女士香水_20251104_165214.json）
+    - cache_days: 缓存有效天数（可选，默认 3 天）
+
+    注意：
+    - 这是一个耗时操作，处理大量达人时可能需要数分钟到数小时
+    - 每个达人需要 3-5 秒爬取，加上 2 秒间隔延迟
+    - 单个失败不影响整体流程，会继续处理其他达人
+    - 返回详细的统计信息（缓存/获取/失败数量）
+    """
+    args_schema: type[BaseModel] = ProcessInfluencerListInput
+
+    def _run(self, json_file_path: str, cache_days: int = 3) -> str:
+        """执行批量处理（通过 API）"""
+        try:
+            print(f"📊 开始批量获取达人详细数据...")
+            print(f"   - 文件: {json_file_path}")
+            print(f"   - 缓存有效期: {cache_days} 天")
+
+            # 验证文件存在
+            if not os.path.exists(json_file_path):
+                return f"❌ 文件不存在: {json_file_path}"
+
+            # 调用 API 批量处理
+            # 注意：这可能是一个非常耗时的操作
+            result = call_api(
+                "/process_influencer_list",
+                method="POST",
+                data={
+                    "json_file_path": json_file_path,
+                    "cache_days": cache_days
+                },
+                timeout=3600  # 设置 1 小时超时（处理大量达人可能很耗时）
+            )
+
+            if not result.get("success"):
+                return f"❌ 批量处理失败: {result.get('message', '未知错误')}"
+
+            # 获取统计信息
+            total_count = result.get("total_count", 0)
+            cached_count = result.get("cached_count", 0)
+            fetched_count = result.get("fetched_count", 0)
+            failed_count = result.get("failed_count", 0)
+            failed_ids = result.get("failed_ids", [])
+            elapsed_time = result.get("elapsed_time", "未知")
+
+            print(f"✅ 批量处理完成!")
+            print(f"   - 总数: {total_count}")
+            print(f"   - 使用缓存: {cached_count}")
+            print(f"   - 重新获取: {fetched_count}")
+            print(f"   - 失败: {failed_count}")
+            print(f"   - 耗时: {elapsed_time}")
+
+            # 格式化返回消息
+            output = f"""✅ 达人详细数据批量处理完成！
+
+📊 统计信息：
+   • 总达人数: {total_count}
+   • 使用缓存: {cached_count}
+   • 重新获取: {fetched_count}
+   • 失败: {failed_count}
+   • 处理耗时: {elapsed_time}
+
+📁 数据保存位置: influencer/ 目录
+   格式: influencer/{{达人ID}}.json"""
+
+            if failed_count > 0:
+                output += f"\n\n⚠️ 失败的达人 ID（共 {failed_count} 个）："
+                # 只显示前 10 个失败 ID
+                display_failed = failed_ids[:10]
+                for fid in display_failed:
+                    output += f"\n   - {fid}"
+                if len(failed_ids) > 10:
+                    output += f"\n   ... 还有 {len(failed_ids) - 10} 个"
+
+            return output
+
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"详细错误信息:\n{error_details}")
+            return f"❌ 批量处理失败: {str(e)}"
+
+
 # ==================== 工具列表 ====================
 
 def get_all_tools() -> List[BaseTool]:
@@ -529,10 +631,11 @@ def get_all_tools() -> List[BaseTool]:
         BuildURLTool(),
         CategoryMatchTool(),
         GetMaxPageTool(),
-        AnalyzeQuantityTool(),         # 分析数量缺口
-        SuggestAdjustmentsTool(),      # 生成调整建议
+        AnalyzeQuantityTool(),            # 分析数量缺口
+        SuggestAdjustmentsTool(),         # 生成调整建议
         GetSortSuffixTool(),
-        ScrapeInfluencersTool()        # 爬取并导出 JSON(只保存 data-row-key)
+        ScrapeInfluencersTool(),          # 爬取并导出 JSON(只保存 data-row-key)
+        ProcessInfluencerListTool()       # 批量获取达人详细数据
     ]
 
 

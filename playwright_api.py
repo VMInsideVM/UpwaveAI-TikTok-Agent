@@ -14,7 +14,7 @@ import pandas as pd
 import asyncio
 import sys
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import json
 
@@ -50,6 +50,11 @@ class ScrapeRequest(BaseModel):
     urls: List[str] = Field(..., description="搜索页面 URL 列表(支持多个排序维度)")
     max_pages: int = Field(..., ge=1, le=100, description="每个 URL 的最大爬取页数（1-100）")
     product_name: str = Field(..., description="商品名称(用于文件命名)")
+
+class ProcessInfluencerListRequest(BaseModel):
+    """处理达人列表的请求参数"""
+    json_file_path: str = Field(..., description="导出的 JSON 文件路径")
+    cache_days: int = Field(3, ge=1, le=30, description="缓存有效天数（1-30天，默认3天）")
 
 class HealthResponse(BaseModel):
     """健康检查响应"""
@@ -129,6 +134,81 @@ def check_initialized():
             status_code=503,
             detail="Playwright 未初始化。请检查服务启动日志。"
         )
+
+def check_influencer_cache(influencer_id: str, cache_days: int) -> Optional[str]:
+    """
+    检查达人缓存是否存在且有效
+
+    Args:
+        influencer_id: 达人 ID (data-row-key)
+        cache_days: 缓存有效天数
+
+    Returns:
+        Optional[str]: 有效缓存文件路径，如果缓存不存在或已过期则返回 None
+    """
+    influencer_dir = "influencer"
+    filepath = os.path.join(influencer_dir, f"{influencer_id}.json")
+
+    # 检查文件是否存在
+    if not os.path.exists(filepath):
+        return None
+
+    try:
+        # 读取文件
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # 获取 capture_time 字段
+        capture_time_str = data.get("capture_time")
+        if not capture_time_str:
+            print(f"   ⚠️ 缓存文件缺少 capture_time 字段: {filepath}")
+            return None
+
+        # 解析时间（格式：2025-11-03 12:46:08）
+        capture_time = datetime.strptime(capture_time_str, "%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+
+        # 计算时间差
+        days_diff = (now - capture_time).days
+
+        if days_diff <= cache_days:
+            # 缓存有效
+            return filepath
+        else:
+            # 缓存过期
+            print(f"   ⏰ 缓存已过期 ({days_diff} 天前): {filepath}")
+            return None
+
+    except json.JSONDecodeError:
+        print(f"   ❌ 缓存文件格式错误: {filepath}")
+        return None
+    except ValueError as e:
+        print(f"   ❌ 时间格式解析失败: {e}")
+        return None
+    except Exception as e:
+        print(f"   ❌ 读取缓存文件出错: {e}")
+        return None
+
+def remove_show_fields(obj):
+    """
+    递归移除所有包含 'show' 的键（不区分大小写）
+
+    Args:
+        obj: 要处理的对象（dict, list, 或其他类型）
+
+    Returns:
+        处理后的对象
+    """
+    if isinstance(obj, dict):
+        return {
+            k: remove_show_fields(v)
+            for k, v in obj.items()
+            if 'show' not in k.lower()
+        }
+    elif isinstance(obj, list):
+        return [remove_show_fields(item) for item in obj]
+    else:
+        return obj
 
 # ============================================================================
 # API 端点
@@ -318,6 +398,68 @@ async def get_current_url():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/process_influencer_list")
+async def process_influencer_list_endpoint(req: ProcessInfluencerListRequest):
+    """
+    批量处理导出的 JSON 文件，获取达人详细数据 (Async)
+
+    根据 JSON 文件中的 data_row_keys 列表，批量获取达人详细信息。
+    自动检查本地缓存（influencer 目录），跳过未过期的数据，
+    只爬取缺失或过期的达人详情。
+
+    功能特性：
+    - 智能缓存：自动检查 capture_time，跳过未过期数据
+    - 顺序处理：逐个爬取，避免触发反爬机制
+    - 容错机制：单个失败不影响整体流程
+    - 详细统计：返回缓存/获取/失败的数量和具体 ID
+
+    参数：
+    - json_file_path: 导出的 JSON 文件路径（如 output/tiktok_达人推荐_女士香水_20251104_165214.json）
+    - cache_days: 缓存有效天数（1-30天，默认3天）
+
+    返回：
+    - total_count: 总达人数
+    - cached_count: 使用缓存的数量
+    - fetched_count: 重新获取的数量
+    - failed_count: 失败的数量
+    - failed_ids: 失败的达人 ID 列表
+    - elapsed_time: 处理耗时
+    """
+    check_initialized()
+
+    try:
+        print(f"\n📊 收到批量处理请求...")
+        print(f"   - 文件: {req.json_file_path}")
+        print(f"   - 缓存有效期: {req.cache_days} 天")
+
+        # 验证文件存在
+        if not os.path.exists(req.json_file_path):
+            raise HTTPException(status_code=404, detail=f"文件不存在: {req.json_file_path}")
+
+        # 调用批量处理函数
+        result = await process_influencer_list_async(
+            json_file_path=req.json_file_path,
+            cache_days=req.cache_days
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("message", "处理失败"))
+
+        return result
+
+    except HTTPException:
+        raise
+    except PlaywrightError as e:
+        error_msg = f"Playwright 错误: {str(e)}"
+        print(f"❌ {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+    except Exception as e:
+        error_msg = f"批量处理失败: {str(e)}"
+        print(f"❌ {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_msg)
+
 # ============================================================================
 # 异步爬取函数（从 main.py 移植）
 # ============================================================================
@@ -377,6 +519,423 @@ async def get_max_page_number_async() -> int:
     except Exception as e:
         print(f"获取最大页数时出错: {e}")
         return 1
+
+
+async def process_influencer_list_async(json_file_path: str, cache_days: int) -> Dict[str, Any]:
+    """
+    批量处理导出的 JSON 文件，获取达人详细数据
+
+    Args:
+        json_file_path: 导出的 JSON 文件路径
+        cache_days: 缓存有效天数
+
+    Returns:
+        Dict: 包含处理统计信息的结果字典
+    """
+    try:
+        print(f"📊 开始批量处理达人列表...")
+        print(f"   - 文件路径: {json_file_path}")
+        print(f"   - 缓存有效期: {cache_days} 天")
+
+        # 读取 JSON 文件
+        if not os.path.exists(json_file_path):
+            return {
+                "success": False,
+                "message": f"文件不存在: {json_file_path}"
+            }
+
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        data_row_keys = data.get("data_row_keys", [])
+        product_name = data.get("product_name", "未知商品")
+        total_count = len(data_row_keys)
+
+        if total_count == 0:
+            return {
+                "success": False,
+                "message": "JSON 文件中没有 data-row-keys"
+            }
+
+        print(f"   - 商品名称: {product_name}")
+        print(f"   - 达人总数: {total_count}")
+        print()
+
+        # 统计信息
+        cached_count = 0
+        fetched_count = 0
+        failed_count = 0
+        failed_ids = []
+
+        start_time = datetime.now()
+
+        # 创建 influencer 目录（如不存在）
+        influencer_dir = "influencer"
+        os.makedirs(influencer_dir, exist_ok=True)
+
+        # 遍历每个 data-row-key（顺序处理）
+        for idx, influencer_id in enumerate(data_row_keys, 1):
+            print(f"[{idx}/{total_count}] 处理达人 ID: {influencer_id}")
+
+            # 检查缓存
+            cached_path = check_influencer_cache(influencer_id, cache_days)
+            if cached_path:
+                print(f"   ✓ 使用缓存: {cached_path}")
+                cached_count += 1
+                continue
+
+            # 重新爬取
+            try:
+                result = await fetch_influencer_detail_async(influencer_id)
+                if result["success"]:
+                    fetched_count += 1
+                    print(f"   ✅ 成功获取并保存")
+                else:
+                    failed_ids.append(influencer_id)
+                    failed_count += 1
+                    print(f"   ❌ 失败: {result['message']}")
+            except Exception as e:
+                print(f"   ❌ 异常: {e}")
+                failed_ids.append(influencer_id)
+                failed_count += 1
+
+            # 间隔延迟（避免频繁请求，防止反爬）
+            if idx < total_count:  # 不是最后一个才延迟
+                await asyncio.sleep(2)
+
+        end_time = datetime.now()
+        elapsed_time = end_time - start_time
+        elapsed_str = str(elapsed_time).split('.')[0]  # 去掉微秒
+
+        print()
+        print(f"✅ 批量处理完成!")
+        print(f"   - 总数: {total_count}")
+        print(f"   - 使用缓存: {cached_count}")
+        print(f"   - 重新获取: {fetched_count}")
+        print(f"   - 失败: {failed_count}")
+        print(f"   - 耗时: {elapsed_str}")
+
+        return {
+            "success": True,
+            "total_count": total_count,
+            "cached_count": cached_count,
+            "fetched_count": fetched_count,
+            "failed_count": failed_count,
+            "failed_ids": failed_ids,
+            "elapsed_time": elapsed_str,
+            "message": f"处理完成：{cached_count} 个使用缓存，{fetched_count} 个重新获取，{failed_count} 个失败"
+        }
+
+    except json.JSONDecodeError:
+        return {
+            "success": False,
+            "message": f"JSON 文件格式错误: {json_file_path}"
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "message": f"批量处理失败: {str(e)}"
+        }
+
+
+async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
+    """
+    异步获取单个达人的详细数据
+
+    Args:
+        influencer_id: 达人 ID (data-row-key)
+
+    Returns:
+        Dict: 包含 success 和 message 的结果字典
+    """
+    try:
+        # 构建详情页 URL
+        target_url = f"https://www.fastmoss.com/zh/influencer/detail/{influencer_id}"
+        print(f"   🌐 正在访问达人详情页: {target_url}")
+
+        # 定义所有支持的API类型
+        api_types = [
+            'datalist', 'baseInfo', 'authorIndex', 'getStatInfo',
+            'fansPortrait', 'labelList', 'cargoStat', 'cargoSummary'
+        ]
+
+        # 存储所有响应数据，按类型分组
+        all_responses = {api_type: [] for api_type in api_types}
+
+        # 跟踪只需要保存一次的API类型
+        captured_once = {'baseInfo': False, 'authorIndex': False, 'getStatInfo': False, 'categoryList': False}
+
+        async def handle_response(response):
+            """处理响应事件（异步版本）"""
+            url = response.url
+
+            # 检查URL是否匹配任何目标API类型
+            matched_type = None
+            for api_type in api_types:
+                if api_type == 'datalist' and 'dataList?uid=' in url:
+                    matched_type = 'datalist'
+                    break
+                elif api_type == 'baseInfo' and 'baseInfo' in url:
+                    matched_type = 'baseInfo'
+                    break
+                elif api_type == 'authorIndex' and 'authorIndex' in url:
+                    matched_type = 'authorIndex'
+                    break
+                elif api_type == 'getStatInfo' and 'getStatInfo' in url:
+                    matched_type = 'getStatInfo'
+                    break
+                elif api_type == 'fansPortrait' and 'fansPortrait' in url:
+                    matched_type = 'fansPortrait'
+                    break
+                elif api_type == 'labelList' and 'labelList' in url:
+                    matched_type = 'labelList'
+                    break
+                elif api_type == 'cargoStat' and 'cargoStat' in url:
+                    matched_type = 'cargoStat'
+                    break
+                elif api_type == 'cargoSummary' and 'cargoSummary' in url:
+                    matched_type = 'cargoSummary'
+                    break
+
+            if matched_type:
+                # 对于baseInfo、authorIndex、getStatInfo、categoryList，如果已经捕获过一次就跳过
+                if matched_type in captured_once:
+                    if captured_once[matched_type]:
+                        return
+                    else:
+                        captured_once[matched_type] = True
+
+                # 过滤date_type=28的请求
+                if matched_type in ['datalist', 'fansPortrait']:
+                    if 'date_type=28' in url:
+                        return
+
+                response_info = {
+                    'url': url,
+                    'status': response.status,
+                    'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S"),
+                    'api_type': matched_type
+                }
+
+                try:
+                    if response.status == 200:
+                        data = await response.json()
+                        response_info['data'] = data
+
+                        # 提取URL参数
+                        from urllib.parse import urlparse, parse_qs
+                        parsed_url = urlparse(url)
+                        query_params = parse_qs(parsed_url.query)
+
+                        # 根据API类型提取特定参数
+                        common_params = ['uid', 'id', 'author_id', 'page', 'size', 'limit', 'offset']
+                        for param in common_params:
+                            if param in query_params:
+                                response_info[param] = query_params[param][0]
+
+                        # 对于datalist类型，额外提取field_type参数
+                        if matched_type == 'datalist':
+                            field_type = query_params.get('field_type', [''])[0]
+                            if field_type:
+                                response_info['field_type'] = field_type
+
+                    else:
+                        response_info['error'] = f"HTTP {response.status}"
+
+                except Exception as e:
+                    response_info['error'] = str(e)
+                    try:
+                        text_data = await response.text()
+                        response_info['text'] = text_data
+                    except:
+                        pass
+
+                all_responses[matched_type].append(response_info)
+
+        # 设置响应监听器
+        _page.on("response", handle_response)
+
+        # 访问目标网页
+        await _page.goto(target_url, wait_until="networkidle", timeout=60000)
+
+        # 执行全面滚动策略
+        page_height = await _page.evaluate("document.body.scrollHeight")
+
+        # 慢速滚动策略：分步滚动，每次滚动300px
+        scroll_step = 300
+        current_position = 0
+        scroll_count = 0
+
+        while current_position < page_height:
+            scroll_count += 1
+            next_position = min(current_position + scroll_step, page_height)
+
+            # 滚动到下一个位置
+            await _page.evaluate(f"window.scrollTo(0, {next_position})")
+            await asyncio.sleep(0.5)
+
+            # 检查是否有"加载更多"按钮并点击
+            try:
+                load_more_selectors = [
+                    'button:has-text("加载更多")',
+                    'button:has-text("Load More")',
+                    'button:has-text("查看更多")',
+                    'button:has-text("显示更多")',
+                    '.load-more',
+                    '.load-more-btn',
+                    '[data-testid="load-more"]',
+                    '.ant-btn:has-text("加载更多")',
+                    '.ant-btn:has-text("查看更多")'
+                ]
+
+                for selector in load_more_selectors:
+                    try:
+                        load_more_btn = await _page.query_selector(selector)
+                        if load_more_btn and await load_more_btn.is_visible():
+                            await load_more_btn.click()
+                            await asyncio.sleep(2)
+                            new_height = await _page.evaluate("document.body.scrollHeight")
+                            if new_height > page_height:
+                                page_height = new_height
+                            break
+                    except:
+                        continue
+
+            except:
+                pass
+
+            current_position = next_position
+
+            # 每滚动10次检查一次页面高度
+            if scroll_count % 10 == 0:
+                new_height = await _page.evaluate("document.body.scrollHeight")
+                if new_height > page_height:
+                    page_height = new_height
+
+        # 滚动到顶部
+        await _page.evaluate("window.scrollTo(0, 0)")
+        await asyncio.sleep(2)
+
+        # 最终滚动到底部
+        await _page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await asyncio.sleep(3)
+
+        # 点击近90天选项
+        try:
+            ninety_days_spans = await _page.locator("label.ant-radio-button-wrapper:has-text('近90天')").all()
+            for span in ninety_days_spans:
+                await span.click()
+                await asyncio.sleep(1)
+        except:
+            pass
+
+        # 处理下拉菜单
+        async def process_dropdown_menu(section_name):
+            """处理指定区域的下拉菜单选项"""
+            try:
+                section_div = _page.locator(f'div.flex.justify-between.items-center:has-text("{section_name}")').first
+                selector_div = section_div.locator('div.ant-select-selector').first
+
+                # 点击展开下拉菜单
+                await selector_div.click()
+                await asyncio.sleep(1)
+
+                # 获取下拉菜单的所有子div元素
+                if section_name == "近期数据":
+                    dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').first
+                elif section_name == "带货数据":
+                    dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').nth(1)
+                else:
+                    return
+
+                child_divs = await dropdown_holder.locator('> div').all()
+                total_divs = len(child_divs)
+
+                # 从第二个div开始遍历
+                for i in range(1, total_divs):
+                    child_divs = await dropdown_holder.locator('> div').all()
+                    await child_divs[i].click()
+                    await asyncio.sleep(1.5)
+
+                    # 如果不是最后一个元素，重新点击selector展开下拉菜单
+                    if i < total_divs - 1:
+                        await selector_div.click()
+                        await asyncio.sleep(1)
+                        if section_name == "近期数据":
+                            dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').first
+                        elif section_name == "带货数据":
+                            dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').nth(1)
+
+            except Exception as e:
+                print(f"   ⚠️ 处理{section_name}区域的下拉菜单时出错: {e}")
+
+        # 处理"近期数据"和"带货数据"区域
+        await process_dropdown_menu("近期数据")
+        await process_dropdown_menu("带货数据")
+
+        # 重组datalist数据：按field_type分组，只保留data字段
+        datalist_by_field_type = {}
+        if 'datalist' in all_responses:
+            for response in all_responses['datalist']:
+                field_type = response.get('field_type')
+                if field_type and 'data' in response:
+                    datalist_by_field_type[field_type] = response['data'].get('data', response['data'])
+
+        all_responses['datalist'] = datalist_by_field_type
+
+        # 对其他API类型也只保留data字段
+        api_types_to_simplify = [
+            'baseInfo', 'authorIndex', 'getStatInfo', 'fansPortrait',
+            'labelList', 'cargoStat', 'cargoSummary'
+        ]
+
+        for api_type in api_types_to_simplify:
+            if api_type in all_responses and all_responses[api_type]:
+                if isinstance(all_responses[api_type], list) and len(all_responses[api_type]) > 0:
+                    response = all_responses[api_type][0]
+                    if 'data' in response:
+                        all_responses[api_type] = response['data'].get('data', response['data'])
+
+        # 创建合并的数据结构
+        merged_data = {
+            'target_url': target_url,
+            'capture_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'total_requests': sum(len(responses) if isinstance(responses, list) else 1 for responses in all_responses.values()),
+            'api_responses': all_responses
+        }
+
+        # 删除所有'show'字段
+        merged_data_cleaned = remove_show_fields(merged_data)
+
+        # 保存到influencer文件夹
+        influencer_dir = "influencer"
+        os.makedirs(influencer_dir, exist_ok=True)
+
+        merged_filename = os.path.join(influencer_dir, f"{influencer_id}.json")
+        with open(merged_filename, 'w', encoding='utf-8') as f:
+            json.dump(merged_data_cleaned, f, ensure_ascii=False, indent=2)
+
+        print(f"   ✅ 达人数据已保存: {merged_filename}")
+
+        # 移除响应监听器
+        _page.remove_listener("response", handle_response)
+
+        return {
+            "success": True,
+            "message": f"成功获取达人 {influencer_id} 的详细数据",
+            "file_path": merged_filename
+        }
+
+    except Exception as e:
+        print(f"   ❌ 获取达人详细数据失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "message": f"获取失败: {str(e)}"
+        }
 
 
 async def get_data_row_keys(url: str, max_pages: int) -> List[str]:
