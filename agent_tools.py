@@ -567,20 +567,20 @@ class ProcessInfluencerListTool(BaseTool):
             last_percent = -1
             stats = None
 
-            # 流式接收进度
+            # 流式接收进度（使用 decode_unicode=True 立即解码）
             with requests.get(url, params=params, stream=True, timeout=3600) as response:
                 response.raise_for_status()
 
-                for line in response.iter_lines():
+                # 使用 iter_lines(decode_unicode=True) 立即获取行
+                for line in response.iter_lines(decode_unicode=True):
                     if not line:
                         continue
 
                     # 解析 SSE 事件
-                    line_str = line.decode('utf-8')
-                    if not line_str.startswith('data: '):
+                    if not line.startswith('data: '):
                         continue
 
-                    event_data = line_str[6:]  # 移除 "data: " 前缀
+                    event_data = line[6:]  # 移除 "data: " 前缀
                     event = json.loads(event_data)
 
                     if event["type"] == "init":
@@ -598,8 +598,13 @@ class ProcessInfluencerListTool(BaseTool):
                         # 计算进度
                         percent = int(current / total * 100)
 
-                        # 每 10% 显示一次进度条
-                        if percent >= last_percent + 10 or current == total:
+                        # 每 1% 或每个达人都显示进度
+                        should_display = (
+                            percent > last_percent or  # 每 1% 变化
+                            current == total  # 最后一个
+                        )
+
+                        if should_display:
                             last_percent = percent
 
                             # 绘制进度条
