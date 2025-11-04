@@ -1,15 +1,11 @@
 {
   "target_url": "https://www.fastmoss.com/zh/influencer/detail/7288986759428588590",
-  "capture_time": "2025-11-03 12:46:08",
+  "capture_time": "2025-11-04 18:03:30",
   "total_requests": 8,
   "api_responses": {
     "datalist": {
       "sold_count": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 2553
-          },
           {
             "key": "2025-08-06",
             "value": 1581
@@ -365,16 +361,16 @@
           {
             "key": "2025-11-02",
             "value": 7322
+          },
+          {
+            "key": "2025-11-03",
+            "value": 1052
           }
         ],
-        "total": 732827
+        "total": 731326
       },
       "follower": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 904
-          },
           {
             "key": "2025-08-06",
             "value": 796
@@ -730,16 +726,16 @@
           {
             "key": "2025-11-02",
             "value": -204
+          },
+          {
+            "key": "2025-11-03",
+            "value": -246
           }
         ],
-        "total": 106348
+        "total": 105198
       },
       "play": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 114938
-          },
           {
             "key": "2025-08-06",
             "value": 35300
@@ -1095,16 +1091,16 @@
           {
             "key": "2025-11-02",
             "value": 0
+          },
+          {
+            "key": "2025-11-03",
+            "value": 176844
           }
         ],
-        "total": 87704122
+        "total": 87766028
       },
       "like": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 0
-          },
           {
             "key": "2025-08-06",
             "value": 0
@@ -1460,16 +1456,16 @@
           {
             "key": "2025-11-02",
             "value": 0
+          },
+          {
+            "key": "2025-11-03",
+            "value": 0
           }
         ],
         "total": 0
       },
       "video_comment": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 4
-          },
           {
             "key": "2025-08-06",
             "value": 1
@@ -1825,16 +1821,16 @@
           {
             "key": "2025-11-02",
             "value": 0
+          },
+          {
+            "key": "2025-11-03",
+            "value": 2
           }
         ],
-        "total": 6991
+        "total": 6989
       },
       "video_collect": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 27
-          },
           {
             "key": "2025-08-06",
             "value": 8
@@ -2190,16 +2186,16 @@
           {
             "key": "2025-11-02",
             "value": 5
+          },
+          {
+            "key": "2025-11-03",
+            "value": 48
           }
         ],
-        "total": 36135
+        "total": 36156
       },
       "video_share": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 43
-          },
           {
             "key": "2025-08-06",
             "value": 22
@@ -2555,16 +2551,16 @@
           {
             "key": "2025-11-02",
             "value": 4
+          },
+          {
+            "key": "2025-11-03",
+            "value": 74
           }
         ],
-        "total": 68937
+        "total": 68968
       },
       "sale_amount": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 164309.58
-          },
           {
             "key": "2025-08-06",
             "value": 68865.71
@@ -2920,16 +2916,16 @@
           {
             "key": "2025-11-02",
             "value": 661895.02
+          },
+          {
+            "key": "2025-11-03",
+            "value": 47202.08
           }
         ],
-        "total": 56354070.69999999
+        "total": 56236963.19999999
       },
       "video_sold_count": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 0
-          },
           {
             "key": "2025-08-06",
             "value": 0
@@ -3285,16 +3281,16 @@
           {
             "key": "2025-11-02",
             "value": 0
+          },
+          {
+            "key": "2025-11-03",
+            "value": 0
           }
         ],
         "total": 1231
       },
       "video_sale_amount": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 0
-          },
           {
             "key": "2025-08-06",
             "value": 0
@@ -3650,16 +3646,16 @@
           {
             "key": "2025-11-02",
             "value": 0
+          },
+          {
+            "key": "2025-11-03",
+            "value": 0
           }
         ],
         "total": 63850.789999999986
       },
       "live_sold_count": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 1516
-          },
           {
             "key": "2025-08-06",
             "value": 1581
@@ -4015,16 +4011,16 @@
           {
             "key": "2025-11-02",
             "value": 1066
+          },
+          {
+            "key": "2025-11-03",
+            "value": 1052
           }
         ],
-        "total": 328363
+        "total": 327899
       },
       "live_sale_amount": {
         "list": [
-          {
-            "key": "2025-08-05",
-            "value": 69336.97
-          },
           {
             "key": "2025-08-06",
             "value": 68865.71
@@ -4380,9 +4376,13 @@
           {
             "key": "2025-11-02",
             "value": 58616.41
+          },
+          {
+            "key": "2025-11-03",
+            "value": 47202.08
           }
         ],
-        "total": 18172384.779999997
+        "total": 18150249.889999997
       }
     },
     "baseInfo": {
@@ -4395,7 +4395,7 @@
       "verify_type": "0",
       "account_type": "0",
       "category_name": "购物与零售",
-      "update_at": 1762099377,
+      "update_at": 1762185640,
       "product_category_id": [
         19,
         30,
@@ -4418,59 +4418,59 @@
       "region_name": "美国"
     },
     "authorIndex": {
-      "region_rank": 23770,
-      "last_region_rank": 23775,
-      "region_rank_rate": "0.02%",
+      "region_rank": 23783,
+      "last_region_rank": 23774,
+      "region_rank_rate": "-0.04%",
       "category_rank": 1288,
       "last_category_rank": 1289,
       "category_rank_rate": "0.08%",
       "flow_index": 87,
       "carry_index": 90,
-      "follower_count": 866077,
-      "follower_28_count": 7514,
-      "follower_28_last_count": 12863,
-      "follower_28_count_rate": "-0.42%",
-      "aweme_28_count": 275,
-      "live_28_count": 52,
+      "follower_count": 865831,
+      "follower_28_count": 6851,
+      "follower_28_last_count": 11180,
+      "follower_28_count_rate": "-0.39%",
+      "aweme_28_count": 274,
+      "live_28_count": 53,
       "last_video_time": "2025/11/03",
-      "video_28_avg_play_count": 56182,
-      "video_28_avg_interaction_count": 405,
-      "goods_28_avg_sole_count": 2248,
-      "goods_28_avg_sale_amount": 103743,
+      "video_28_avg_play_count": 51179,
+      "video_28_avg_interaction_count": 400,
+      "goods_28_avg_sole_count": 2241,
+      "goods_28_avg_sale_amount": 103415,
       "region": "US",
       "ecommerce_type": 1,
-      "live_28_avg_sold_count": 1221,
-      "live_28_avg_sale_amount": 56483.95,
+      "live_28_avg_sold_count": 1195,
+      "live_28_avg_sale_amount": 55248.6,
       "region_name": "美国"
     },
     "getStatInfo": {
-      "goods_sale_amount": 33671794.26,
+      "goods_sale_amount": 33711129.33,
       "goods_sale_country_rank": 1,
       "goods_sale_last_country_rank": "200000+",
       "region": "US",
       "video_sale_amount": 118145.77,
-      "live_sale_amount": 33553648.49,
-      "live_gpm_min": 13.1,
-      "live_gpm_max": 15.52,
+      "live_sale_amount": 33592983.56,
+      "live_gpm_min": 13.4,
+      "live_gpm_max": 15.82,
       "aweme_min_gpm": 6.98,
       "aweme_max_gpm": 41.91,
       "aweme_total_count": 687,
       "aweme_count": 16,
       "aweme_left_count": 671,
-      "aweme_play_count": 307702584,
-      "aweme_avg_play_count": 246214,
-      "aweme_mid_play_count": 79062,
+      "aweme_play_count": 307853084,
+      "aweme_avg_play_count": 244421,
+      "aweme_mid_play_count": 77000,
       "aweme_avg_interaction_rate": "1.34%",
       "aweme_ipm_count": 10,
-      "aweme_pop_rate": "98.38%",
-      "live_count": 790,
-      "live_avg_time": "28247",
+      "aweme_pop_rate": "97.66%",
+      "live_count": 792,
+      "live_avg_time": "28231",
       "live_max_user_count": 2987500,
-      "live_avg_user_count": 239762,
+      "live_avg_user_count": 239347,
       "live_mid_user_count": 83270,
       "live_max_peak_count": 44351,
-      "live_avg_peak_count": 1727,
-      "live_mid_peak_count": 704,
+      "live_avg_peak_count": 1724,
+      "live_mid_peak_count": 702,
       "goods_sale_country_rank_rate": "100%",
       "goods_sale_country_rank_trend": 1,
       "region_name": "美国"
@@ -4656,7 +4656,7 @@
       "live_type": 1,
       "first_video_time": "2023/10/21",
       "video_sold_count": 3485,
-      "live_sold_count": 733119,
+      "live_sold_count": 734171,
       "max_sold_type": 2,
       "first_video_time_at": 1697817600
     },
@@ -4665,12 +4665,12 @@
         {
           "category_id": "19",
           "key": "玩具和爱好",
-          "value": 63.76
+          "value": 63.73
         },
         {
           "category_id": "30",
           "key": "收藏品",
-          "value": 29.1
+          "value": 29.19
         },
         {
           "category_id": 0,
@@ -4680,29 +4680,29 @@
         {
           "category_id": "16",
           "key": "手机与数码",
-          "value": 2.19
+          "value": 2.14
         },
         {
           "category_id": "10",
           "key": "居家日用",
-          "value": 1.33
+          "value": 1.32
         }
       ],
       "most_sold_category_list": [
         {
           "category_id": "19",
           "key": "玩具和爱好",
-          "value": 69.55
+          "value": 69.51
         },
         {
           "category_id": "30",
           "key": "收藏品",
-          "value": 29.51
+          "value": 29.54
         },
         {
           "category_id": 0,
           "key": "其他",
-          "value": 0.37
+          "value": 0.36
         },
         {
           "category_id": "16",
@@ -4721,18 +4721,18 @@
       "goods_count": 1960,
       "goods_live_count": 1773,
       "goods_video_count": 36,
-      "total_sold_count": 1831199,
-      "live_sold_count": 733119,
+      "total_sold_count": 1833005,
+      "live_sold_count": 734171,
       "video_sold_count": 3485,
-      "other_sold_count": 1094595,
-      "total_sale_amount": 120880651.93,
+      "other_sold_count": 1095349,
+      "total_sale_amount": 121066889.86,
       "video_sale_amount": 118145.77,
-      "live_sale_amount": 33553648.49,
-      "other_sale_amount": 87208857.67,
+      "live_sale_amount": 33592983.56,
+      "other_sale_amount": 87355760.53,
       "video_avg_sold_count": 6,
       "video_avg_sale_amount": 171.97,
-      "live_avg_sold_count": 1045,
-      "live_avg_sale_amount": 42472.97,
+      "live_avg_sold_count": 1043,
+      "live_avg_sale_amount": 42415.38,
       "per_customer_amount": 23,
       "region": "US",
       "region_name": "美国"
