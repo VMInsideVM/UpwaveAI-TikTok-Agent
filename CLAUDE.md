@@ -8,9 +8,38 @@ This is a TikTok influencer recommendation system built with LangChain + Qwen3-V
 
 The system uses:
 - LangChain ReAct agent pattern for orchestrating tools
+- **FastAPI + Playwright microservice architecture** (解决 LangChain 多线程问题)
 - Playwright for web scraping (connects to Chrome via CDP on port 9224)
 - LLM-powered semantic category matching
 - Multi-dimensional influencer filtering and sorting
+
+### Architecture: API-Based Scraping (2025-01 Update)
+
+To solve LangChain's multi-threading greenlet issues, Playwright operations are now isolated in a separate FastAPI service:
+
+```
+┌─────────────────────────────────────┐
+│   主进程: Agent + LangChain          │
+│   - agent.py (ReAct agent)          │
+│   - agent_tools.py (调用 API)        │
+│   - run_agent.py (CLI 交互)          │
+└─────────────────┬───────────────────┘
+                  │ HTTP Requests
+                  │ (跨进程通信)
+                  ▼
+┌─────────────────────────────────────┐
+│   API 服务: Playwright 爬虫          │
+│   - playwright_api.py (FastAPI)     │
+│   - 单线程运行 Playwright            │
+│   - 端口: 127.0.0.1:8000             │
+└─────────────────────────────────────┘
+```
+
+**优势**:
+- ✅ 彻底解决 greenlet 线程切换错误
+- ✅ Agent 和爬虫完全解耦
+- ✅ 易于扩展和维护
+- ✅ 可独立部署和调试
 
 ## Development Commands
 
@@ -39,7 +68,23 @@ The system uses:
    OPENAI_MODEL="Qwen/Qwen3-VL-30B-A3B-Instruct"
    ```
 
-### Running the Agent
+### Running the System (2-Step Process)
+
+**重要**: 现在需要先启动 API 服务，再启动 Agent！
+
+#### Step 1: 启动 Playwright API 服务
+```bash
+# 方式 1: 使用启动脚本（推荐）
+python start_api.py
+
+# 方式 2: 直接运行
+python playwright_api.py
+
+# 服务启动后访问 API 文档:
+# http://127.0.0.1:8000/docs
+```
+
+#### Step 2: 启动 Agent（新终端）
 ```bash
 # Normal mode (interactive CLI)
 python run_agent.py
@@ -47,6 +92,11 @@ python run_agent.py
 # Test mode (with preset test cases)
 python run_agent.py --test
 ```
+
+**启动顺序**:
+1. 确保 Chrome 运行在 CDP 端口 9224
+2. 启动 Playwright API 服务（终端 1）
+3. 启动 Agent（终端 2）
 
 ### Testing Individual Modules
 ```bash
@@ -215,24 +265,37 @@ python <module_name>.py
 
 ## File Structure
 
+### Core Files
 - `agent.py` - Main agent controller (LangChain ReAct)
-- `agent_tools.py` - Tool definitions (8 tools)
+- `agent_tools.py` - Tool definitions (8 tools, now calls API)
+- `run_agent.py` - CLI interface with interactive loop
+
+### NEW: API Service (2025-01)
+- `playwright_api.py` - **FastAPI service for Playwright operations**
+- `start_api.py` - **Convenient startup script for API service**
+
+### Support Modules
 - `category_matcher.py` - Semantic category matching
 - `adjustment_helper.py` - Parameter adjustment logic
-- `main.py` - Web scraping functions (Playwright)
-- `run_agent.py` - CLI interface with interactive loop
+- `main.py` - Web scraping functions (used by API service)
+
+### Data & Config
 - `knowledge_base.md` - Domain knowledge (editable at runtime)
 - `categories/` - 29 JSON files for product categories
 - `output/` - Excel export directory
 - `.env` - API configuration (not tracked)
+- `requirements.txt` - **Updated with FastAPI, uvicorn, requests**
 
 ## Common Pitfalls
 
-1. **Forgetting to initialize Playwright**: Always call `initialize_playwright()` before scraping
-2. **Modifying immutable params**: Never change country_name or category after initial selection
-3. **Missing category files**: Ensure all 29 JSON files exist in `categories/`
-4. **Chrome not running**: Agent requires Chrome with CDP port 9224 open
-5. **Token limits**: Knowledge base is truncated to 3000 chars to avoid context overflow (see agent.py:52)
+1. **Forgetting to start API service**: Must run `python start_api.py` BEFORE `python run_agent.py`
+2. **Wrong startup order**: Chrome → API Service → Agent (依次启动)
+3. **API service not running**: Agent will fail with connection error
+4. **Modifying immutable params**: Never change country_name or category after initial selection
+5. **Missing category files**: Ensure all 29 JSON files exist in `categories/`
+6. **Chrome not running**: API service requires Chrome with CDP port 9224 open
+7. **Token limits**: Knowledge base is truncated to 3000 chars to avoid context overflow (see agent.py:52)
+8. **Port conflicts**: Ensure port 8000 is not occupied by other services
 
 ## Supported Countries
 
