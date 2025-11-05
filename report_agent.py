@@ -336,6 +336,77 @@ class TikTokInfluencerReportAgent:
 
         return "\n".join(html_parts)
 
+    def _extract_contact_info(self, influencer_id: str) -> Dict[str, Any]:
+        """Extract contact information from influencer JSON file."""
+        try:
+            file_path = os.path.join("influencer", f"{influencer_id}.json")
+            if not os.path.exists(file_path):
+                return {}
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Extract authorContact data
+            author_contact = data.get('api_responses', {}).get('authorContact', {})
+
+            # Return contact info
+            return {
+                'email': author_contact.get('email', ''),
+                'whatsapp': author_contact.get('whatsapp', ''),
+                'instagram': author_contact.get('instagram', ''),
+                'youtube': author_contact.get('youtube', ''),
+                'tiktok': author_contact.get('tiktok', ''),
+                'other': author_contact.get('other', '')
+            }
+        except Exception as e:
+            print(f"⚠️  提取联系方式失败 ({influencer_id}): {e}")
+            return {}
+
+    def _generate_contact_section(self, contact_info: Dict[str, Any]) -> str:
+        """Generate contact information HTML section."""
+        # Check if there's any contact info available
+        has_contact = any(contact_info.values())
+
+        if not has_contact:
+            return """
+    <div class="content-section" style="background:#fff9e6; padding:12px; border-radius:6px; margin-top:15px;">
+        <h4 style="margin:0 0 8px 0; font-size:14px; color:#856404;">📞 达人联系方式</h4>
+        <p style="margin:0; font-size:13px; color:#856404;">暂无联系方式信息</p>
+    </div>
+"""
+
+        # Build contact items
+        contact_items = []
+
+        if contact_info.get('email'):
+            contact_items.append(f"<div style='margin:5px 0;'><strong>Email:</strong> {contact_info['email']}</div>")
+
+        if contact_info.get('whatsapp'):
+            contact_items.append(f"<div style='margin:5px 0;'><strong>WhatsApp:</strong> {contact_info['whatsapp']}</div>")
+
+        if contact_info.get('instagram'):
+            contact_items.append(f"<div style='margin:5px 0;'><strong>Instagram:</strong> @{contact_info['instagram']}</div>")
+
+        if contact_info.get('youtube'):
+            contact_items.append(f"<div style='margin:5px 0;'><strong>YouTube:</strong> {contact_info['youtube']}</div>")
+
+        if contact_info.get('tiktok'):
+            contact_items.append(f"<div style='margin:5px 0;'><strong>TikTok:</strong> @{contact_info['tiktok']}</div>")
+
+        if contact_info.get('other'):
+            contact_items.append(f"<div style='margin:5px 0;'><strong>其他:</strong> {contact_info['other']}</div>")
+
+        contact_html = "\n".join(contact_items)
+
+        return f"""
+    <div class="content-section" style="background:#e8f5e9; padding:12px; border-radius:6px; margin-top:15px;">
+        <h4 style="margin:0 0 8px 0; font-size:14px; color:#2e7d32;">📞 达人联系方式</h4>
+        <div style="font-size:13px; color:#1b5e20;">
+{contact_html}
+        </div>
+    </div>
+"""
+
     def _build_tier_section(self, influencers: List[Dict], tier: int,
                            tier_name: str) -> str:
         """Build HTML for a single tier."""
@@ -348,11 +419,17 @@ class TikTokInfluencerReportAgent:
             engagement_metrics = dim_scores.get('engagement', {}).get('metrics', {})
             sales_metrics = dim_scores.get('sales', {}).get('metrics', {})
 
+            # Extract contact information
+            contact_info = self._extract_contact_info(inf.get('influencer_id', ''))
+
             # Get actual values from metrics
             follower_count = self._format_number(engagement_metrics.get('follower_count', inf.get('follower_count', 0)))
             engagement_rate = engagement_metrics.get('interaction_rate', inf.get('engagement_rate', 'N/A'))
             gpm = sales_metrics.get('max_gpm', inf.get('gpm', 0))
             gpm_display = f"{gpm:.2f}" if isinstance(gpm, (int, float)) and gpm > 0 else "暂无"
+
+            # Generate contact info HTML
+            contact_html = self._generate_contact_section(contact_info)
 
             # Generate detailed analysis
             detailed_analysis = self._generate_detailed_analysis(inf, tier)
@@ -384,6 +461,8 @@ class TikTokInfluencerReportAgent:
             <div class="metric-value">{inf.get('region', 'US')}</div>
         </div>
     </div>
+
+    {contact_html}
 
     {detailed_analysis}
 </div>

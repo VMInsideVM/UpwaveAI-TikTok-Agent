@@ -771,14 +771,14 @@ async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
         # 定义所有支持的API类型
         api_types = [
             'datalist', 'baseInfo', 'authorIndex', 'getStatInfo',
-            'fansPortrait', 'labelList', 'cargoStat', 'cargoSummary'
+            'fansPortrait', 'labelList', 'cargoStat', 'cargoSummary', 'authorContact'
         ]
 
         # 存储所有响应数据，按类型分组
         all_responses = {api_type: [] for api_type in api_types}
 
         # 跟踪只需要保存一次的API类型
-        captured_once = {'baseInfo': False, 'authorIndex': False, 'getStatInfo': False, 'categoryList': False}
+        captured_once = {'baseInfo': False, 'authorIndex': False, 'getStatInfo': False, 'categoryList': False, 'authorContact': False}
 
         async def handle_response(response):
             """处理响应事件（异步版本）"""
@@ -810,6 +810,9 @@ async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
                     break
                 elif api_type == 'cargoSummary' and 'cargoSummary' in url:
                     matched_type = 'cargoSummary'
+                    break
+                elif api_type == 'authorContact' and 'authorContact' in url:
+                    matched_type = 'authorContact'
                     break
 
             if matched_type:
@@ -950,7 +953,7 @@ async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
         # 对其他API类型也只保留data字段
         api_types_to_simplify = [
             'baseInfo', 'authorIndex', 'getStatInfo', 'fansPortrait',
-            'labelList', 'cargoStat', 'cargoSummary'
+            'labelList', 'cargoStat', 'cargoSummary', 'authorContact'
         ]
 
         for api_type in api_types_to_simplify:
