@@ -562,6 +562,12 @@ class DataVisualizationTool(BaseTool):
     所有图表都是交互式HTML格式,包含自动生成的洞察。
     """
     args_schema: type[BaseModel] = VisualizationInput
+    output_dir: str = "output/charts"  # Default output directory
+
+    def __init__(self, output_dir: str = "output/charts"):
+        """Initialize with custom output directory."""
+        super().__init__()
+        self.output_dir = output_dir
 
     def _run(self, influencer_id: str, dimension_scores_json: str,
              influencer_folder: str = "influencer") -> str:
@@ -582,8 +588,8 @@ class DataVisualizationTool(BaseTool):
             # Parse dimension scores
             dimension_scores = json.loads(dimension_scores_json)
 
-            # Generate charts
-            visualizer = InfluencerVisualizer()
+            # Generate charts with custom output_dir
+            visualizer = InfluencerVisualizer(output_dir=self.output_dir)
             result = visualizer.generate_all_charts(
                 influencer_data,
                 dimension_scores,
