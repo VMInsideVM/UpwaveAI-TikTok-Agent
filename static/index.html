@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok 达人推荐聊天机器人</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 900px;
+            height: 90vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f7f9fc;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .message.user .message-avatar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .message.bot .message-avatar {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .message-content {
+            max-width: 70%;
+            margin: 0 15px;
+        }
+
+        .message-bubble {
+            padding: 12px 18px;
+            border-radius: 18px;
+            line-height: 1.6;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.bot .message-bubble {
+            background: white;
+            color: #333;
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 5px;
+        }
+
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 18px;
+            border: 1px solid #e5e7eb;
+            width: fit-content;
+        }
+
+        .typing-indicator.active {
+            display: flex;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .typing-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            animation: bounce 1.4s ease-in-out infinite;
+        }
+
+        .typing-dots span:nth-child(1) { animation-delay: 0s; }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .chat-input-area {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .chat-input-form {
+            display: flex;
+            gap: 15px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e5e7eb;
+            border-radius: 25px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .chat-send-btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .chat-send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .chat-send-btn:active {
+            transform: translateY(0);
+        }
+
+        .chat-send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin: 15px 30px;
+            border-left: 4px solid #dc2626;
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6b7280;
+        }
+
+        .welcome-message h2 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        /* 滚动条样式 */
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: #764ba2;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            body {
+                padding: 0;
+            }
+
+            .chat-container {
+                height: 100vh;
+                max-width: 100%;
+                border-radius: 0;
+            }
+
+            .message-content {
+                max-width: 85%;
+            }
+
+            .chat-header h1 {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>🤖 TikTok 达人推荐助手</h1>
+            <div class="status-indicator">
+                <div class="status-dot"></div>
+                <span id="status-text">连接中...</span>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-message">
+                <h2>欢迎使用 TikTok 达人推荐助手！</h2>
+                <p>正在初始化会话，请稍候...</p>
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <form class="chat-input-form" id="chatForm">
+                <input
+                    type="text"
+                    class="chat-input"
+                    id="chatInput"
+                    placeholder="请告诉我您的需求..."
+                    autocomplete="off"
+                    disabled
+                />
+                <button type="submit" class="chat-send-btn" id="sendBtn" disabled>
+                    发送
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 全局变量 ====================
+        let sessionId = null;
+        let websocket = null;
+        let isConnected = false;
+        let currentMessageDiv = null;
+
+        // ==================== DOM 元素 ====================
+        const chatMessages = document.getElementById('chatMessages');
+        const chatForm = document.getElementById('chatForm');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusText = document.getElementById('status-text');
+
+        // ==================== 工具函数 ====================
+
+        function updateStatus(status, text) {
+            statusText.textContent = text;
+            isConnected = status;
+            chatInput.disabled = !status;
+            sendBtn.disabled = !status;
+        }
+
+        function getCurrentTime() {
+            const now = new Date();
+            return now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            chatMessages.appendChild(errorDiv);
+            scrollToBottom();
+        }
+
+        function addMessage(content, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = isUser ? '👤' : '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = content;
+
+            const time = document.createElement('div');
+            time.className = 'message-time';
+            time.textContent = getCurrentTime();
+
+            contentDiv.appendChild(bubble);
+            contentDiv.appendChild(time);
+
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(contentDiv);
+
+            chatMessages.appendChild(messageDiv);
+            scrollToBottom();
+
+            return messageDiv;
+        }
+
+        function appendToMessage(messageDiv, content) {
+            const bubble = messageDiv.querySelector('.message-bubble');
+            bubble.textContent += content;
+            scrollToBottom();
+        }
+
+        function showTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message bot';
+            indicator.id = 'typing-indicator';
+
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing-indicator active';
+            typingDiv.innerHTML = `
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+
+            contentDiv.appendChild(typingDiv);
+            indicator.appendChild(avatar);
+            indicator.appendChild(contentDiv);
+
+            chatMessages.appendChild(indicator);
+            scrollToBottom();
+        }
+
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        // ==================== WebSocket 函数 ====================
+
+        async function createSession() {
+            try {
+                updateStatus(false, '创建会话中...');
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('创建会话失败');
+                }
+
+                const data = await response.json();
+                sessionId = data.session_id;
+                console.log('会话创建成功:', sessionId);
+
+                connectWebSocket();
+            } catch (error) {
+                console.error('创建会话失败:', error);
+                showError('无法连接到服务器，请确保后端服务正在运行');
+                updateStatus(false, '连接失败');
+            }
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
+
+            console.log('连接 WebSocket:', wsUrl);
+            updateStatus(false, '连接中...');
+
+            websocket = new WebSocket(wsUrl);
+
+            websocket.onopen = () => {
+                console.log('WebSocket 连接成功');
+                updateStatus(true, '已连接');
+            };
+
+            websocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('解析消息失败:', error);
+                }
+            };
+
+            websocket.onerror = (error) => {
+                console.error('WebSocket 错误:', error);
+                showError('连接出现错误');
+                updateStatus(false, '连接错误');
+            };
+
+            websocket.onclose = () => {
+                console.log('WebSocket 连接关闭');
+                updateStatus(false, '连接已断开');
+                isConnected = false;
+
+                // 5秒后尝试重连
+                setTimeout(() => {
+                    if (!isConnected) {
+                        console.log('尝试重新连接...');
+                        createSession();
+                    }
+                }, 5000);
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            const { type, content, timestamp } = data;
+
+            switch (type) {
+                case 'welcome':
+                    // 清除欢迎消息
+                    chatMessages.innerHTML = '';
+                    // 显示欢迎消息
+                    currentMessageDiv = addMessage(content, false);
+                    currentMessageDiv = null;
+                    break;
+
+                case 'status':
+                    // 显示处理状态（如"正在处理您的请求..."）
+                    hideTypingIndicator();
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = 'status-message';
+                    statusDiv.style.cssText = 'text-align: center; color: #667eea; padding: 10px; font-style: italic;';
+                    statusDiv.textContent = content;
+                    statusDiv.id = 'current-status';
+                    chatMessages.appendChild(statusDiv);
+                    scrollToBottom();
+                    break;
+
+                case 'typing':
+                    showTypingIndicator();
+                    // 移除状态消息
+                    const oldStatus = document.getElementById('current-status');
+                    if (oldStatus) oldStatus.remove();
+                    break;
+
+                case 'message':
+                    hideTypingIndicator();
+                    // 移除状态消息
+                    const statusMsg = document.getElementById('current-status');
+                    if (statusMsg) statusMsg.remove();
+
+                    if (currentMessageDiv) {
+                        appendToMessage(currentMessageDiv, content);
+                    } else {
+                        currentMessageDiv = addMessage(content, false);
+                    }
+                    break;
+
+                case 'complete':
+                    hideTypingIndicator();
+                    // 移除状态消息
+                    const finalStatus = document.getElementById('current-status');
+                    if (finalStatus) finalStatus.remove();
+                    currentMessageDiv = null;
+                    break;
+
+                case 'error':
+                    hideTypingIndicator();
+                    // 移除状态消息
+                    const errorStatus = document.getElementById('current-status');
+                    if (errorStatus) errorStatus.remove();
+                    showError(content);
+                    currentMessageDiv = null;
+                    break;
+
+                case 'heartbeat':
+                    // 服务器心跳，保持连接活跃
+                    console.log('收到服务器心跳');
+                    break;
+
+                case 'pong':
+                    // 客户端心跳响应
+                    console.log('收到心跳响应');
+                    break;
+
+                default:
+                    console.warn('未知消息类型:', type);
+            }
+        }
+
+        function sendMessage(message) {
+            if (!websocket || !isConnected || !message.trim()) {
+                return;
+            }
+
+            // 显示用户消息
+            addMessage(message, true);
+
+            // 发送到服务器
+            const data = {
+                type: 'message',
+                content: message
+            };
+
+            websocket.send(JSON.stringify(data));
+
+            // 清空输入框
+            chatInput.value = '';
+        }
+
+        // ==================== 事件监听 ====================
+
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = chatInput.value.trim();
+            if (message) {
+                sendMessage(message);
+            }
+        });
+
+        // 心跳保持连接
+        setInterval(() => {
+            if (websocket && isConnected) {
+                websocket.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 30000); // 每30秒发送一次心跳
+
+        // ==================== 初始化 ====================
+
+        window.addEventListener('load', () => {
+            console.log('页面加载完成，开始初始化...');
+            createSession();
+        });
+
+        // 页面关闭时清理
+        window.addEventListener('beforeunload', () => {
+            if (websocket) {
+                websocket.close();
+            }
+        });
+    </script>
+</body>
+</html>

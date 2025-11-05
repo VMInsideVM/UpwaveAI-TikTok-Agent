@@ -192,7 +192,7 @@ class TikTokInfluencerAgent:
             self.llm,  # 位置参数
             self.tools,  # 位置参数
             system_prompt=system_prompt,
-            debug=True  # 开启调试模式
+            debug=False  # 关闭调试模式（用于生产环境）
         )
 
         return agent
@@ -314,6 +314,69 @@ class TikTokInfluencerAgent:
             import traceback
             traceback.print_exc()
             return error_msg
+
+    async def run_streaming(self, user_input: str):
+        """
+        异步流式运行 Agent 处理用户输入
+
+        Args:
+            user_input: 用户输入的文本
+
+        Yields:
+            str: Agent 响应的片段
+        """
+        try:
+            # 将用户输入添加到历史记录
+            from langchain_core.messages import HumanMessage
+            self.chat_history.append(HumanMessage(content=user_input))
+
+            # 使用 astream_events 获取流式输出
+            accumulated_content = ""
+
+            async for event in self.agent.astream_events(
+                {"messages": self.chat_history},
+                version="v1"
+            ):
+                kind = event.get("event")
+
+                # 处理不同类型的事件
+                if kind == "on_chat_model_stream":
+                    # LLM 输出的内容流
+                    chunk = event.get("data", {}).get("chunk", None)
+                    if chunk and hasattr(chunk, "content"):
+                        content = chunk.content
+                        if content:
+                            accumulated_content += content
+                            yield content
+
+                elif kind == "on_tool_start":
+                    # 工具开始执行
+                    tool_name = event.get("name", "unknown")
+                    yield f"\n[正在调用工具: {tool_name}]\n"
+
+                elif kind == "on_tool_end":
+                    # 工具执行完成
+                    tool_name = event.get("name", "unknown")
+                    yield f"\n[工具 {tool_name} 执行完成]\n"
+
+            # 如果没有内容输出，尝试使用同步方法
+            if not accumulated_content:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, self.run, user_input)
+                yield response
+            else:
+                # 更新聊天历史（使用同步方法获取完整结果）
+                result = self.agent.invoke({"messages": self.chat_history})
+                if "messages" in result:
+                    self.chat_history = result["messages"]
+
+        except Exception as e:
+            error_msg = f"❌ 处理时出错: {str(e)}\n请重新描述你的需求。"
+            print(f"Error details: {e}")
+            import traceback
+            traceback.print_exc()
+            yield error_msg
 
     def scrape_with_retry(self, url: str, max_pages: int) -> Optional[pd.DataFrame]:
         """
