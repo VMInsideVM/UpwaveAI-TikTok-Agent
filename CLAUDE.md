@@ -98,6 +98,100 @@ python run_agent.py --test
 2. 启动 Playwright API 服务（终端 1）
 3. 启动 Agent（终端 2）
 
+### Running as Web Chatbot (网页聊天模式)
+
+**新增功能**: 现在可以通过网页界面与 Agent 对话！
+
+#### 架构说明
+
+```
+┌──────────────────────────────────────────────────────────┐
+│   用户浏览器 (http://127.0.0.1:8001)                      │
+│   - 现代化聊天界面                                         │
+│   - WebSocket 实时通信                                    │
+└─────────────────┬────────────────────────────────────────┘
+                  │ WebSocket
+                  ▼
+┌──────────────────────────────────────────────────────────┐
+│   聊天机器人 API (端口 8001)                               │
+│   - chatbot_api.py (FastAPI + WebSocket)                 │
+│   - session_manager.py (会话管理)                         │
+│   - 支持多用户并发                                         │
+└─────────────────┬────────────────────────────────────────┘
+                  │ HTTP Requests
+                  ▼
+┌──────────────────────────────────────────────────────────┐
+│   Playwright API (端口 8000)                              │
+│   - playwright_api.py                                    │
+│   - 处理爬虫操作                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 启动步骤
+
+**方式 1: 使用启动脚本（推荐）**
+```bash
+# 1. 启动 Playwright API（终端 1）
+python start_api.py
+
+# 2. 启动聊天机器人服务（终端 2）
+python start_chatbot.py
+
+# 3. 打开浏览器访问
+# http://127.0.0.1:8001/
+```
+
+**方式 2: 直接运行**
+```bash
+# 1. 启动 Playwright API
+python playwright_api.py
+
+# 2. 启动聊天机器人
+python chatbot_api.py
+
+# 3. 访问聊天界面
+# http://127.0.0.1:8001/
+```
+
+#### 重要说明
+
+**完整启动顺序**:
+1. ✅ Chrome CDP (端口 9224)
+2. ✅ Playwright API (端口 8000)
+3. ✅ 聊天机器人 API (端口 8001)
+4. ✅ 打开浏览器访问
+
+**调试模式已关闭**:
+- agent.py 中的 `debug=False`（网页模式下不显示调试信息）
+- CLI 模式仍可通过 `run_agent.py` 使用
+
+**会话隔离**:
+- 每个用户获得独立的会话 ID
+- 每个会话拥有独立的 Agent 实例和对话历史
+- 支持多个用户同时使用（但爬虫操作会排队执行）
+
+**已知限制**:
+- 单浏览器实例：同一时间只能为一个用户执行爬虫操作
+- 内存会话：服务器重启后会话丢失
+- 无身份验证：任何人都可以访问（适合内部使用）
+
+#### API 端点
+
+聊天机器人服务提供以下端点：
+
+**REST API**:
+- `GET /` - 聊天界面（HTML）
+- `GET /api/health` - 健康检查
+- `POST /api/sessions` - 创建新会话
+- `DELETE /api/sessions/{session_id}` - 删除会话
+- `GET /api/sessions/{session_id}/status` - 获取会话状态
+- `GET /api/sessions` - 列出所有会话
+
+**WebSocket**:
+- `WS /ws/{session_id}` - 实时聊天通信
+
+**API 文档**: http://127.0.0.1:8001/docs
+
 ### Testing Individual Modules
 ```bash
 # Test agent initialization
@@ -270,32 +364,48 @@ python <module_name>.py
 - `agent_tools.py` - Tool definitions (8 tools, now calls API)
 - `run_agent.py` - CLI interface with interactive loop
 
-### NEW: API Service (2025-01)
-- `playwright_api.py` - **FastAPI service for Playwright operations**
-- `start_api.py` - **Convenient startup script for API service**
+### NEW: API Services (2025-01)
+- `playwright_api.py` - **FastAPI service for Playwright operations (Port 8000)**
+- `start_api.py` - **Convenient startup script for Playwright API**
+- `chatbot_api.py` - **FastAPI chatbot service with WebSocket (Port 8001)**
+- `start_chatbot.py` - **Convenient startup script for chatbot service**
+- `session_manager.py` - **Session management for multi-user support**
 
 ### Support Modules
 - `category_matcher.py` - Semantic category matching
 - `adjustment_helper.py` - Parameter adjustment logic
 - `main.py` - Web scraping functions (used by API service)
 
+### Web Interface
+- `static/index.html` - **Modern chat UI with WebSocket communication**
+
 ### Data & Config
 - `knowledge_base.md` - Domain knowledge (editable at runtime)
 - `categories/` - 29 JSON files for product categories
 - `output/` - Excel export directory
 - `.env` - API configuration (not tracked)
-- `requirements.txt` - **Updated with FastAPI, uvicorn, requests**
+- `requirements.txt` - **Updated with FastAPI, uvicorn, requests, websockets**
 
 ## Common Pitfalls
 
+### CLI Mode
 1. **Forgetting to start API service**: Must run `python start_api.py` BEFORE `python run_agent.py`
-2. **Wrong startup order**: Chrome → API Service → Agent (依次启动)
+2. **Wrong startup order**: Chrome → Playwright API → Agent (依次启动)
 3. **API service not running**: Agent will fail with connection error
-4. **Modifying immutable params**: Never change country_name or category after initial selection
-5. **Missing category files**: Ensure all 29 JSON files exist in `categories/`
-6. **Chrome not running**: API service requires Chrome with CDP port 9224 open
-7. **Token limits**: Knowledge base is truncated to 3000 chars to avoid context overflow (see agent.py:52)
-8. **Port conflicts**: Ensure port 8000 is not occupied by other services
+
+### Web Chatbot Mode
+1. **Missing Playwright API**: Chatbot service requires Playwright API (port 8000) running first
+2. **Wrong startup order**: Chrome → Playwright API → Chatbot API (依次启动)
+3. **Port 8001 occupied**: Ensure port 8001 is available for chatbot service
+4. **Browser compatibility**: Use modern browsers (Chrome, Firefox, Edge, Safari) for best experience
+
+### General
+5. **Modifying immutable params**: Never change country_name or category after initial selection
+6. **Missing category files**: Ensure all 29 JSON files exist in `categories/`
+7. **Chrome not running**: All services require Chrome with CDP port 9224 open
+8. **Token limits**: Knowledge base is truncated to 3000 chars to avoid context overflow (see agent.py:52)
+9. **Port conflicts**: Ensure ports 8000 (Playwright) and 8001 (Chatbot) are not occupied
+10. **Debug mode**: Agent debug mode is now OFF by default (set `debug=False` in agent.py:195)
 
 ## Supported Countries
 

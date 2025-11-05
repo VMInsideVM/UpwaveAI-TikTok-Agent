@@ -79,7 +79,8 @@ async def startup_event():
         print("  ✓ Playwright 异步实例已创建")
 
         # 连接到现有的 Chrome 实例（CDP 端口 9224）
-        _browser = await _playwright.chromium.connect_over_cdp("http://localhost:9224")
+        # 使用 127.0.0.1 而不是 localhost 避免 IPv6 解析问题
+        _browser = await _playwright.chromium.connect_over_cdp("http://127.0.0.1:9224")
         print("  ✓ 已连接到 Chrome (CDP:9224)")
 
         # 获取浏览器上下文和页面
