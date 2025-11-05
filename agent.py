@@ -15,7 +15,7 @@ from datetime import datetime
 import nest_asyncio
 nest_asyncio.apply()
 
-from agent_tools import get_all_tools
+from agent_tools import get_all_tools, set_agent_instance
 from main import initialize_playwright, navigate_to_url
 
 # 加载环境变量
@@ -36,6 +36,14 @@ class TikTokInfluencerAgent:
         self.retry_count = 0  # 重试计数
         self.max_retries = 3  # 最大重试次数
         self.chat_history = []  # 存储对话历史
+
+        # 新增：参数确认循环相关属性
+        self.current_params = {}  # 当前收集到的所有筛选参数
+        self.params_confirmed = False  # 参数是否已确认
+        self.target_influencer_count = None  # 目标达人数量
+
+        # 设置全局 agent 实例，供工具访问
+        set_agent_instance(self)
 
     def _init_llm(self) -> ChatOpenAI:
         """初始化 LLM"""
@@ -71,20 +79,42 @@ class TikTokInfluencerAgent:
 
 ## 你的工作流程:
 1. **理解需求**: 询问用户的商品名称、目标国家、达人数量、粉丝要求等
+   - 收集所有需要的信息（商品、国家、数量、筛选条件）
+   - 提取用户需要的达人数量并记录
+
 2. **匹配分类**: 使用 match_product_category 工具推断商品分类
    - 工具会展示推理过程,让用户了解为什么选择这个分类
    - 如果找不到分类,礼貌地告知用户并结束对话
-3. **构建搜索**: 使用 build_search_url 工具构建 URL
-4. **添加分类**: 将分类工具返回的 url_suffix 追加到 URL,形成完整的搜索 URL
-5. **检查数量**: 使用 get_max_page_number(url=完整URL) 检查可用达人数
+   - 分类信息会自动存储到参数中
+
+3. **构建搜索 URL**: 使用 build_search_url 工具构建 URL
+   - 传入所有收集到的筛选参数
+   - 工具会自动将参数存储起来
+
+4. **【新增】参数确认循环**:
+   - 使用 review_parameters 工具展示所有参数摘要
+   - 参数包括: 商品名称、分类、国家、目标数量、所有筛选条件
+   - **等待用户确认**,识别以下表示满意的信号:
+     * 中文: "好的"、"可以"、"没问题"、"行"、"开始"、"确认"、"就这样"、"ok"
+     * 英文: "yes"、"good"、"proceed"、"let's go"
+   - 如果用户要调整参数:
+     * 询问要修改什么
+     * 使用 update_parameter 工具更新参数（如果是简单修改）
+     * 或者重新调用 build_search_url 工具（如果是多个参数修改）
+     * **循环回到本步骤**,再次调用 review_parameters 展示更新后的参数
+   - **只有在用户明确表示满意后**,才继续下一步
+
+5. **添加分类后缀**: 将分类工具返回的 url_suffix 追加到 URL,形成完整的搜索 URL
+
+6. **检查数量**: 使用 get_max_page_number(url=完整URL) 检查可用达人数
    - **重要**: 必须传递完整的 URL (包括分类后缀)
    - 记录最大页数,用于后续判断
 
-6. **分析数量缺口**: 使用 analyze_quantity_gap 工具判断数量是否足够
+7. **分析数量缺口**: 使用 analyze_quantity_gap 工具判断数量是否足够
    - 传递: max_pages (最大页数) 和 user_needs (用户需求数量)
    - 工具会返回状态: 充足/可接受/严重不足
 
-7. **根据状态处理**:
+8. **根据状态处理**:
 
    **情况A - 数量充足** (可用数 ≥ 用户需求):
    - 告知用户找到足够的达人（显示真实数量 available_real）
@@ -117,13 +147,13 @@ class TikTokInfluencerAgent:
    - 询问用户: "请选择一个方案,或告诉我您的想法"
    - **等待用户回复**
 
-8. **执行调整** (如果用户选择了调整方案):
+9. **执行调整** (如果用户选择了调整方案):
    - 应用新的筛选参数
    - 重新构建 URL (保持国家和分类不变)
-   - 重新检查数量 (回到步骤5)
-   - **重复步骤6-7,直到用户满意**
+   - 重新检查数量 (回到步骤6)
+   - **重复步骤7-8,直到用户满意**
 
-9. **处理排序选择**:
+10. **处理排序选择**:
    - 当用户输入序号（如"1"、"2"、"1,2"等）时，识别为排序选择
    - 映射规则：
      1 → "粉丝数"
@@ -137,7 +167,7 @@ class TikTokInfluencerAgent:
      b. 将后缀追加到之前构建的完整 URL（基础 URL + 分类后缀）
      c. 将所有完整 URL 收集到一个列表中
 
-10. **搜索达人候选**:
+11. **搜索达人候选**:
    - **计算爬取页数**:
      * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
      * 实际页数 = min(目标页数, 最大可用页数)
@@ -148,7 +178,7 @@ class TikTokInfluencerAgent:
      * product_name: 商品名称
    - 工具会返回找到的达人候选数量和保存的 JSON 文件路径
 
-11. **自动获取详细数据** (关键步骤):
+12. **自动获取详细数据** (关键步骤):
    - **立即调用** process_influencer_detail 工具
    - 传入参数:
      * json_file_path: 上一步返回的 JSON 文件路径
@@ -175,17 +205,19 @@ class TikTokInfluencerAgent:
 - 多维度排序时保留第一次出现的达人(去重)
 
 ## 可用工具:
-你有 7 个工具可以使用,它们的描述已经包含在工具定义中。
+你有 10 个工具可以使用,它们的描述已经包含在工具定义中。
 
 工具列表:
-1. build_search_url - 构建搜索 URL
-2. match_product_category - 匹配商品分类
-3. get_max_page_number - 获取最大页数
-4. analyze_quantity_gap - 分析数量缺口
-5. suggest_parameter_adjustments - 生成参数调整建议
-6. get_sort_suffix - 获取排序后缀
-7. scrape_and_export_json - 搜索达人候选并保存列表
-8. process_influencer_detail - 批量获取达人详细数据（自动显示进度）"""
+1. build_search_url - 构建搜索 URL（自动存储参数）
+2. match_product_category - 匹配商品分类（自动存储分类信息）
+3. review_parameters - **【新增】展示参数摘要供用户确认**
+4. update_parameter - **【新增】更新特定筛选参数**
+5. get_max_page_number - 获取最大页数
+6. analyze_quantity_gap - 分析数量缺口
+7. suggest_parameter_adjustments - 生成参数调整建议
+8. get_sort_suffix - 获取排序后缀
+9. scrape_and_export_json - 搜索达人候选并保存列表
+10. process_influencer_detail - 批量获取达人详细数据（自动显示进度）"""
 
         # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
         agent = langchain_create_agent(
@@ -290,21 +322,15 @@ class TikTokInfluencerAgent:
                         # 检查是否有内容
                         if hasattr(msg, 'content') and msg.content:
                             ai_responses.append(msg.content)
-                        # 检查是否有工具调用
-                        elif hasattr(msg, 'tool_calls') and msg.tool_calls:
-                            tool_info = f"[正在调用工具: {', '.join([tc['name'] for tc in msg.tool_calls])}]"
-                            ai_responses.append(tool_info)
+                        # 检查是否有工具调用（但不显示技术性信息给用户）
+                        # 工具调用由进度报告系统处理
 
                 # 如果有回复,返回最后一个
                 if ai_responses:
                     return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
 
-                # 检查是否有工具返回消息
-                tool_messages = [msg for msg in messages if hasattr(msg, 'type') and msg.type == 'tool']
-                if tool_messages:
-                    last_tool = tool_messages[-1]
-                    if hasattr(last_tool, 'content'):
-                        return f"工具执行结果:\n{last_tool.content}"
+                # 检查是否有工具返回消息（不显示原始工具结果）
+                # 工具结果会被 agent 处理后以自然语言返回
 
             return "抱歉,我无法处理你的请求。Agent 没有返回有效响应。"
 
@@ -377,6 +403,84 @@ class TikTokInfluencerAgent:
             import traceback
             traceback.print_exc()
             yield error_msg
+
+    def run_with_image(self, user_input: str, image_data: str) -> str:
+        """
+        运行 Agent 处理用户输入（支持图片）
+
+        Args:
+            user_input: 用户输入的文本
+            image_data: Base64 编码的图片数据（data:image/...;base64,...格式）
+
+        Returns:
+            Agent 的回复
+        """
+        try:
+            # 将用户输入添加到历史记录（包含图片）
+            from langchain_core.messages import HumanMessage
+
+            # LangChain 支持多模态消息
+            # 构建包含文本和图片的消息
+            message_content = []
+
+            # 添加文本内容
+            if user_input and user_input.strip():
+                message_content.append({
+                    "type": "text",
+                    "text": user_input
+                })
+
+            # 添加图片内容
+            if image_data:
+                # 如果图片数据是 Base64 格式（data:image/...;base64,xxx）
+                # 需要提取实际的 Base64 数据
+                if image_data.startswith('data:image'):
+                    # 提取 Base64 部分
+                    image_url = image_data
+                else:
+                    # 如果只是纯 Base64，添加前缀
+                    image_url = f"data:image/jpeg;base64,{image_data}"
+
+                message_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url
+                    }
+                })
+
+            # 创建多模态消息
+            self.chat_history.append(HumanMessage(content=message_content))
+
+            # 调用 agent
+            result = self.agent.invoke({
+                "messages": self.chat_history
+            })
+
+            # 提取 AI 的回复（与 run() 方法相同）
+            if "messages" in result and len(result["messages"]) > 0:
+                messages = result["messages"]
+                self.chat_history = messages
+
+                ai_responses = []
+                for msg in messages:
+                    if hasattr(msg, 'type') and msg.type == 'ai':
+                        if hasattr(msg, 'content') and msg.content:
+                            ai_responses.append(msg.content)
+                        # 工具调用由进度报告系统处理，不显示给用户
+
+                if ai_responses:
+                    return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
+
+                # 工具结果会被 agent 处理后以自然语言返回
+
+            return "抱歉,我无法处理你的请求。Agent 没有返回有效响应。"
+
+        except Exception as e:
+            error_msg = f"❌ 处理图片时出错: {str(e)}\n请重新描述你的需求。"
+            print(f"Error details: {e}")
+            import traceback
+            traceback.print_exc()
+            return error_msg
 
     def scrape_with_retry(self, url: str, max_pages: int) -> Optional[pd.DataFrame]:
         """
