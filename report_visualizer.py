@@ -375,6 +375,158 @@ class InfluencerVisualizer:
         except Exception as e:
             return {"error": str(e)}
 
+    def generate_growth_quality(self, influencer_data: Dict,
+                                influencer_id: str) -> Dict[str, Any]:
+        """
+        Generate follower growth quality analysis chart.
+
+        Shows: Follower growth trend + quality index + health metrics
+        Identifies: Suspicious growth spikes, engagement authenticity
+
+        Returns:
+            {file_path, chart_type, insights}
+        """
+        try:
+            api_data = influencer_data.get('api_responses', {})
+            datalist = api_data.get('datalist', {})
+            author_idx = api_data.get('authorIndex', {})
+            stat_info = api_data.get('getStatInfo', {})
+
+            # Extract follower trend (90 days)
+            follower_data = datalist.get('follower', {}).get('list', [])
+            if len(follower_data) < 10:
+                return {"error": "Insufficient follower data"}
+
+            dates = [item['key'] for item in follower_data]
+            followers = [item['value'] for item in follower_data]
+
+            # Extract engagement data for quality calculation
+            like_data = datalist.get('like', {}).get('list', [])
+            comment_data = datalist.get('video_comment', {}).get('list', [])
+
+            likes = [item['value'] for item in like_data] if like_data else [0] * len(followers)
+            comments = [item['value'] for item in comment_data] if comment_data else [0] * len(followers)
+
+            # Calculate quality index (engagement per 1000 followers)
+            quality_index = []
+            for i, f in enumerate(followers):
+                if f > 0:
+                    engagement = (likes[i] + comments[i]) if i < len(likes) else 0
+                    quality = (engagement / f) * 1000
+                    quality_index.append(quality)
+                else:
+                    quality_index.append(0)
+
+            # Detect anomalies (suspicious growth spikes)
+            follower_changes = np.diff(followers)
+            mean_change = np.mean(follower_changes)
+            std_change = np.std(follower_changes)
+            threshold = mean_change + 3 * std_change
+            anomaly_indices = [i+1 for i, change in enumerate(follower_changes) if change > threshold]
+
+            # Create figure with secondary y-axis
+            fig = go.Figure()
+
+            # Follower trend (left y-axis)
+            fig.add_trace(go.Scatter(
+                x=dates,
+                y=followers,
+                name='粉丝数',
+                line=dict(color=self.colors['primary'], width=3),
+                yaxis='y'
+            ))
+
+            # Quality index (right y-axis)
+            fig.add_trace(go.Scatter(
+                x=dates,
+                y=quality_index,
+                name='质量指数',
+                line=dict(color=self.colors['success'], width=2, dash='dot'),
+                yaxis='y2'
+            ))
+
+            # Mark anomalies
+            if anomaly_indices:
+                anomaly_dates = [dates[i] for i in anomaly_indices]
+                anomaly_values = [followers[i] for i in anomaly_indices]
+                fig.add_trace(go.Scatter(
+                    x=anomaly_dates,
+                    y=anomaly_values,
+                    mode='markers',
+                    name='异常增长',
+                    marker=dict(color=self.colors['danger'], size=10, symbol='star'),
+                    yaxis='y'
+                ))
+
+            # Layout with dual y-axes
+            fig.update_layout(
+                title="粉丝增长质量分析",
+                xaxis=dict(title="日期"),
+                yaxis=dict(
+                    title=dict(text="粉丝数", font=dict(color=self.colors['primary'])),
+                    tickfont=dict(color=self.colors['primary'])
+                ),
+                yaxis2=dict(
+                    title=dict(text="质量指数", font=dict(color=self.colors['success'])),
+                    tickfont=dict(color=self.colors['success']),
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified',
+                template='plotly_white',
+                height=500
+            )
+
+            # Save chart
+            filename = f"{influencer_id}_growth_quality.html"
+            filepath = os.path.join(self.output_dir, filename)
+            fig.write_html(filepath)
+
+            # Generate insights
+            insights = []
+
+            # Growth stability
+            cv = std_change / abs(mean_change) if mean_change != 0 else 0
+            if cv < 0.3:
+                insights.append(f"增长稳定性优秀 (CV={cv:.2f})")
+            elif cv < 0.6:
+                insights.append(f"增长较稳定 (CV={cv:.2f})")
+            else:
+                insights.append(f"增长波动较大 (CV={cv:.2f})")
+
+            # Quality assessment
+            avg_quality = np.mean(quality_index)
+            if avg_quality > 20:
+                insights.append(f"互动质量优秀 (指数{avg_quality:.1f})")
+            elif avg_quality > 10:
+                insights.append(f"互动质量良好 (指数{avg_quality:.1f})")
+            else:
+                insights.append(f"互动质量待提升 (指数{avg_quality:.1f})")
+
+            # Anomaly detection
+            if anomaly_indices:
+                insights.append(f"检测到{len(anomaly_indices)}次异常增长,需关注真实性")
+            else:
+                insights.append("增长曲线自然,无异常峰值")
+
+            # Add additional metrics if available
+            if author_idx.get('follower_28_count_rate'):
+                growth_rate = author_idx['follower_28_count_rate']
+                insights.append(f"28天增长率: {growth_rate}")
+
+            if stat_info.get('aweme_pop_rate'):
+                pop_rate = stat_info['aweme_pop_rate']
+                insights.append(f"爆款率: {pop_rate}")
+
+            return {
+                "file_path": filepath,
+                "chart_type": "dual_line",
+                "insights": insights
+            }
+
+        except Exception as e:
+            return {"error": str(e)}
+
     def generate_radar_chart(self, dimension_scores: Dict[str, Any],
                             influencer_id: str) -> Dict[str, Any]:
         """
@@ -476,6 +628,7 @@ class InfluencerVisualizer:
             ("sales_funnel", self.generate_sales_funnel),
             ("audience_pyramid", self.generate_audience_pyramid),
             ("category_distribution", self.generate_category_distribution),
+            ("growth_quality", self.generate_growth_quality),
         ]
 
         for chart_name, generator in chart_generators:

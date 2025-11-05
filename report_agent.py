@@ -8,7 +8,7 @@ influencer recommendation reports.
 import os
 import json
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from dotenv import load_dotenv
 from jinja2 import Template
 
@@ -47,22 +47,99 @@ class TikTokInfluencerReportAgent:
             base_url=os.getenv("OPENAI_BASE_URL")
         )
 
-        # Initialize tools
+        # Initialize tools (viz_tool will be initialized per-report with dynamic path)
         self.loader_tool = LoadInfluencerDataTool()
         self.preference_tool = UserPreferenceAnalyzerTool()
         self.scorer_tool = MultiDimensionScorerTool()
         self.content_tool = ContentAlignmentTool()
-        self.viz_tool = DataVisualizationTool()
+        self.viz_tool = None  # Will be initialized in generate_report with timestamped path
 
-    def generate_report(self, user_query: str, target_count: int,
-                       product_info: Optional[str] = None) -> str:
+    def _load_from_json_file(self, json_filename: str) -> Dict[str, Any]:
+        """
+        Load influencer IDs from a specific JSON file in the output folder.
+
+        Args:
+            json_filename: Name of the JSON file (e.g., "tiktok_达人推荐_女士香水_20251105_132850.json")
+
+        Returns:
+            Dictionary with success status and influencer_ids list
+        """
+        try:
+            # Construct full path
+            json_path = os.path.join("output", json_filename)
+
+            # Check if file exists
+            if not os.path.exists(json_path):
+                return {
+                    'success': False,
+                    'error': f'文件不存在: {json_path}'
+                }
+
+            # Load JSON file
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Extract data_row_keys
+            influencer_ids = data.get('data_row_keys', [])
+
+            if not influencer_ids:
+                return {
+                    'success': False,
+                    'error': f'JSON文件中没有找到 data_row_keys 字段'
+                }
+
+            # Verify that influencer JSON files exist
+            missing_files = []
+            existing_ids = []
+
+            for inf_id in influencer_ids:
+                inf_path = os.path.join("influencer", f"{inf_id}.json")
+                if os.path.exists(inf_path):
+                    existing_ids.append(inf_id)
+                else:
+                    missing_files.append(inf_id)
+
+            if missing_files:
+                print(f"⚠️  警告: {len(missing_files)}个达人文件不存在,已跳过")
+                print(f"   缺失的达人ID: {missing_files[:5]}{'...' if len(missing_files) > 5 else ''}")
+
+            if not existing_ids:
+                return {
+                    'success': False,
+                    'error': f'所有达人文件都不存在于 influencer/ 文件夹'
+                }
+
+            print(f"✓ 从 {json_filename} 加载了 {len(existing_ids)}/{len(influencer_ids)} 个达人")
+            print(f"  产品名称: {data.get('product_name', '未知')}")
+            print(f"  时间戳: {data.get('timestamp', '未知')}")
+
+            return {
+                'success': True,
+                'influencer_ids': existing_ids,
+                'source_file': json_filename,
+                'product_name': data.get('product_name', '未知')
+            }
+
+        except json.JSONDecodeError as e:
+            return {
+                'success': False,
+                'error': f'JSON解析错误: {str(e)}'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'加载文件失败: {str(e)}'
+            }
+
+    def generate_report(self, json_filename: str, user_query: str, target_count: int, product_info: str) -> str:
         """
         Generate influencer recommendation report.
 
         Args:
+            json_filename: JSON file name in output folder (e.g., "tiktok_达人推荐_女士香水_20251105_132850.json")
             user_query: User's natural language requirement
-            target_count: Number of influencers needed (will generate 3x)
-            product_info: Optional product description
+            target_count: Number of top influencers needed in final report
+            product_info: Detailed product information for preference analysis
 
         Returns:
             Path to generated HTML report
@@ -71,13 +148,15 @@ class TikTokInfluencerReportAgent:
             print(f"\n{'='*60}")
             print(f"开始生成推荐报告")
             print(f"{'='*60}")
+            print(f"数据文件: {json_filename}")
             print(f"用户需求: {user_query}")
-            print(f"目标数量: {target_count}个达人 (将生成{target_count*3}个推荐)")
+            print(f"产品信息: {product_info[:100]}{'...' if len(product_info) > 100 else ''}")
+            print(f"目标数量: Top {target_count}个达人")
             print(f"{'='*60}\n")
 
-            # Step 1: Load influencer data
+            # Step 1: Load influencer data from JSON file
             print("📂 步骤1: 加载达人数据...")
-            load_result = json.loads(self.loader_tool._run())
+            load_result = self._load_from_json_file(json_filename)
 
             if not load_result.get('success'):
                 print(f"❌ 加载失败: {load_result.get('error')}")
@@ -90,7 +169,7 @@ class TikTokInfluencerReportAgent:
             print("🧠 步骤2: 分析用户偏好...")
             pref_result = json.loads(self.preference_tool._run(
                 user_query=user_query,
-                product_info=product_info,
+                product_info=product_info,  # Pass product info for better analysis
                 target_count=target_count
             ))
 
@@ -154,6 +233,16 @@ class TikTokInfluencerReportAgent:
             ranked_influencers.sort(key=lambda x: x['total_score'], reverse=True)
             print()
 
+            # Create timestamped report directory
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_dir = os.path.join("output/reports", timestamp)
+            charts_dir = os.path.join(report_dir, "charts")
+            os.makedirs(charts_dir, exist_ok=True)
+            print(f"📁 创建报告目录: {report_dir}")
+
+            # Initialize visualizer with timestamped charts directory
+            self.viz_tool = DataVisualizationTool(output_dir=charts_dir)
+
             # Step 5: Generate visualizations (for top influencers)
             print(f"📈 步骤5: 生成可视化图表...")
             charts_generated = 0
@@ -188,7 +277,8 @@ class TikTokInfluencerReportAgent:
             report_path = self._compile_html_report(
                 json.dumps(report_data, ensure_ascii=False),
                 user_query,
-                target_count
+                target_count,
+                report_dir
             )
 
             print(f"\n{'='*60}")
@@ -224,7 +314,7 @@ class TikTokInfluencerReportAgent:
 """
 
     def _compile_html_report(self, agent_output: str, user_query: str,
-                            target_count: int) -> str:
+                            target_count: int, report_dir: str) -> str:
         """
         Compile final HTML report from agent output.
 
@@ -232,6 +322,7 @@ class TikTokInfluencerReportAgent:
             agent_output: Agent's final output
             user_query: Original user query
             target_count: Target influencer count
+            report_dir: Directory path for this report (e.g., "output/reports/20251105_180530")
 
         Returns:
             Path to HTML report
@@ -296,11 +387,8 @@ class TikTokInfluencerReportAgent:
                 comparison_content=comparison_html
             )
 
-            # Save report
-            os.makedirs("output/reports", exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_filename = f"report_{timestamp}.html"
-            report_path = os.path.join("output/reports", report_filename)
+            # Save report to timestamped directory
+            report_path = os.path.join(report_dir, "report.html")
 
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
@@ -348,16 +436,61 @@ class TikTokInfluencerReportAgent:
 
             # Extract authorContact data
             author_contact = data.get('api_responses', {}).get('authorContact', {})
+            contact_list = author_contact.get('list', [])
 
-            # Return contact info
-            return {
-                'email': author_contact.get('email', ''),
-                'whatsapp': author_contact.get('whatsapp', ''),
-                'instagram': author_contact.get('instagram', ''),
-                'youtube': author_contact.get('youtube', ''),
-                'tiktok': author_contact.get('tiktok', ''),
-                'other': author_contact.get('other', '')
-            }
+            # Build contact info dictionary from list where has=true
+            contact_info = {}
+
+            for contact in contact_list:
+                if not contact.get('has', False):
+                    continue  # Skip if has=false
+
+                name = contact.get('name', '')
+                contact_id = contact.get('id', '')
+                link = contact.get('link', '')
+
+                # For email, use id; for others, use link
+                if name == 'email':
+                    value = contact_id
+                else:
+                    value = link
+
+                if value and name:
+                    # Map common names to standard keys
+                    if name == 'email':
+                        contact_info['email'] = value
+                    elif name == 'whatsapp':
+                        contact_info['whatsapp'] = value
+                    elif name == 'ins':
+                        contact_info['instagram'] = value
+                    elif name == 'youtube':
+                        contact_info['youtube'] = value
+                    elif name == 'tiktok':
+                        contact_info['tiktok'] = value
+                    elif name == 'facebook':
+                        contact_info['facebook'] = value
+                    elif name == 'twitter':
+                        contact_info['twitter'] = value
+                    elif name == 'bio':
+                        contact_info['bio'] = value
+                    elif name == 'line':
+                        contact_info['line'] = value
+                    elif name == 'zalo':
+                        contact_info['zalo'] = value
+                    elif name == 'viber':
+                        contact_info['viber'] = value
+                    else:
+                        # Store other contacts
+                        if 'other' not in contact_info:
+                            contact_info['other'] = []
+                        contact_info['other'].append(f"{name}: {value}")
+
+            # Convert other list to string
+            if 'other' in contact_info and isinstance(contact_info['other'], list):
+                contact_info['other'] = ' | '.join(contact_info['other'])
+
+            return contact_info
+
         except Exception as e:
             print(f"⚠️  提取联系方式失败 ({influencer_id}): {e}")
             return {}
@@ -375,26 +508,84 @@ class TikTokInfluencerReportAgent:
     </div>
 """
 
-        # Build contact items
+        # Build contact items with proper formatting
         contact_items = []
 
+        # Email (clickable)
         if contact_info.get('email'):
-            contact_items.append(f"<div style='margin:5px 0;'><strong>Email:</strong> {contact_info['email']}</div>")
+            email = contact_info['email']
+            contact_items.append(f"<div style='margin:5px 0;'><strong>📧 Email:</strong> <a href='mailto:{email}' style='color:#1976d2;'>{email}</a></div>")
 
+        # WhatsApp
         if contact_info.get('whatsapp'):
-            contact_items.append(f"<div style='margin:5px 0;'><strong>WhatsApp:</strong> {contact_info['whatsapp']}</div>")
+            whatsapp = contact_info['whatsapp']
+            contact_items.append(f"<div style='margin:5px 0;'><strong>💬 WhatsApp:</strong> {whatsapp}</div>")
 
+        # Instagram (clickable link if it's a URL)
         if contact_info.get('instagram'):
-            contact_items.append(f"<div style='margin:5px 0;'><strong>Instagram:</strong> @{contact_info['instagram']}</div>")
+            instagram = contact_info['instagram']
+            if instagram.startswith('http'):
+                contact_items.append(f"<div style='margin:5px 0;'><strong>📷 Instagram:</strong> <a href='{instagram}' target='_blank' style='color:#e4405f;'>{instagram}</a></div>")
+            else:
+                # Extract username from URL if present
+                username = instagram.split('/')[-1] if '/' in instagram else instagram
+                contact_items.append(f"<div style='margin:5px 0;'><strong>📷 Instagram:</strong> <a href='{instagram}' target='_blank' style='color:#e4405f;'>@{username}</a></div>")
 
+        # YouTube (clickable)
         if contact_info.get('youtube'):
-            contact_items.append(f"<div style='margin:5px 0;'><strong>YouTube:</strong> {contact_info['youtube']}</div>")
+            youtube = contact_info['youtube']
+            if youtube.startswith('http'):
+                contact_items.append(f"<div style='margin:5px 0;'><strong>📺 YouTube:</strong> <a href='{youtube}' target='_blank' style='color:#ff0000;'>{youtube}</a></div>")
+            else:
+                contact_items.append(f"<div style='margin:5px 0;'><strong>📺 YouTube:</strong> {youtube}</div>")
 
+        # TikTok
         if contact_info.get('tiktok'):
-            contact_items.append(f"<div style='margin:5px 0;'><strong>TikTok:</strong> @{contact_info['tiktok']}</div>")
+            tiktok = contact_info['tiktok']
+            contact_items.append(f"<div style='margin:5px 0;'><strong>🎵 TikTok:</strong> @{tiktok}</div>")
 
+        # Facebook
+        if contact_info.get('facebook'):
+            facebook = contact_info['facebook']
+            if facebook.startswith('http'):
+                contact_items.append(f"<div style='margin:5px 0;'><strong>👤 Facebook:</strong> <a href='{facebook}' target='_blank' style='color:#4267B2;'>{facebook}</a></div>")
+            else:
+                contact_items.append(f"<div style='margin:5px 0;'><strong>👤 Facebook:</strong> {facebook}</div>")
+
+        # Twitter
+        if contact_info.get('twitter'):
+            twitter = contact_info['twitter']
+            if twitter.startswith('http'):
+                contact_items.append(f"<div style='margin:5px 0;'><strong>🐦 Twitter:</strong> <a href='{twitter}' target='_blank' style='color:#1DA1F2;'>{twitter}</a></div>")
+            else:
+                contact_items.append(f"<div style='margin:5px 0;'><strong>🐦 Twitter:</strong> @{twitter}</div>")
+
+        # Bio/Link in Bio
+        if contact_info.get('bio'):
+            bio = contact_info['bio']
+            if bio.startswith('http'):
+                contact_items.append(f"<div style='margin:5px 0;'><strong>🔗 Bio Link:</strong> <a href='{bio}' target='_blank' style='color:#00d084;'>{bio}</a></div>")
+            else:
+                contact_items.append(f"<div style='margin:5px 0;'><strong>🔗 Bio Link:</strong> {bio}</div>")
+
+        # Line
+        if contact_info.get('line'):
+            line = contact_info['line']
+            contact_items.append(f"<div style='margin:5px 0;'><strong>💚 Line:</strong> {line}</div>")
+
+        # Zalo
+        if contact_info.get('zalo'):
+            zalo = contact_info['zalo']
+            contact_items.append(f"<div style='margin:5px 0;'><strong>💙 Zalo:</strong> {zalo}</div>")
+
+        # Viber
+        if contact_info.get('viber'):
+            viber = contact_info['viber']
+            contact_items.append(f"<div style='margin:5px 0;'><strong>💜 Viber:</strong> {viber}</div>")
+
+        # Other contacts
         if contact_info.get('other'):
-            contact_items.append(f"<div style='margin:5px 0;'><strong>其他:</strong> {contact_info['other']}</div>")
+            contact_items.append(f"<div style='margin:5px 0;'><strong>ℹ️ 其他:</strong> {contact_info['other']}</div>")
 
         contact_html = "\n".join(contact_items)
 
@@ -564,7 +755,7 @@ class TikTokInfluencerReportAgent:
         # Integrate charts
         charts_html = ""
         if charts:
-            charts_html = '<div class="content-section"><h3>📊 数据可视化分析</h3>'
+            charts_html = '<div class="content-section"><h3>📊 数据可视化分析</h3><div class="charts-container">'
 
             for chart in charts:
                 chart_path = chart.get('file_path', '')
@@ -575,16 +766,16 @@ class TikTokInfluencerReportAgent:
                 if chart_path.endswith('.html') and os.path.exists(chart_path):
                     try:
                         # Convert absolute path to relative path from report location
-                        # report is at: output/reports/report_xxx.html
-                        # charts are at: output/charts/xxx.html
-                        # relative path: ../charts/xxx.html
+                        # report is at: output/reports/20251105_180530/report.html
+                        # charts are at: output/reports/20251105_180530/charts/xxx.html
+                        # relative path: ./charts/xxx.html
                         chart_filename = os.path.basename(chart_path)
-                        relative_chart_path = f"../charts/{chart_filename}"
+                        relative_chart_path = f"./charts/{chart_filename}"
 
                         charts_html += f'''
 <div class="chart-wrapper">
-    <h4>{'雷达图' if 'radar' in chart_name else '销售漏斗' if 'funnel' in chart_name else '受众画像' if 'pyramid' in chart_name else '品类分布' if 'pie' in chart_name else '互动趋势' if 'trend' in chart_name else chart_name}</h4>
-    <div style="width:100%; height:400px; overflow:hidden;">
+    <h4>{'雷达图' if 'radar' in chart_name else '销售漏斗' if 'funnel' in chart_name else '受众画像' if 'pyramid' in chart_name else '品类分布' if ('pie' in chart_name or 'category' in chart_name) else '互动趋势' if 'trend' in chart_name else '成长质量' if 'growth' in chart_name else chart_name}</h4>
+    <div style="width:100%; height:550px;">
         <iframe src='{relative_chart_path}' style="width:100%; height:100%; border:none;"></iframe>
     </div>
     <div style="margin-top:10px; font-size:14px; color:#666;">
@@ -595,21 +786,23 @@ class TikTokInfluencerReportAgent:
                     except:
                         pass
 
-            charts_html += '</div>'
+            charts_html += '</div></div>'
 
         return f"""
-    <div class="content-section">
-        <h3>💪 核心优势</h3>
-        <ul class="strengths-list">
-            {"".join(f"<li>{s}</li>" for s in strengths)}
-        </ul>
-    </div>
+    <div class="card-content-grid">
+        <div class="content-section">
+            <h3>💪 核心优势</h3>
+            <ul class="strengths-list">
+                {"".join(f"<li>{s}</li>" for s in strengths)}
+            </ul>
+        </div>
 
-    <div class="content-section">
-        <h3>⚠️ 潜在风险</h3>
-        <ul class="weaknesses-list">
-            {"".join(f"<li>{w}</li>" for w in weaknesses)}
-        </ul>
+        <div class="content-section">
+            <h3>⚠️ 潜在风险</h3>
+            <ul class="weaknesses-list">
+                {"".join(f"<li>{w}</li>" for w in weaknesses)}
+            </ul>
+        </div>
     </div>
 
     {charts_html}
@@ -640,36 +833,38 @@ class TikTokInfluencerReportAgent:
             if chart_path.endswith('.html') and os.path.exists(chart_path):
                 try:
                     chart_filename = os.path.basename(chart_path)
-                    relative_chart_path = f"../charts/{chart_filename}"
+                    relative_chart_path = f"./charts/{chart_filename}"
                     key_charts.append((relative_chart_path, chart.get('insights', [])))
                 except:
                     pass
 
         charts_html = ""
         if key_charts:
-            charts_html = '<div class="content-section"><h3>📊 关键数据</h3>'
+            charts_html = '<div class="content-section"><h3>📊 关键数据</h3><div class="charts-container">'
             for chart_path, insights in key_charts:
                 charts_html += f'''
 <div class="chart-wrapper">
-    <iframe src='{chart_path}' style="width:100%; height:300px; border:none;"></iframe>
+    <iframe src='{chart_path}' style="width:100%; height:450px; border:none;"></iframe>
     <p style="font-size:13px; color:#666;">{insights[0] if insights else ''}</p>
 </div>
 '''
-            charts_html += '</div>'
+            charts_html += '</div></div>'
 
         return f"""
-    <div class="content-section">
-        <h3>核心优势</h3>
-        <ul class="strengths-list">
-            {"".join(f"<li>{s}</li>" for s in strengths)}
-        </ul>
-    </div>
+    <div class="card-content-grid">
+        <div class="content-section">
+            <h3>核心优势</h3>
+            <ul class="strengths-list">
+                {"".join(f"<li>{s}</li>" for s in strengths)}
+            </ul>
+        </div>
 
-    <div class="content-section">
-        <h3>注意事项</h3>
-        <ul class="weaknesses-list">
-            {"".join(f"<li>{w}</li>" for w in weaknesses)}
-        </ul>
+        <div class="content-section">
+            <h3>注意事项</h3>
+            <ul class="weaknesses-list">
+                {"".join(f"<li>{w}</li>" for w in weaknesses)}
+            </ul>
+        </div>
     </div>
 
     {charts_html}
@@ -849,7 +1044,7 @@ class TikTokInfluencerReportAgent:
 
 def main():
     """Main function for CLI usage."""
-    import sys
+    import argparse
 
     print("""
 ╔═══════════════════════════════════════════════════════════╗
@@ -858,28 +1053,113 @@ def main():
 ╚═══════════════════════════════════════════════════════════╝
 """)
 
-    # Example usage
-    agent = TikTokInfluencerReportAgent()
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='生成达人推荐报告',
+        epilog='命令行模式示例: python report_agent.py --json tiktok_达人推荐_女士香水_20251105_132850.json --query "推广女士香水" --count 10 --product "Dior Miss Dior香水"',
+        add_help=True
+    )
+    parser.add_argument('--json', type=str, help='JSON文件名 (在output文件夹中)')
+    parser.add_argument('--query', type=str, help='用户需求描述')
+    parser.add_argument('--count', type=int, help='需要推荐的达人数量')
+    parser.add_argument('--product', type=str, help='产品详细信息')
 
-    # Get user input
-    if len(sys.argv) > 1:
-        user_query = " ".join(sys.argv[1:])
-        target_count = 5  # Default
+    args = parser.parse_args()
+
+    # Check if any arguments were provided
+    has_args = any([args.json, args.query, args.count, args.product])
+
+    if has_args:
+        # Command-line mode: validate all required arguments
+        if not all([args.json, args.query, args.count, args.product]):
+            print("❌ 命令行模式需要提供所有4个参数: --json, --query, --count, --product")
+            print("   使用 --help 查看详细说明")
+            return
+
+        json_filename = args.json
+        user_query = args.query
+        target_count = args.count
+        product_info = args.product
+
+        print("📋 命令行模式 - 参数确认:")
+        print(f"{'='*60}")
+        print(f"数据文件: {json_filename}")
+        print(f"用户需求: {user_query}")
+        print(f"推荐数量: {target_count}个")
+        print(f"产品信息: {product_info[:80]}{'...' if len(product_info) > 80 else ''}")
+        print(f"{'='*60}\n")
+
     else:
-        print("请输入您的需求:")
-        user_query = input("> ").strip()
+        # Interactive mode
+        print("欢迎使用达人推荐报告生成系统")
+        print("提示: 您也可以使用命令行参数模式 (使用 --help 查看)\n")
+
+        # Question 1: JSON file name
+        print("📂 问题 1/4: 请输入JSON文件名 (在output文件夹中)")
+        print("   示例: tiktok_达人推荐_女士香水_20251105_132850.json")
+        json_filename = input("   > ").strip()
+
+        if not json_filename:
+            print("❌ 文件名不能为空")
+            return
+
+        # Question 2: User query
+        print("\n💭 问题 2/4: 请描述您的需求")
+        print("   示例: 推广高端女士香水,需要优雅风格、互动率高的达人")
+        user_query = input("   > ").strip()
 
         if not user_query:
-            user_query = "我需要推广保健品,目标受众是30-50岁美国女性,需要互动率高、带货能力强的达人"
+            print("❌ 需求描述不能为空")
+            return
 
-        print("\n需要多少个达人? (默认5个,将生成15个推荐)")
-        target_input = input("> ").strip()
-        target_count = int(target_input) if target_input.isdigit() else 5
+        # Question 3: Target count
+        print("\n🎯 问题 3/4: 需要推荐多少个达人?")
+        print("   建议: 5-15个")
+        target_count_input = input("   > ").strip()
+
+        try:
+            target_count = int(target_count_input)
+            if target_count <= 0:
+                print("❌ 数量必须大于0")
+                return
+        except ValueError:
+            print("❌ 请输入有效的数字")
+            return
+
+        # Question 4: Product info
+        print("\n📦 问题 4/4: 请输入产品详细信息")
+        print("   示例: Dior Miss Dior香水,花香调,目标客户25-35岁白领女性,价格800-1200元")
+        product_info = input("   > ").strip()
+
+        if not product_info:
+            print("❌ 产品信息不能为空")
+            return
+
+        # Confirm inputs
+        print(f"\n{'='*60}")
+        print("📋 确认您的输入:")
+        print(f"{'='*60}")
+        print(f"数据文件: {json_filename}")
+        print(f"用户需求: {user_query}")
+        print(f"推荐数量: {target_count}个")
+        print(f"产品信息: {product_info[:80]}{'...' if len(product_info) > 80 else ''}")
+        print(f"{'='*60}")
+
+        confirm = input("\n确认生成报告? (y/n, 默认y): ").strip().lower()
+        if confirm and confirm != 'y':
+            print("❌ 已取消")
+            return
+
+    # Initialize agent
+    print("\n初始化Agent...")
+    agent = TikTokInfluencerReportAgent()
 
     # Generate report
     report_path = agent.generate_report(
+        json_filename=json_filename,
         user_query=user_query,
-        target_count=target_count
+        target_count=target_count,
+        product_info=product_info
     )
 
     if report_path:

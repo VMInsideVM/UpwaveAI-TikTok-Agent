@@ -20,7 +20,7 @@
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
@@ -148,7 +148,7 @@
 
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 15px;
             margin: 20px 0;
         }
@@ -196,6 +196,18 @@
             border-radius: 2px;
         }
 
+        /* 卡片内部双列对称布局 */
+        .card-content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .card-content-grid > .content-section {
+            margin: 0;
+        }
+
         .strengths-list, .weaknesses-list {
             list-style: none;
             margin-top: 10px;
@@ -239,7 +251,7 @@
 
         .charts-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 20px;
             margin: 20px 0;
         }
