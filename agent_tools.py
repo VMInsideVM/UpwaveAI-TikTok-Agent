@@ -86,12 +86,26 @@ _classifier_instance = None
 # 全局变量：存储爬取的数据（临时方案）
 _scraped_data = None
 
+# 全局变量：存储 agent 实例（用于工具访问 agent 状态）
+_agent_instance = None
+
 def get_classifier():
     """获取分类器单例实例"""
     global _classifier_instance
     if _classifier_instance is None:
         _classifier_instance = ProductCategoryClassifierV3(verbose=False)
     return _classifier_instance
+
+
+def set_agent_instance(agent):
+    """设置全局 agent 实例"""
+    global _agent_instance
+    _agent_instance = agent
+
+
+def get_agent_instance():
+    """获取全局 agent 实例"""
+    return _agent_instance
 
 def match_product_category(product_name: str) -> Optional[Dict]:
     """
@@ -209,6 +223,22 @@ class BuildURLTool(BaseTool):
     ) -> str:
         """执行 URL 构建"""
         try:
+            # 存储参数到 agent 的 current_params
+            agent = get_agent_instance()
+            if agent:
+                agent.current_params['country_name'] = country_name
+                agent.current_params['promotion_channel'] = promotion_channel
+                agent.current_params['affiliate_check'] = affiliate_check
+                agent.current_params['account_type'] = account_type
+                agent.current_params['cap_status'] = cap_status
+                agent.current_params['auth_type'] = auth_type
+                agent.current_params['followers_min'] = followers_min
+                agent.current_params['followers_max'] = followers_max
+                agent.current_params['followers_gender'] = followers_gender
+                agent.current_params['followers_age'] = followers_age
+                agent.current_params['new_followers_min'] = new_followers_min
+                agent.current_params['new_followers_max'] = new_followers_max
+
             # 处理粉丝数范围
             followers = []
             if followers_min is not None and followers_max is not None:
@@ -261,6 +291,13 @@ class CategoryMatchTool(BaseTool):
 
             if result is None:
                 return f"❌ 很抱歉,无法为商品 '{product_name}' 找到合适的分类。请检查商品名称或联系管理员。"
+
+            # 存储商品名称和分类信息到 agent
+            agent = get_agent_instance()
+            if agent:
+                agent.current_product = product_name
+                agent.current_params['product_name'] = product_name
+                agent.current_params['category_info'] = result
 
             # 返回格式化的结果，包含推理过程和 URL 后缀
             reasoning = result.get('reasoning', '无')
@@ -467,6 +504,20 @@ class ProcessInfluencerListInput(BaseModel):
     cache_days: int = Field(3, ge=1, le=30, description="缓存有效天数（1-30天，默认3天）")
 
 
+class ReviewParametersInput(BaseModel):
+    """审查参数的输入参数"""
+    current_params: Dict = Field(description="当前收集到的所有筛选参数（JSON字典）")
+    product_name: str = Field(description="商品名称")
+    target_count: int = Field(description="目标达人数量")
+    category_info: Optional[Dict] = Field(default=None, description="商品分类信息（如果已匹配）")
+
+
+class UpdateParametersInput(BaseModel):
+    """更新参数的输入参数"""
+    param_name: str = Field(description="要更新的参数名称")
+    param_value: Any = Field(description="参数的新值")
+
+
 class SuggestAdjustmentsTool(BaseTool):
     """生成筛选条件调整建议的工具"""
     name: str = "suggest_parameter_adjustments"
@@ -521,6 +572,172 @@ class SuggestAdjustmentsTool(BaseTool):
 
         except Exception as e:
             return f"❌ 生成调整建议时出错: {str(e)}"
+
+
+class ReviewParametersTool(BaseTool):
+    """审查并展示当前收集到的所有筛选参数"""
+    name: str = "review_parameters"
+    description: str = """
+    展示当前收集到的所有筛选参数，供用户确认。
+
+    这个工具会格式化显示：
+    - 商品名称和分类信息
+    - 目标国家/地区
+    - 目标达人数量
+    - 所有筛选条件（粉丝范围、推广渠道、认证类型等）
+
+    参数：
+    - current_params: 当前收集到的所有筛选参数（JSON字典）
+    - product_name: 商品名称
+    - target_count: 目标达人数量
+    - category_info: 商品分类信息（可选）
+
+    返回格式化的参数摘要，并询问用户是否满意。
+    """
+    args_schema: type[BaseModel] = ReviewParametersInput
+
+    def _run(
+        self,
+        current_params: Dict,
+        product_name: str,
+        target_count: int,
+        category_info: Optional[Dict] = None
+    ) -> str:
+        """执行参数审查"""
+        try:
+            # 构建参数摘要
+            output = "📋 **当前筛选参数摘要**\n\n"
+
+            # 1. 商品信息
+            output += f"🎯 **商品信息**\n"
+            output += f"   • 商品名称: {product_name}\n"
+            if category_info:
+                output += f"   • 商品分类: {category_info.get('main_category', '未知')} > {category_info.get('category_name', '未知')}\n"
+            output += f"   • 目标数量: {target_count} 个达人\n\n"
+
+            # 2. 国家/地区
+            country = current_params.get('country_name', '全部')
+            output += f"🌍 **目标地区**: {country}\n\n"
+
+            # 3. 筛选条件
+            output += f"🔍 **筛选条件**\n"
+
+            # 粉丝范围
+            followers_min = current_params.get('followers_min')
+            followers_max = current_params.get('followers_max')
+            if followers_min or followers_max:
+                if followers_min and followers_max:
+                    output += f"   • 粉丝数: {self._format_number(followers_min)} - {self._format_number(followers_max)}\n"
+                elif followers_min:
+                    output += f"   • 粉丝数: 至少 {self._format_number(followers_min)}\n"
+                elif followers_max:
+                    output += f"   • 粉丝数: 最多 {self._format_number(followers_max)}\n"
+            else:
+                output += f"   • 粉丝数: 不限制\n"
+
+            # 推广渠道
+            channel = current_params.get('promotion_channel', 'all')
+            channel_map = {'all': '不限制', 'video': '短视频带货', 'live': '直播带货'}
+            output += f"   • 推广渠道: {channel_map.get(channel, channel)}\n"
+
+            # 联盟达人
+            affiliate = current_params.get('affiliate_check', False)
+            output += f"   • 联盟达人: {'仅联盟达人' if affiliate else '不限制'}\n"
+
+            # 认证类型
+            auth_type = current_params.get('auth_type', 'all')
+            auth_map = {'all': '不限制', 'verified': '仅认证达人', 'not_verified': '仅未认证达人'}
+            output += f"   • 认证类型: {auth_map.get(auth_type, auth_type)}\n"
+
+            # 账号类型
+            account_type = current_params.get('account_type', 'all')
+            account_map = {'all': '不限制', 'personal': '个人账号', 'business': '企业账号'}
+            output += f"   • 账号类型: {account_map.get(account_type, account_type)}\n"
+
+            # 粉丝性别
+            gender = current_params.get('followers_gender', 'all')
+            gender_map = {'all': '不限制', 'male': '男粉为主', 'female': '女粉为主'}
+            output += f"   • 粉丝性别: {gender_map.get(gender, gender)}\n"
+
+            # 粉丝年龄
+            age = current_params.get('followers_age', 'all')
+            if age != 'all':
+                output += f"   • 粉丝年龄: {age}\n"
+
+            # 新增粉丝
+            new_followers_min = current_params.get('new_followers_min')
+            new_followers_max = current_params.get('new_followers_max')
+            if new_followers_min or new_followers_max:
+                if new_followers_min and new_followers_max:
+                    output += f"   • 近28天涨粉: {self._format_number(new_followers_min)} - {self._format_number(new_followers_max)}\n"
+                elif new_followers_min:
+                    output += f"   • 近28天涨粉: 至少 {self._format_number(new_followers_min)}\n"
+                elif new_followers_max:
+                    output += f"   • 近28天涨粉: 最多 {self._format_number(new_followers_max)}\n"
+
+            output += "\n"
+            output += "---\n\n"
+            output += "请确认以上参数是否满意？\n"
+            output += "• 如果满意，请回复：好的/确认/可以/开始\n"
+            output += "• 如果需要调整，请告诉我要修改哪些参数\n"
+
+            return output
+
+        except Exception as e:
+            return f"❌ 审查参数时出错: {str(e)}"
+
+    def _format_number(self, num: int) -> str:
+        """格式化数字显示"""
+        if num >= 10000:
+            return f"{num // 10000}万"
+        else:
+            return str(num)
+
+
+class UpdateParametersTool(BaseTool):
+    """更新特定的筛选参数"""
+    name: str = "update_parameter"
+    description: str = """
+    更新特定的筛选参数。
+
+    用于在参数确认循环中修改用户不满意的参数。
+
+    参数：
+    - param_name: 要更新的参数名称（如 'followers_min', 'promotion_channel'）
+    - param_value: 参数的新值
+
+    注意：
+    - 国家（country_name）和商品分类一旦确定不可修改
+    - 参数名称必须是有效的筛选参数
+
+    返回更新结果。
+    """
+    args_schema: type[BaseModel] = UpdateParametersInput
+
+    def _run(self, param_name: str, param_value: Any) -> str:
+        """执行参数更新"""
+        try:
+            # 检查不可修改的参数
+            immutable_params = ['country_name', 'category_id', 'category_name']
+            if param_name in immutable_params:
+                return f"❌ 参数 '{param_name}' 不可修改。国家和商品分类一旦确定就不能更改。"
+
+            # 有效参数列表
+            valid_params = [
+                'followers_min', 'followers_max', 'promotion_channel',
+                'affiliate_check', 'account_type', 'auth_type',
+                'followers_gender', 'followers_age',
+                'new_followers_min', 'new_followers_max', 'cap_status'
+            ]
+
+            if param_name not in valid_params:
+                return f"❌ 无效的参数名称: {param_name}\n可用参数: {', '.join(valid_params)}"
+
+            # 返回成功信息（实际更新由 agent 负责）
+            return f"✅ 参数 '{param_name}' 已更新为: {param_value}\n请使用 review_parameters 工具重新审查所有参数。"
+
+        except Exception as e:
+            return f"❌ 更新参数时出错: {str(e)}"
 
 
 class ProcessInfluencerListTool(BaseTool):
@@ -680,6 +897,8 @@ def get_all_tools() -> List[BaseTool]:
     return [
         BuildURLTool(),
         CategoryMatchTool(),
+        ReviewParametersTool(),           # 审查参数
+        UpdateParametersTool(),           # 更新参数
         GetMaxPageTool(),
         AnalyzeQuantityTool(),            # 分析数量缺口
         SuggestAdjustmentsTool(),         # 生成调整建议

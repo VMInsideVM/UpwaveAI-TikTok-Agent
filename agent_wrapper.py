@@ -66,6 +66,32 @@ class AgentProgressWrapper:
 
         return None
 
+
+def translate_tool_call(tool_name: str) -> str:
+    """
+    将技术性的工具名称转换为用户友好的描述
+
+    Args:
+        tool_name: 工具名称（如 build_search_url）
+
+    Returns:
+        用户友好的描述
+    """
+    tool_translations = {
+        'build_search_url': '正在构建搜索条件...',
+        'match_product_category': '正在识别商品类型...',
+        'get_max_page_number': '正在检查可用数据量...',
+        'analyze_quantity_gap': '正在分析结果数量...',
+        'suggest_parameter_adjustments': '正在生成优化建议...',
+        'get_sort_suffix': '正在设置排序方式...',
+        'scrape_and_export_json': '正在搜索达人...',
+        'process_influencer_detail': '正在获取详细信息...',
+        'scrape_influencers': '正在爬取达人数据...',
+        'export_excel': '正在导出结果...',
+    }
+
+    return tool_translations.get(tool_name, '正在处理...')
+
     def write(self, text: str):
         """捕获输出并解析进度"""
         # 写入原始输出（用于调试）

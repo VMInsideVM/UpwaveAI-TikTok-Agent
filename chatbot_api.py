@@ -5,7 +5,7 @@ TikTok 达人推荐聊天机器人 API 服务
 
 import asyncio
 import json
-from typing import Dict
+from typing import Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +16,7 @@ from datetime import datetime
 
 from session_manager import session_manager
 from agent import TikTokInfluencerAgent
-from agent_wrapper import AgentProgressWrapper, clean_response
+from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_call
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -52,10 +52,16 @@ def check_playwright_api() -> bool:
         return False
 
 
-async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket):
+async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None):
     """
     流式传输 agent 响应到 WebSocket
     包含进度更新和心跳保活
+
+    Args:
+        agent: Agent 实例
+        user_input: 用户文本输入
+        websocket: WebSocket 连接
+        image_data: Base64 编码的图片数据（可选）
     """
     try:
         # 创建一个包装函数来捕获 agent 的处理过程
@@ -116,7 +122,12 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             # 注意：由于 asyncio.run_in_executor 在不同线程中运行，
             # 这里的进度回调需要特殊处理
             # 简化版本：直接运行，后续可以改进为真正的实时进度
-            return agent.run(user_input)
+
+            # 如果有图片，调用支持视觉输入的方法
+            if image_data:
+                return agent.run_with_image(user_input, image_data)
+            else:
+                return agent.run(user_input)
 
         try:
             # 定期报告"处理中"状态
@@ -358,16 +369,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 message_data = json.loads(data)
                 message_type = message_data.get("type", "message")
                 content = message_data.get("content", "")
+                image_data = message_data.get("image", None)  # 获取图片数据
 
-                if message_type == "message" and content:
+                if message_type == "message" and (content or image_data):
                     # 发送"正在输入"指示器
                     await websocket.send_json({
                         "type": "typing",
                         "timestamp": datetime.now().isoformat()
                     })
 
-                    # 处理并流式返回响应
-                    await stream_agent_response(agent, content, websocket)
+                    # 处理并流式返回响应（包括图片）
+                    await stream_agent_response(agent, content, websocket, image_data)
 
                 elif message_type == "ping":
                     # 心跳响应
