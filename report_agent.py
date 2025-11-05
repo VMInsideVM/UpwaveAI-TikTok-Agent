@@ -492,17 +492,21 @@ class TikTokInfluencerReportAgent:
                 chart_name = chart.get('chart_name', '')
                 insights = chart.get('insights', [])
 
-                # Try to embed chart (if HTML)
+                # Use relative path instead of embedding (charts are too large)
                 if chart_path.endswith('.html') and os.path.exists(chart_path):
                     try:
-                        with open(chart_path, 'r', encoding='utf-8') as f:
-                            chart_content = f.read()
+                        # Convert absolute path to relative path from report location
+                        # report is at: output/reports/report_xxx.html
+                        # charts are at: output/charts/xxx.html
+                        # relative path: ../charts/xxx.html
+                        chart_filename = os.path.basename(chart_path)
+                        relative_chart_path = f"../charts/{chart_filename}"
 
                         charts_html += f'''
 <div class="chart-wrapper">
     <h4>{'雷达图' if 'radar' in chart_name else '销售漏斗' if 'funnel' in chart_name else '受众画像' if 'pyramid' in chart_name else '品类分布' if 'pie' in chart_name else '互动趋势' if 'trend' in chart_name else chart_name}</h4>
     <div style="width:100%; height:400px; overflow:hidden;">
-        <iframe srcdoc='{chart_content.replace("'", "&#39;")}' style="width:100%; height:100%; border:none;"></iframe>
+        <iframe src='{relative_chart_path}' style="width:100%; height:100%; border:none;"></iframe>
     </div>
     <div style="margin-top:10px; font-size:14px; color:#666;">
         <strong>洞察:</strong> {' | '.join(insights[:3]) if insights else '详见图表'}
@@ -550,25 +554,25 @@ class TikTokInfluencerReportAgent:
         strengths = inf.get('strengths', ['综合表现良好'])[:3]
         weaknesses = inf.get('weaknesses', ['无明显短板'])[:2]
 
-        # Select 1-2 key charts
+        # Select 1-2 key charts (use relative paths)
         key_charts = []
         for chart in charts[:2]:
             chart_path = chart.get('file_path', '')
             if chart_path.endswith('.html') and os.path.exists(chart_path):
                 try:
-                    with open(chart_path, 'r', encoding='utf-8') as f:
-                        chart_content = f.read()
-                    key_charts.append((chart_content, chart.get('insights', [])))
+                    chart_filename = os.path.basename(chart_path)
+                    relative_chart_path = f"../charts/{chart_filename}"
+                    key_charts.append((relative_chart_path, chart.get('insights', [])))
                 except:
                     pass
 
         charts_html = ""
         if key_charts:
             charts_html = '<div class="content-section"><h3>📊 关键数据</h3>'
-            for content, insights in key_charts:
+            for chart_path, insights in key_charts:
                 charts_html += f'''
 <div class="chart-wrapper">
-    <iframe srcdoc='{content.replace("'", "&#39;")}' style="width:100%; height:300px; border:none;"></iframe>
+    <iframe src='{chart_path}' style="width:100%; height:300px; border:none;"></iframe>
     <p style="font-size:13px; color:#666;">{insights[0] if insights else ''}</p>
 </div>
 '''
