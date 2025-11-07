@@ -41,19 +41,32 @@ class TikTokInfluencerAgent:
         self.current_params = {}  # 当前收集到的所有筛选参数
         self.params_confirmed = False  # 参数是否已确认
         self.target_influencer_count = None  # 目标达人数量
+        self.waiting_for_param_confirmation = False  # 🆕 是否正在等待参数确认
 
         # 设置全局 agent 实例，供工具访问
         set_agent_instance(self)
 
     def _init_llm(self) -> ChatOpenAI:
         """初始化 LLM"""
-        return ChatOpenAI(
+        llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_api_base=os.getenv("OPENAI_BASE_URL"),
             temperature=0.7,
             max_tokens=4096
         )
+
+        # 添加 LangSmith 追踪配置
+        return llm.with_config({
+            "run_name": "TikTok_LLM",
+            "tags": ["llm", "qwen3-vl"],
+            "metadata": {
+                "model": os.getenv("OPENAI_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct"),
+                "temperature": 0.7,
+                "max_tokens": 4096,
+                "api_provider": "siliconflow"
+            }
+        })
 
     def _load_knowledge_base(self) -> str:
         """加载知识库"""
@@ -67,6 +80,52 @@ class TikTokInfluencerAgent:
             print(f"⚠️ 无法加载知识库: {e}")
             return ""
 
+    def _is_informational_question(self, user_input: str) -> bool:
+        """
+        判断用户输入是否为咨询性提问
+
+        咨询性提问的特征：
+        - 包含疑问词（什么、哪些、怎么、为什么、有哪几种等）
+        - 不包含实质性需求信息（商品名、数量、地区等）
+        - 询问系统功能、参数含义、可选值
+
+        Returns:
+            bool: True表示咨询性提问，False表示流程推进
+        """
+        # 疑问词列表
+        question_words = [
+            '什么', '哪些', '哪个', '怎么', '如何', '为什么', '为啥',
+            '有哪几种', '有几种', '有什么', '是什么', '有哪些',
+            '可以选', '能不能', '可不可以', '是否',
+            '？', '?'  # 问号
+        ]
+
+        # 流程推进关键词（如果包含这些，很可能不是咨询）
+        workflow_keywords = [
+            '确认', '好的', '可以', '开始', '没问题', '行', 'ok',
+            '选1', '选2', '选3', '选4', '选5', '选6',
+            '修改', '调整', '换成', '改为',
+            '万', '个达人', '位达人',
+            # 国家名
+            '美国', '英国', '日本', '印度', '泰国', '越南', '马来西亚', '菲律宾',
+            '西班牙', '墨西哥', '德国', '法国', '意大利', '巴西'
+        ]
+
+        user_input_lower = user_input.lower()
+
+        # 如果包含流程推进关键词，优先判定为非咨询
+        for keyword in workflow_keywords:
+            if keyword in user_input:
+                return False
+
+        # 如果包含疑问词，判定为咨询
+        for word in question_words:
+            if word in user_input:
+                return True
+
+        # 默认：如果很短（<10个字）且没有明确意图，判定为流程推进
+        return False
+
     def _create_agent(self):
         """创建 Agent 使用 LangChain 1.0 API"""
         knowledge_base = self._load_knowledge_base()
@@ -77,10 +136,55 @@ class TikTokInfluencerAgent:
 ## 知识库摘要:
 {knowledge_base}
 
+## ⚠️ 核心原则：智能对话 + 流程连贯
+
+**你必须区分两种用户消息**:
+
+1️⃣ **咨询性提问** (Informational Questions):
+   - 用户询问系统功能、参数说明、可选值等
+   - 例如: "粉丝年龄有哪几种区间？"、"认证类型是什么？"、"排序方式有哪些？"
+   - **处理方式**:
+     * 直接从知识库或已有信息中回答
+     * **⛔ 绝对禁止调用任何工具**（不要调用 record_user_needs、match_product_category、get_max_page_number、analyze_quantity_gap 等）
+     * **🌟 主动推荐（智能增值）**：
+       - 如果用户在参数确认阶段询问某个筛选条件（如粉丝年龄、粉丝性别、认证类型），说明他可能想添加这个条件
+       - 回答问题后，**结合商品类型给出推荐**：
+         * 例如：美妆产品 → 推荐"粉丝性别：女粉为主"、"粉丝年龄：25-34岁"
+         * 例如：运动产品 → 推荐"粉丝性别：男粉为主"、"粉丝年龄：18-24岁"
+         * 例如：奢侈品 → 推荐"粉丝年龄：25-34岁"、"认证类型：已认证"
+       - **推荐格式（必须明确提供应用方式）**：
+         "💡 **针对您的商品（XXX）的智能推荐**：
+         1. **粉丝性别**：建议选 `female`（女粉为主）→ ✅ 美妆香水的核心消费群体
+         2. **粉丝年龄**：建议选 `25-34` → ✅ 该年龄段女性是香水主力购买人群
+         3. **认证类型**：建议选 `verified` → ✅ 奢侈品推荐已认证达人提升信任度
+
+         ---
+
+         **如何应用这些推荐**：
+         • 如果接受推荐，请回复：**'应用推荐'** 或 **'添加这些条件'**
+         • 如果只想添加部分条件，请告诉我具体要添加哪些
+         • 如果不需要，直接回复 **'确认当前参数'** 继续下一步"
+     * 回答后**根据对话历史判断当前阶段**，提醒用户继续：
+       - 如果刚展示了参数摘要（有"请您确认以上参数是否满意"）→ **⛔ 绝对不要调用任何工具，只回答问题并等待用户确认或修改参数**
+       - 如果在询问排序（有"请选择排序方式"、"输入序号1-6"）→ 提醒："请选择排序方式（1-6）"
+       - 如果在等待确认调整方案 → 提醒："请选择调整方案"
+     * **🚨 重要**：在参数确认阶段（review_parameters 之后），只有当用户明确说"确认"、"好的"、"可以"、"应用推荐"等确认词时，才能调用 get_max_page_number 等工具推进流程。否则必须停留在参数确认阶段
+
+2️⃣ **需求变更或流程推进** (Workflow Actions):
+   - 用户提供新需求、确认参数、选择排序、修改条件等
+   - 例如: "美国10w粉丝达人"、"确认"、"选1"、"修改粉丝数"
+   - **处理方式**:
+     * 根据当前流程阶段，调用相应工具
+     * 继续推进工作流
+
+**判断技巧**:
+- 如果用户消息包含疑问词（"什么"、"哪些"、"有哪几种"、"是什么意思"），大概率是咨询性提问
+- 如果用户消息包含数字、地区、商品名、确认词（"好的"、"可以"、"选X"），大概率是流程推进
+
 ## 你的工作流程:
 1. **理解需求**: 询问用户的商品名称、目标国家、达人数量、粉丝要求等
    - 收集所有需要的信息（商品、国家、数量、筛选条件）
-   - 提取用户需要的达人数量并记录
+   - **一旦获得商品名称和目标达人数量，立即调用 record_user_needs 工具记录**
 
 2. **匹配分类**: 使用 match_product_category 工具推断商品分类
    - 工具会展示推理过程,让用户了解为什么选择这个分类
@@ -91,18 +195,29 @@ class TikTokInfluencerAgent:
    - 传入所有收集到的筛选参数
    - 工具会自动将参数存储起来
 
-4. **【新增】参数确认循环**:
-   - 使用 review_parameters 工具展示所有参数摘要
-   - 参数包括: 商品名称、分类、国家、目标数量、所有筛选条件
-   - **等待用户确认**,识别以下表示满意的信号:
-     * 中文: "好的"、"可以"、"没问题"、"行"、"开始"、"确认"、"就这样"、"ok"
-     * 英文: "yes"、"good"、"proceed"、"let's go"
+4. **【强制】参数确认循环** - ⚠️ 此步骤必须执行，不可跳过:
+   - **你必须调用 review_parameters 工具**来展示参数摘要（无需传入任何参数，工具会自动获取）
+   - **禁止自己总结参数**：不要尝试自己列出参数，必须使用工具
+   - **禁止直接询问用户**：不要直接说"请确认参数是否正确"，必须先调用工具展示参数
+   - 工具会自动展示: 商品名称、分类、国家、目标数量、所有筛选条件的完整摘要
+   - **⛔ 调用 review_parameters 工具后立即停止，结束本轮对话，等待用户的下一条消息**
+   - **绝对不要在调用 review_parameters 的同一轮对话中继续执行其他操作**
+   - **🚨 进入参数确认等待状态**:
+     * **如果用户提出咨询性问题**（例如"账号类型有哪几种"、"认证类型是什么"）：
+       - **⛔ 绝对不要调用任何工具**（特别是 get_max_page_number、analyze_quantity_gap）
+       - 只回答问题并给出推荐
+       - **继续等待用户确认或修改参数**
+       - 不要自动推进到步骤 5
+     * **只有在用户明确表示满意时才继续**:
+       - 中文确认词: "好的"、"可以"、"没问题"、"行"、"开始"、"确认"、"就这样"、"ok"、"确认当前参数"、"应用推荐"、"添加这些条件"
+       - 英文确认词: "yes"、"good"、"proceed"、"let's go"
+       - **只有出现这些确认词，才能进入步骤 5**
    - 如果用户要调整参数:
      * 询问要修改什么
      * 使用 update_parameter 工具更新参数（如果是简单修改）
      * 或者重新调用 build_search_url 工具（如果是多个参数修改）
      * **循环回到本步骤**,再次调用 review_parameters 展示更新后的参数
-   - **只有在用户明确表示满意后**,才继续下一步
+   - **🔥 关键规则**: 在参数确认阶段（review_parameters 之后），**除非用户明确确认**，否则**绝对不允许调用 get_max_page_number 或任何后续工具**
 
 5. **添加分类后缀**: 将分类工具返回的 url_suffix 追加到 URL,形成完整的搜索 URL
 
@@ -192,6 +307,40 @@ class TikTokInfluencerAgent:
 
 ## 重要规则:
 - **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
+- **🔥 智能处理临时提问**:
+  * **如果用户在流程中提出咨询性问题**（例如"粉丝年龄有哪些选项"、"认证类型是什么意思"）：
+    - **⛔ 绝对禁止调用任何工具**（特别是不要调用 record_user_needs、match_product_category、build_search_url、get_max_page_number、analyze_quantity_gap 等）
+    - 直接回答问题（从知识库或对话历史中获取答案）
+    - **🌟 主动推荐筛选条件**（如果用户在参数确认阶段询问）：
+      * 美妆/护肤/香水类 → 推荐：粉丝性别女粉为主、粉丝年龄25-34岁、认证类型已认证
+      * 运动/健身类 → 推荐：粉丝性别男粉为主、粉丝年龄18-24岁
+      * 母婴/儿童类 → 推荐：粉丝性别女粉为主、粉丝年龄25-34岁
+      * 奢侈品/高端产品 → 推荐：认证类型已认证、粉丝年龄25-34岁或35-44岁
+      * 数码/科技类 → 推荐：粉丝性别男粉为主、粉丝年龄18-24岁或25-34岁
+      * **必须明确告知应用方式**："💡 针对您的商品（XXX），建议添加：
+        1. 粉丝年龄：25-34岁（主力消费群）
+        2. 粉丝性别：女粉为主
+        3. 认证类型：已认证
+
+        **如何应用**：
+        • 回复 '应用推荐' 自动添加
+        • 回复 '确认当前参数' 保持现状继续
+        • 告诉我具体要添加/修改什么"
+    - **回答后，查看对话历史判断当前阶段**：
+      * 如果最后的工具调用是 review_parameters → **⛔ 绝对不要调用 get_max_page_number 等工具，必须等待用户明确确认**
+      * 如果最后消息包含"请选择排序方式"或"输入序号（1-6）" → 提醒："请选择排序方式（1-6）"
+      * 如果最后消息是询问调整方案 → 提醒："请选择调整方案"
+    - **🚨 关键防御机制**：如果发现自己在回答咨询问题的同时调用了 get_max_page_number 或 analyze_quantity_gap，立即停止，这是错误的行为
+  * **判断是否为咨询性提问的关键特征**：
+    - 包含疑问词：什么、哪些、怎么、为什么、有哪几种
+    - 不包含新的商品名、数量、地区等实质性需求信息
+    - 不包含确认词：确认、好的、可以、应用推荐等
+    - 询问系统功能、参数含义、可选值
+  * **只有在用户明确提出新需求时才重新开始工作流**（例如："我要换个商品"、"重新开始"）
+- **强制调用 review_parameters 工具**: 在调用 build_search_url 之后，**必须调用 review_parameters 工具**展示参数
+- **禁止自己展示参数**: 绝对不要尝试自己列出参数摘要，必须使用 review_parameters 工具
+- **🛑 禁止连续操作**: 调用 review_parameters 后，**绝对不允许**在同一轮对话中调用其他工具或继续下一步
+- **🛑 参数确认阶段防御**: 在 review_parameters 之后，**只有检测到用户明确确认**（"好的"、"确认"、"应用推荐"等），才允许调用 get_max_page_number。用户提问时绝对禁止推进流程
 - **爬取页数计算**: 必须根据用户需求的达人数量计算爬取页数（用户要 X 个达人就爬 X 页，但不超过最大可用页数）
 - 国家地区一旦确定,**绝对不能修改**
 - 商品分类一旦确定,**绝对不能修改**
@@ -205,19 +354,20 @@ class TikTokInfluencerAgent:
 - 多维度排序时保留第一次出现的达人(去重)
 
 ## 可用工具:
-你有 10 个工具可以使用,它们的描述已经包含在工具定义中。
+你有 11 个工具可以使用,它们的描述已经包含在工具定义中。
 
 工具列表:
-1. build_search_url - 构建搜索 URL（自动存储参数）
-2. match_product_category - 匹配商品分类（自动存储分类信息）
-3. review_parameters - **【新增】展示参数摘要供用户确认**
-4. update_parameter - **【新增】更新特定筛选参数**
-5. get_max_page_number - 获取最大页数
-6. analyze_quantity_gap - 分析数量缺口
-7. suggest_parameter_adjustments - 生成参数调整建议
-8. get_sort_suffix - 获取排序后缀
-9. scrape_and_export_json - 搜索达人候选并保存列表
-10. process_influencer_detail - 批量获取达人详细数据（自动显示进度）"""
+1. record_user_needs - **记录用户需求（商品名称+目标达人数量）**
+2. build_search_url - 构建搜索 URL（自动存储参数）
+3. match_product_category - 匹配商品分类（自动存储分类信息）
+4. review_parameters - 展示参数摘要供用户确认（无需传参）
+5. update_parameter - 更新特定筛选参数
+6. get_max_page_number - 获取最大页数
+7. analyze_quantity_gap - 分析数量缺口
+8. suggest_parameter_adjustments - 生成参数调整建议
+9. get_sort_suffix - 获取排序后缀
+10. scrape_and_export_json - 搜索达人候选并保存列表
+11. process_influencer_detail - 批量获取达人详细数据（自动显示进度）"""
 
         # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
         agent = langchain_create_agent(
@@ -227,7 +377,18 @@ class TikTokInfluencerAgent:
             debug=False  # 关闭调试模式（用于生产环境）
         )
 
-        return agent
+        # 为 Agent 添加 LangSmith 追踪配置
+        configured_agent = agent.with_config({
+            "run_name": "TikTok_Agent",
+            "tags": ["agent", "tiktok-influencer", "react"],
+            "metadata": {
+                "agent_type": "react",
+                "tool_count": len(self.tools),
+                "knowledge_base": "loaded" if knowledge_base else "not_loaded"
+            }
+        })
+
+        return configured_agent
 
     def welcome_message(self) -> str:
         """生成欢迎消息"""
@@ -266,7 +427,7 @@ class TikTokInfluencerAgent:
 
 8️⃣  **其他筛选**
    - 只要认证达人
-   - 只要联盟达人
+   - 只要带货达人
    - 近期在涨粉的达人
 
 💡 **你关注哪些方面**:
@@ -302,11 +463,28 @@ class TikTokInfluencerAgent:
             from langchain_core.messages import HumanMessage
             self.chat_history.append(HumanMessage(content=user_input))
 
+            # 准备 LangSmith 追踪元数据
+            run_metadata = {
+                "user_input": user_input[:100],  # 截断长文本
+                "timestamp": datetime.now().isoformat(),
+                "chat_turn": len([m for m in self.chat_history if hasattr(m, 'type') and m.type == 'human']),
+                "product": self.current_product or "not_set",
+                "country": self.current_params.get('country_name', 'not_set'),
+                "mode": "cli"
+            }
+
+            run_config = {
+                "run_name": f"Agent_Run_{datetime.now().strftime('%H%M%S')}",
+                "tags": ["agent-run", "sync"],
+                "metadata": run_metadata
+            }
+
             # LangChain 1.0 的 agent 返回的是 CompiledStateGraph
             # 需要调用 invoke 方法，传入完整的对话历史
-            result = self.agent.invoke({
-                "messages": self.chat_history
-            })
+            result = self.agent.invoke(
+                {"messages": self.chat_history},
+                config=run_config
+            )
 
             # 提取 AI 的回复
             if "messages" in result and len(result["messages"]) > 0:
@@ -315,22 +493,34 @@ class TikTokInfluencerAgent:
                 # 更新对话历史（保留 agent 返回的完整消息列表）
                 self.chat_history = messages
 
-                # 收集所有 AI 消息的内容
-                ai_responses = []
-                for msg in messages:
-                    if hasattr(msg, 'type') and msg.type == 'ai':
-                        # 检查是否有内容
-                        if hasattr(msg, 'content') and msg.content:
-                            ai_responses.append(msg.content)
-                        # 检查是否有工具调用（但不显示技术性信息给用户）
-                        # 工具调用由进度报告系统处理
+                # 🔍 特殊处理：检查是否调用了 review_parameters 工具
+                # 只有在用户**非咨询性**输入时，才强制返回工具输出以中断流程
+                # 如果用户是咨询性提问，应该让AI回答问题，而不是强制返回参数摘要
+                is_question = self._is_informational_question(user_input)
 
-                # 如果有回复,返回最后一个
-                if ai_responses:
-                    return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
+                if not is_question:  # 只有非咨询性输入才强制返回
+                    # 使用反向遍历，返回最后一次调用的结果（最新的参数状态）
+                    for msg in reversed(messages):
+                        msg_type = type(msg).__name__
+                        if msg_type == 'ToolMessage':
+                            # 检查是否是 review_parameters 的返回
+                            tool_name = getattr(msg, 'name', '')
+                            if tool_name == 'review_parameters':
+                                tool_content = getattr(msg, 'content', '')
+                                if tool_content and isinstance(tool_content, str):
+                                    # 返回工具输出，而不是继续等待 AI 的最终回复
+                                    return tool_content
 
-                # 检查是否有工具返回消息（不显示原始工具结果）
-                # 工具结果会被 agent 处理后以自然语言返回
+                # 从消息列表的最后开始查找最新的 AI 响应
+                # 这样可以跳过中间的工具调用消息，直接找到最终回复
+                for msg in reversed(messages):
+                    if type(msg).__name__ == 'AIMessage':
+                        content = getattr(msg, 'content', '')
+                        # 找到第一个（最新的）有内容的 AI 消息
+                        if content and isinstance(content, str) and content.strip():
+                            return content
+
+            # 如果没有找到有效的 AI 响应
 
             return "抱歉,我无法处理你的请求。Agent 没有返回有效响应。"
 
@@ -356,11 +546,28 @@ class TikTokInfluencerAgent:
             from langchain_core.messages import HumanMessage
             self.chat_history.append(HumanMessage(content=user_input))
 
+            # 准备 LangSmith 追踪元数据
+            run_metadata = {
+                "user_input": user_input[:100],
+                "timestamp": datetime.now().isoformat(),
+                "chat_turn": len([m for m in self.chat_history if hasattr(m, 'type') and m.type == 'human']),
+                "product": self.current_product or "not_set",
+                "streaming": True,
+                "mode": "web"
+            }
+
+            run_config = {
+                "run_name": f"Agent_Stream_{datetime.now().strftime('%H%M%S')}",
+                "tags": ["agent-run", "streaming"],
+                "metadata": run_metadata
+            }
+
             # 使用 astream_events 获取流式输出
             accumulated_content = ""
 
             async for event in self.agent.astream_events(
                 {"messages": self.chat_history},
+                config=run_config,
                 version="v1"
             ):
                 kind = event.get("event")
@@ -431,7 +638,9 @@ class TikTokInfluencerAgent:
                 })
 
             # 添加图片内容
+            has_image = False
             if image_data:
+                has_image = True
                 # 如果图片数据是 Base64 格式（data:image/...;base64,xxx）
                 # 需要提取实际的 Base64 数据
                 if image_data.startswith('data:image'):
@@ -451,15 +660,51 @@ class TikTokInfluencerAgent:
             # 创建多模态消息
             self.chat_history.append(HumanMessage(content=message_content))
 
+            # 准备 LangSmith 追踪元数据
+            run_metadata = {
+                "user_input": user_input[:100] if user_input else "image_only",
+                "timestamp": datetime.now().isoformat(),
+                "chat_turn": len([m for m in self.chat_history if hasattr(m, 'type') and m.type == 'human']),
+                "has_image": has_image,
+                "multimodal": True,
+                "product": self.current_product or "not_set",
+                "mode": "web"
+            }
+
+            run_config = {
+                "run_name": f"Agent_Multimodal_{datetime.now().strftime('%H%M%S')}",
+                "tags": ["agent-run", "multimodal", "image"],
+                "metadata": run_metadata
+            }
+
             # 调用 agent
-            result = self.agent.invoke({
-                "messages": self.chat_history
-            })
+            result = self.agent.invoke(
+                {"messages": self.chat_history},
+                config=run_config
+            )
 
             # 提取 AI 的回复（与 run() 方法相同）
             if "messages" in result and len(result["messages"]) > 0:
                 messages = result["messages"]
                 self.chat_history = messages
+
+                # 🔍 特殊处理：检查是否调用了 review_parameters 工具
+                # 只有在用户**非咨询性**输入时，才强制返回工具输出以中断流程
+                # 如果用户是咨询性提问，应该让AI回答问题，而不是强制返回参数摘要
+                is_question = self._is_informational_question(user_input) if user_input else False
+
+                if not is_question:  # 只有非咨询性输入才强制返回
+                    # 使用反向遍历，返回最后一次调用的结果（最新的参数状态）
+                    for msg in reversed(messages):
+                        msg_type = type(msg).__name__
+                        if msg_type == 'ToolMessage':
+                            # 检查是否是 review_parameters 的返回
+                            tool_name = getattr(msg, 'name', '')
+                            if tool_name == 'review_parameters':
+                                tool_content = getattr(msg, 'content', '')
+                                if tool_content and isinstance(tool_content, str):
+                                    # 返回工具输出，而不是继续等待 AI 的最终回复
+                                    return tool_content
 
                 ai_responses = []
                 for msg in messages:

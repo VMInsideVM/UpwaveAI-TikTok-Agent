@@ -5,6 +5,7 @@ TikTok 达人推荐聊天机器人 API 服务
 
 import asyncio
 import json
+import uuid
 from typing import Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -17,6 +18,9 @@ from datetime import datetime
 from session_manager import session_manager
 from agent import TikTokInfluencerAgent
 from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_call
+
+# 导入 LangSmith 追踪上下文
+import langsmith as ls
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -278,6 +282,9 @@ async def create_session():
 
         session_id = session_manager.create_session()
 
+        # 记录会话创建（LangSmith 追踪将在 agent.run() 中自动启用）
+        print(f"[Session] Created: {session_id}")
+
         return JSONResponse({
             "session_id": session_id,
             "created_at": datetime.now().isoformat(),
@@ -378,7 +385,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "timestamp": datetime.now().isoformat()
                     })
 
+                    # 记录消息接收（LangSmith 追踪将在 agent.run() 中自动启用）
+                    message_id = str(uuid.uuid4())
+                    print(f"[WebSocket] Message {message_id} from session {session_id}, has_image={bool(image_data)}")
+
                     # 处理并流式返回响应（包括图片）
+                    # agent.run_with_image() 和 agent.run() 内部已经有完整的 LangSmith 追踪
                     await stream_agent_response(agent, content, websocket, image_data)
 
                 elif message_type == "ping":

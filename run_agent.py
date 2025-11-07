@@ -9,11 +9,16 @@ nest_asyncio.apply()
 
 import sys
 import os
+import uuid
+from datetime import datetime
 
 # 强制单线程执行（解决 Playwright greenlet 线程切换错误）
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
+
+# 导入 LangSmith 追踪
+import langsmith as ls
 
 # 尝试导入完整版 Agent,如果失败则使用简化版
 try:
@@ -74,6 +79,10 @@ def print_help():
 def main():
     """主函数"""
     print_banner()
+
+    # 生成会话 ID 用于追踪整个 CLI 会话
+    session_id = str(uuid.uuid4())
+    session_start_time = datetime.now()
 
     # 检查 Playwright API 服务是否运行
     print("🔧 正在检查 Playwright API 服务...")
@@ -152,6 +161,8 @@ def main():
 
             # 处理用户输入
             print("\n🤖 Agent 思考中...\n")
+
+            # agent.run() 内部已经有追踪配置，这里只记录 CLI 级别的元数据
             response = agent.run(user_input)
 
             # 显示回复
@@ -182,6 +193,16 @@ def main():
             print(f"\n❌ 发生错误: {e}")
             print("请重新输入或输入 'reset' 重置对话")
             continue
+
+    # 记录会话结束
+    session_duration = (datetime.now() - session_start_time).total_seconds()
+    print(f"\n📊 会话统计: {conversation_count} 轮对话, 持续时间 {session_duration:.1f} 秒")
+
+    # 会话结束，确保所有追踪上传
+    print("⏳ 正在上传追踪数据到 LangSmith...")
+    from langchain_core.tracers.langchain import wait_for_all_tracers
+    wait_for_all_tracers()
+    print("✅ 追踪数据已上传")
 
 
 def test_mode():
@@ -220,9 +241,16 @@ def test_mode():
         # 创建 Agent
         agent = create_agent()
 
-        # 运行测试
+        # 运行测试（LangSmith 追踪在 agent.run() 内部自动启用）
+        print(f"\n📝 测试用例: {test_cases[index]}")
         response = agent.run(test_cases[index])
         print(f"\n🤖 Agent 回复:\n{response}")
+
+        # 确保测试追踪上传
+        print("\n⏳ 正在上传追踪数据到 LangSmith...")
+        from langchain_core.tracers.langchain import wait_for_all_tracers
+        wait_for_all_tracers()
+        print("✅ 追踪数据已上传")
     else:
         print("进入正常模式...")
         main()

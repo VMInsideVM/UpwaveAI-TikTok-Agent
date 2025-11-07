@@ -65,7 +65,7 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
     按优先级生成3-5个调整方案：
     1. 放宽粉丝数范围
     2. 移除新增粉丝数限制
-    3. 移除联盟达人限制
+    3. 移除带货达人限制
     4. 移除认证类型限制
     5. 移除账号类型限制
 
@@ -134,16 +134,16 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
             'reason': '新增粉丝数要求过于严格，移除可包含更多稳定型达人'
         })
 
-    # 优先级3: 移除联盟达人限制
+    # 优先级3: 移除带货达人限制
     if current_params.get('affiliate_check'):
         suggestions.append({
             'priority': 3,
-            'name': '移除联盟达人限制',
+            'name': '移除带货达人限制',
             'changes': {
                 'affiliate_check': False
             },
-            'current': '仅联盟达人',
-            'new': '所有达人（包含非联盟）',
+            'current': '仅带货达人',
+            'new': '所有达人（包含非带货）',
             'expected_increase': '预计增加 30-50%',
             'reason': '扩大候选池，包含更多潜在合作达人'
         })

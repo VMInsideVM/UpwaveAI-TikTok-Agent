@@ -154,7 +154,7 @@ class BuildURLInput(BaseModel):
     """构建 URL 的输入参数"""
     country_name: str = Field(default="全部", description="国家或地区名称")
     promotion_channel: str = Field(default="all", description="推广渠道: all/video/live")
-    affiliate_check: bool = Field(default=False, description="是否只显示联盟达人")
+    affiliate_check: bool = Field(default=False, description="是否只显示带货达人")
     account_type: str = Field(default="all", description="账号类型: all/personal/business")
     cap_status: str = Field(default="all", description="联盟上限状态: all/not_full/full")
     auth_type: str = Field(default="all", description="认证类型: all/verified/not_verified")
@@ -169,6 +169,12 @@ class BuildURLInput(BaseModel):
 class CategoryInput(BaseModel):
     """商品分类匹配的输入参数"""
     product_name: str = Field(description="商品名称")
+
+
+class RecordUserNeedsInput(BaseModel):
+    """记录用户需求的输入参数"""
+    product_name: str = Field(description="用户要推广的商品名称")
+    target_count: int = Field(description="用户需要的达人数量")
 
 
 class SortSuffixInput(BaseModel):
@@ -201,7 +207,7 @@ class BuildURLTool(BaseTool):
     参数说明:
     - country_name: 国家名称,如"美国"、"全部"
     - promotion_channel: "all"(全部)/"video"(短视频)/"live"(直播)
-    - affiliate_check: True=只显示联盟达人, False=不限制
+    - affiliate_check: True=只显示带货达人, False=不限制
     - followers_min/max: 粉丝数范围,如 100000, 500000
     """
     args_schema: type[BaseModel] = BuildURLInput
@@ -270,6 +276,39 @@ class BuildURLTool(BaseTool):
             return f"❌ 构建 URL 失败: {str(e)}"
 
 
+class RecordUserNeedsTool(BaseTool):
+    """记录用户的基本需求（商品名称和目标达人数量）"""
+    name: str = "record_user_needs"
+    description: str = """
+    记录用户的基本需求信息。
+
+    当你从用户输入中提取到商品名称和目标达人数量时，必须调用此工具进行记录。
+
+    参数：
+    - product_name: 用户要推广的商品名称（如"口红"、"运动鞋"、"女士香水"）
+    - target_count: 用户需要的达人数量（如 2、10、50）
+
+    此工具会将信息存储到 agent 实例中，供后续步骤使用。
+    """
+    args_schema: type[BaseModel] = RecordUserNeedsInput
+
+    def _run(self, product_name: str, target_count: int) -> str:
+        """执行需求记录"""
+        try:
+            agent = get_agent_instance()
+            if not agent:
+                return "❌ 无法获取 agent 实例"
+
+            # 存储到 agent 实例
+            agent.current_product = product_name
+            agent.target_influencer_count = target_count
+
+            return f"✅ 已记录您的需求：\n📦 商品: {product_name}\n🎯 目标达人数: {target_count} 个"
+
+        except Exception as e:
+            return f"❌ 记录需求时出错: {str(e)}"
+
+
 class CategoryMatchTool(BaseTool):
     """商品分类智能匹配工具"""
     name: str = "match_product_category"
@@ -299,19 +338,16 @@ class CategoryMatchTool(BaseTool):
                 agent.current_params['product_name'] = product_name
                 agent.current_params['category_info'] = result
 
-            # 返回格式化的结果，包含推理过程和 URL 后缀
+            # 返回用户友好的结果（隐藏技术细节）
             reasoning = result.get('reasoning', '无')
-            url_suffix = result.get('url_suffix', '')
-            return f"""✅ 分类匹配成功!
-- 商品: {product_name}
-- 一级分类: {result.get('main_category', '未知')}
-- 匹配层级: {result.get('level', '未知')}
-- 分类名称: {result.get('category_name', '未知')}
-- URL后缀: {url_suffix}
+            return f"""✅ 商品分类匹配成功！
 
-💡 推理过程: {reasoning}
+📦 商品: {product_name}
+📂 分类: {result.get('category_name', '未知')} ({result.get('main_category', '未知')})
 
-⚠️ 重要: 构建完整URL时，必须将上面的URL后缀追加到基础URL后面"""
+💡 匹配说明: {reasoning}
+
+现在可以继续设置其他筛选条件了。"""
 
         except Exception as e:
             return f"❌ 匹配分类时出错: {str(e)}"
@@ -506,10 +542,8 @@ class ProcessInfluencerListInput(BaseModel):
 
 class ReviewParametersInput(BaseModel):
     """审查参数的输入参数"""
-    current_params: Dict = Field(description="当前收集到的所有筛选参数（JSON字典）")
-    product_name: str = Field(description="商品名称")
-    target_count: int = Field(description="目标达人数量")
-    category_info: Optional[Dict] = Field(default=None, description="商品分类信息（如果已匹配）")
+    # 不需要任何参数，工具会自动从 agent 实例中读取
+    pass
 
 
 class UpdateParametersInput(BaseModel):
@@ -527,7 +561,7 @@ class SuggestAdjustmentsTool(BaseTool):
     会按优先级返回 3-5 个调整方案：
     1. 放宽粉丝数范围（效果最好）
     2. 移除新增粉丝数限制
-    3. 移除联盟达人限制
+    3. 移除带货达人限制
     4. 移除认证类型限制
     5. 移除账号类型限制
 
@@ -580,31 +614,31 @@ class ReviewParametersTool(BaseTool):
     description: str = """
     展示当前收集到的所有筛选参数，供用户确认。
 
-    这个工具会格式化显示：
+    这个工具会自动从 agent 实例中读取并格式化显示：
     - 商品名称和分类信息
     - 目标国家/地区
     - 目标达人数量
     - 所有筛选条件（粉丝范围、推广渠道、认证类型等）
 
-    参数：
-    - current_params: 当前收集到的所有筛选参数（JSON字典）
-    - product_name: 商品名称
-    - target_count: 目标达人数量
-    - category_info: 商品分类信息（可选）
+    **无需传入任何参数**，工具会自动从当前对话上下文中获取所有信息。
 
     返回格式化的参数摘要，并询问用户是否满意。
     """
     args_schema: type[BaseModel] = ReviewParametersInput
 
-    def _run(
-        self,
-        current_params: Dict,
-        product_name: str,
-        target_count: int,
-        category_info: Optional[Dict] = None
-    ) -> str:
+    def _run(self) -> str:
         """执行参数审查"""
         try:
+            # 从 agent 实例中获取信息
+            agent = get_agent_instance()
+            if not agent:
+                return "❌ 无法获取 agent 实例"
+
+            current_params = agent.current_params
+            product_name = agent.current_product or "未设置"
+            target_count = agent.target_influencer_count or "未设置"
+            category_info = current_params.get('category_info')
+
             # 构建参数摘要
             output = "📋 **当前筛选参数摘要**\n\n"
 
@@ -640,9 +674,9 @@ class ReviewParametersTool(BaseTool):
             channel_map = {'all': '不限制', 'video': '短视频带货', 'live': '直播带货'}
             output += f"   • 推广渠道: {channel_map.get(channel, channel)}\n"
 
-            # 联盟达人
+            # 带货达人
             affiliate = current_params.get('affiliate_check', False)
-            output += f"   • 联盟达人: {'仅联盟达人' if affiliate else '不限制'}\n"
+            output += f"   • 带货达人: {'仅带货达人' if affiliate else '不限制'}\n"
 
             # 认证类型
             auth_type = current_params.get('auth_type', 'all')
@@ -661,8 +695,8 @@ class ReviewParametersTool(BaseTool):
 
             # 粉丝年龄
             age = current_params.get('followers_age', 'all')
-            if age != 'all':
-                output += f"   • 粉丝年龄: {age}\n"
+            age_map = {'all': '不限制', '18-24': '18-24岁', '25-34': '25-34岁', '35-44': '35-44岁', '45+': '45岁以上'}
+            output += f"   • 粉丝年龄: {age_map.get(age, age)}\n"
 
             # 新增粉丝
             new_followers_min = current_params.get('new_followers_min')
@@ -677,9 +711,10 @@ class ReviewParametersTool(BaseTool):
 
             output += "\n"
             output += "---\n\n"
-            output += "请确认以上参数是否满意？\n"
-            output += "• 如果满意，请回复：好的/确认/可以/开始\n"
-            output += "• 如果需要调整，请告诉我要修改哪些参数\n"
+            output += "⚠️ **请您确认以上参数是否满意？**\n\n"
+            output += "• 如果满意，请回复：**好的** / **确认** / **可以** / **开始**\n"
+            output += "• 如果需要调整，请告诉我要修改哪些参数\n\n"
+            output += "🛑 **重要：我会等待您的明确回复后再继续。请不要自动进入下一步。**"
 
             return output
 
@@ -733,8 +768,16 @@ class UpdateParametersTool(BaseTool):
             if param_name not in valid_params:
                 return f"❌ 无效的参数名称: {param_name}\n可用参数: {', '.join(valid_params)}"
 
-            # 返回成功信息（实际更新由 agent 负责）
-            return f"✅ 参数 '{param_name}' 已更新为: {param_value}\n请使用 review_parameters 工具重新审查所有参数。"
+            # 获取 agent 实例并更新参数
+            agent = get_agent_instance()
+            if not agent:
+                return "❌ 无法获取 agent 实例"
+
+            # 实际更新参数到 agent.current_params
+            agent.current_params[param_name] = param_value
+
+            # 返回成功信息
+            return f"✅ 参数 '{param_name}' 已更新为: {param_value}"
 
         except Exception as e:
             return f"❌ 更新参数时出错: {str(e)}"
@@ -894,7 +937,13 @@ class ProcessInfluencerListTool(BaseTool):
 
 def get_all_tools() -> List[BaseTool]:
     """获取所有工具的列表"""
+    # LangSmith 追踪说明：
+    # 工具级别的追踪会自动继承 Agent 的配置
+    # 每个工具调用都会在 LangSmith 中显示为独立的 span
+    # 包含工具名称、输入参数、输出结果、执行时长
+
     return [
+        RecordUserNeedsTool(),            # 记录用户需求（商品+数量）
         BuildURLTool(),
         CategoryMatchTool(),
         ReviewParametersTool(),           # 审查参数

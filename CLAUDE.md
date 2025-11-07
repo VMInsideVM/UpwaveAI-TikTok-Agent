@@ -66,7 +66,79 @@ To solve LangChain's multi-threading greenlet issues, Playwright operations are 
    OPENAI_API_KEY="your-api-key"
    OPENAI_BASE_URL="https://api.siliconflow.cn/v1"
    OPENAI_MODEL="Qwen/Qwen3-VL-30B-A3B-Instruct"
+
+   # LangSmith Tracing (Optional but Recommended)
+   LANGSMITH_TRACING=true
+   LANGSMITH_API_KEY="your-langsmith-api-key"
+   LANGSMITH_PROJECT="your-project-name"
+   LANGSMITH_ENDPOINT=https://api.smith.langchain.com
    ```
+
+### LangSmith Observability (2025-01 Integration)
+
+The system is now fully integrated with **LangSmith** for comprehensive agent observability and debugging.
+
+#### What is Traced
+
+**Automatic Tracing (No Extra Code Needed)**:
+- All LLM calls (model, temperature, tokens, latency)
+- All tool executions (inputs, outputs, duration)
+- Agent decision-making process (ReAct reasoning)
+- Complete conversation history
+
+**Enhanced Metadata**:
+- **Agent Level**: Agent type, tool count, knowledge base status
+- **Run Level**: User input, chat turn, product, country, mode (CLI/web)
+- **Tool Level**: Tool name, inputs, outputs, execution time (auto-traced by LangChain)
+- **Session Level**: Session ID, timestamp, mode (CLI/web)
+
+#### Viewing Traces
+
+1. Visit [LangSmith](https://smith.langchain.com/)
+2. Navigate to your project (configured in `.env`)
+3. View traces organized by:
+   - **Tags**: `cli-mode`, `web-mode`, `agent-run`, `tool`, `streaming`, `multimodal`
+   - **Metadata**: Filter by product, country, session ID, etc.
+   - **Run Names**: `TikTok_Agent`, `Agent_Run_HHMMSS`, `Tool_build_url`, etc.
+
+#### Trace Hierarchy
+
+```
+Project: your-project-name
+├─ CLI Mode (tag: cli-mode)
+│  └─ Session (metadata: session_id, start_time)
+│     └─ Agent_Run_124530 (metadata: product, country, chat_turn)
+│        ├─ TikTok_LLM (metadata: model, temperature, tokens)
+│        ├─ Tool_category_match (metadata: product → category)
+│        ├─ Tool_build_url (metadata: filters)
+│        └─ Tool_scrape_influencers (metadata: pages, count)
+│
+└─ Web Mode (tag: web-mode)
+   └─ Session (metadata: session_id, client_ip)
+      └─ Agent_Multimodal_153020 (metadata: has_image, message_id)
+         ├─ TikTok_LLM (streaming output)
+         └─ Tool Calls (real-time progress)
+```
+
+#### Benefits
+
+1. **Debugging**: See exact tool inputs/outputs when errors occur
+2. **Performance**: Identify slow tools or LLM calls
+3. **User Behavior**: Understand common user flows and pain points
+4. **Cost Tracking**: Monitor LLM token usage across sessions
+5. **Quality**: Review agent reasoning to improve prompts
+
+#### Disabling Tracing
+
+To disable tracing temporarily:
+```bash
+# In .env file
+LANGSMITH_TRACING=false
+
+# Or remove the variables entirely
+```
+
+The agent will continue to work normally without tracing.
 
 ### Running the System (2-Step Process)
 
