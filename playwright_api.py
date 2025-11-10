@@ -33,7 +33,7 @@ app = FastAPI(
 _playwright = None
 _browser = None
 _context = None
-_page = None  # 主页面，用于非并发操作（列表爬取等）
+_page = None
 _is_initialized = False
 
 # ============================================================================
@@ -55,7 +55,6 @@ class ProcessInfluencerListRequest(BaseModel):
     """处理达人列表的请求参数"""
     json_file_path: str = Field(..., description="导出的 JSON 文件路径")
     cache_days: int = Field(3, ge=1, le=30, description="缓存有效天数（1-30天，默认3天）")
-    max_concurrent: int = Field(3, ge=1, le=10, description="最大并发标签页数量（1-10，默认3）")
 
 class HealthResponse(BaseModel):
     """健康检查响应"""
@@ -403,7 +402,7 @@ async def get_current_url():
 @app.post("/process_influencer_list")
 async def process_influencer_list_endpoint(req: ProcessInfluencerListRequest):
     """
-    批量处理导出的 JSON 文件，获取达人详细数据 (Async + 多标签页并发)
+    批量处理导出的 JSON 文件，获取达人详细数据 (Async)
 
     根据 JSON 文件中的 data_row_keys 列表，批量获取达人详细信息。
     自动检查本地缓存（influencer 目录），跳过未过期的数据，
@@ -411,14 +410,13 @@ async def process_influencer_list_endpoint(req: ProcessInfluencerListRequest):
 
     功能特性：
     - 智能缓存：自动检查 capture_time，跳过未过期数据
-    - 多标签页并发：使用多个标签页并发爬取，大幅提升效率
+    - 顺序处理：逐个爬取，避免触发反爬机制
     - 容错机制：单个失败不影响整体流程
     - 详细统计：返回缓存/获取/失败的数量和具体 ID
 
     参数：
     - json_file_path: 导出的 JSON 文件路径（如 output/tiktok_达人推荐_女士香水_20251104_165214.json）
     - cache_days: 缓存有效天数（1-30天，默认3天）
-    - max_concurrent: 最大并发标签页数量（1-10，默认3）
 
     返回：
     - total_count: 总达人数
@@ -434,17 +432,15 @@ async def process_influencer_list_endpoint(req: ProcessInfluencerListRequest):
         print(f"\n📊 收到批量处理请求...")
         print(f"   - 文件: {req.json_file_path}")
         print(f"   - 缓存有效期: {req.cache_days} 天")
-        print(f"   - 并发数: {req.max_concurrent}")
 
         # 验证文件存在
         if not os.path.exists(req.json_file_path):
             raise HTTPException(status_code=404, detail=f"文件不存在: {req.json_file_path}")
 
-        # 调用批量处理函数（支持并发）
+        # 调用批量处理函数
         result = await process_influencer_list_async(
             json_file_path=req.json_file_path,
-            cache_days=req.cache_days,
-            max_concurrent=req.max_concurrent
+            cache_days=req.cache_days
         )
 
         if not result.get("success"):
@@ -639,18 +635,13 @@ async def get_max_page_number_async() -> int:
         return 1
 
 
-async def process_influencer_list_async(
-    json_file_path: str,
-    cache_days: int,
-    max_concurrent: int = 3
-) -> Dict[str, Any]:
+async def process_influencer_list_async(json_file_path: str, cache_days: int) -> Dict[str, Any]:
     """
-    批量处理导出的 JSON 文件，获取达人详细数据（支持并发）
+    批量处理导出的 JSON 文件，获取达人详细数据
 
     Args:
         json_file_path: 导出的 JSON 文件路径
         cache_days: 缓存有效天数
-        max_concurrent: 最大并发标签页数量（1-10，默认3）
 
     Returns:
         Dict: 包含处理统计信息的结果字典
@@ -659,7 +650,6 @@ async def process_influencer_list_async(
         print(f"📊 开始批量处理达人列表...")
         print(f"   - 文件路径: {json_file_path}")
         print(f"   - 缓存有效期: {cache_days} 天")
-        print(f"   - 并发数: {max_concurrent}")
 
         # 读取 JSON 文件
         if not os.path.exists(json_file_path):
@@ -683,15 +673,72 @@ async def process_influencer_list_async(
 
         print(f"   - 商品名称: {product_name}")
         print(f"   - 达人总数: {total_count}")
+        print()
 
-        # 使用新的并发调度器
-        result = await fetch_influencers_concurrent(
-            influencer_ids=data_row_keys,
-            max_concurrent=max_concurrent,
-            cache_days=cache_days
-        )
+        # 统计信息
+        cached_count = 0
+        fetched_count = 0
+        failed_count = 0
+        failed_ids = []
 
-        return result
+        start_time = datetime.now()
+
+        # 创建 influencer 目录（如不存在）
+        influencer_dir = "influencer"
+        os.makedirs(influencer_dir, exist_ok=True)
+
+        # 遍历每个 data-row-key（顺序处理）
+        for idx, influencer_id in enumerate(data_row_keys, 1):
+            print(f"[{idx}/{total_count}] 处理达人 ID: {influencer_id}")
+
+            # 检查缓存
+            cached_path = check_influencer_cache(influencer_id, cache_days)
+            if cached_path:
+                print(f"   ✓ 使用缓存: {cached_path}")
+                cached_count += 1
+                continue
+
+            # 重新爬取
+            try:
+                result = await fetch_influencer_detail_async(influencer_id)
+                if result["success"]:
+                    fetched_count += 1
+                    print(f"   ✅ 成功获取并保存")
+                else:
+                    failed_ids.append(influencer_id)
+                    failed_count += 1
+                    print(f"   ❌ 失败: {result['message']}")
+            except Exception as e:
+                print(f"   ❌ 异常: {e}")
+                failed_ids.append(influencer_id)
+                failed_count += 1
+
+            # 间隔延迟（避免频繁请求，防止反爬）
+            if idx < total_count:  # 不是最后一个才延迟
+                await asyncio.sleep(2)
+
+        end_time = datetime.now()
+        elapsed_time = end_time - start_time
+        elapsed_str = str(elapsed_time).split('.')[0]  # 去掉微秒
+
+        print()
+        print(f"✅ 批量处理完成!")
+        print(f"   - 总数: {total_count}")
+        print(f"   - 使用缓存: {cached_count}")
+        print(f"   - 重新获取: {fetched_count}")
+        print(f"   - 失败: {failed_count}")
+        print(f"   - 耗时: {elapsed_str}")
+
+        return {
+            "success": True,
+            "total_count": total_count,
+            "cached_count": cached_count,
+            "fetched_count": fetched_count,
+            "failed_count": failed_count,
+            "failed_ids": failed_ids,
+            "elapsed_time": elapsed_str,
+            "message": f"处理完成：{cached_count} 个使用缓存，{fetched_count} 个重新获取，{failed_count} 个失败"
+        }
 
     except json.JSONDecodeError:
         return {
@@ -707,20 +754,16 @@ async def process_influencer_list_async(
         }
 
 
-async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[str, Any]:
+async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
     """
     异步获取单个达人的详细数据
 
     Args:
         influencer_id: 达人 ID (data-row-key)
-        page: Playwright Page 对象，如果为 None 则使用全局 _page
 
     Returns:
         Dict: 包含 success 和 message 的结果字典
     """
-    # 如果没有传入 page，使用全局 _page（向后兼容）
-    if page is None:
-        page = _page
     try:
         # 构建详情页 URL
         target_url = f"https://www.fastmoss.com/zh/influencer/detail/{influencer_id}"
@@ -829,10 +872,10 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
                 all_responses[matched_type].append(response_info)
 
         # 设置响应监听器
-        page.on("response", handle_response)
+        _page.on("response", handle_response)
 
         # 访问目标网页（使用 networkidle 确保基础数据加载完成）
-        await page.goto(target_url, wait_until="networkidle", timeout=60000)
+        await _page.goto(target_url, wait_until="networkidle", timeout=60000)
 
         # 等待页面稳定
         await asyncio.sleep(2)
@@ -841,12 +884,12 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
         # 滚动5次，每次滚动页面高度的20%，确保所有区域都被访问到
         for i in range(5):
             scroll_position = f"window.scrollTo(0, document.body.scrollHeight * {(i + 1) * 0.2})"
-            await page.evaluate(scroll_position)
+            await _page.evaluate(scroll_position)
             await asyncio.sleep(1)  # 等待该区域的 API 请求触发
 
         # 点击近90天选项
         try:
-            ninety_days_button = await page.query_selector("label.ant-radio-button-wrapper:has-text('近90天')")
+            ninety_days_button = await _page.query_selector("label.ant-radio-button-wrapper:has-text('近90天')")
             if ninety_days_button:
                 await ninety_days_button.click()
                 await asyncio.sleep(1.5)  # 等待近90天数据加载
@@ -858,7 +901,7 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
             """处理下拉菜单，点击所有选项以触发API请求"""
             try:
                 # 查找下拉菜单选择器
-                selector_div = await page.query_selector(f'div.flex.justify-between.items-center:has-text("{section_name}") div.ant-select-selector')
+                selector_div = await _page.query_selector(f'div.flex.justify-between.items-center:has-text("{section_name}") div.ant-select-selector')
                 if not selector_div:
                     return
 
@@ -867,7 +910,7 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
                 await asyncio.sleep(0.5)
 
                 # 获取下拉选项
-                dropdown_holder = page.locator('div.rc-virtual-list-holder-inner').nth(index)
+                dropdown_holder = _page.locator('div.rc-virtual-list-holder-inner').nth(index)
                 child_divs = await dropdown_holder.locator('> div').all()
                 total_divs = len(child_divs)
 
@@ -895,7 +938,7 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
         await process_dropdown_menu("带货数据", 1)
 
         # 最后再滚动到底部确保所有内容加载
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await _page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         await asyncio.sleep(2)
 
         # 重组datalist数据：按field_type分组，只保留data字段
@@ -943,7 +986,7 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
         print(f"   ✅ 达人数据已保存: {merged_filename}")
 
         # 移除响应监听器
-        page.remove_listener("response", handle_response)
+        _page.remove_listener("response", handle_response)
 
         return {
             "success": True,
@@ -959,126 +1002,6 @@ async def fetch_influencer_detail_async(influencer_id: str, page=None) -> Dict[s
             "success": False,
             "message": f"获取失败: {str(e)}"
         }
-
-
-async def fetch_influencers_concurrent(
-    influencer_ids: List[str],
-    max_concurrent: int = 3,
-    cache_days: int = 3
-) -> Dict[str, Any]:
-    """
-    使用多标签页并发爬取达人详情数据
-
-    Args:
-        influencer_ids: 达人 ID 列表
-        max_concurrent: 最大并发标签页数量（1-10，默认3）
-        cache_days: 缓存有效天数
-
-    Returns:
-        Dict: 包含统计信息的结果字典
-    """
-    import random
-
-    print(f"\n🚀 开始并发爬取，最大并发数: {max_concurrent}")
-
-    # 统计信息
-    cached_count = 0
-    fetched_count = 0
-    failed_count = 0
-    failed_ids = []
-
-    start_time = datetime.now()
-
-    # 创建信号量控制并发数
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def fetch_with_semaphore(influencer_id: str, index: int, total: int):
-        """带信号量控制的爬取函数"""
-        nonlocal cached_count, fetched_count, failed_count
-
-        async with semaphore:
-            print(f"\n[{index}/{total}] 处理达人 ID: {influencer_id}")
-
-            # 检查缓存
-            cached_path = check_influencer_cache(influencer_id, cache_days)
-            if cached_path:
-                print(f"   ✓ 使用缓存: {cached_path}")
-                cached_count += 1
-                return {"success": True, "cached": True, "id": influencer_id}
-
-            # 创建新的标签页
-            try:
-                page = await _context.new_page()
-                print(f"   📄 已创建新标签页")
-
-                # 添加随机延迟（避免反爬）
-                delay = random.uniform(0.5, 1.5)
-                await asyncio.sleep(delay)
-
-                # 爬取数据
-                try:
-                    result = await fetch_influencer_detail_async(influencer_id, page)
-
-                    if result["success"]:
-                        fetched_count += 1
-                        print(f"   ✅ 成功获取并保存")
-                        return {"success": True, "cached": False, "id": influencer_id}
-                    else:
-                        failed_ids.append(influencer_id)
-                        failed_count += 1
-                        print(f"   ❌ 失败: {result['message']}")
-                        return {"success": False, "id": influencer_id, "error": result['message']}
-
-                finally:
-                    # 关闭标签页释放资源
-                    await page.close()
-                    print(f"   🗑️ 已关闭标签页")
-
-            except Exception as e:
-                print(f"   ❌ 异常: {e}")
-                failed_ids.append(influencer_id)
-                failed_count += 1
-                return {"success": False, "id": influencer_id, "error": str(e)}
-
-    # 创建 influencer 目录
-    influencer_dir = "influencer"
-    os.makedirs(influencer_dir, exist_ok=True)
-
-    # 并发执行所有任务
-    total_count = len(influencer_ids)
-    tasks = [
-        fetch_with_semaphore(influencer_id, idx + 1, total_count)
-        for idx, influencer_id in enumerate(influencer_ids)
-    ]
-
-    # 使用 gather 并发执行，return_exceptions=True 确保单个失败不影响整体
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # 计算耗时
-    end_time = datetime.now()
-    elapsed_time = end_time - start_time
-    elapsed_str = str(elapsed_time).split('.')[0]  # 去掉微秒
-
-    print()
-    print(f"✅ 并发爬取完成!")
-    print(f"   - 总数: {total_count}")
-    print(f"   - 使用缓存: {cached_count}")
-    print(f"   - 重新获取: {fetched_count}")
-    print(f"   - 失败: {failed_count}")
-    print(f"   - 耗时: {elapsed_str}")
-    print(f"   - 平均速度: {total_count / elapsed_time.total_seconds():.2f} 个/秒")
-
-    return {
-        "success": True,
-        "total_count": total_count,
-        "cached_count": cached_count,
-        "fetched_count": fetched_count,
-        "failed_count": failed_count,
-        "failed_ids": failed_ids,
-        "elapsed_time": elapsed_str,
-        "results": results,
-        "message": f"并发处理完成：{cached_count} 个使用缓存，{fetched_count} 个重新获取，{failed_count} 个失败"
-    }
 
 
 async def get_data_row_keys(url: str, max_pages: int) -> List[str]:
