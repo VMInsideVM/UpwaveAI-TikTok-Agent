@@ -1,31 +1,11 @@
 {
   "target_url": "https://www.fastmoss.com/zh/influencer/detail/7498937853482583070",
-  "capture_time": "2025-11-05 13:31:35",
+  "capture_time": "2025-11-10 17:46:23",
   "total_requests": 9,
   "api_responses": {
     "datalist": {
       "sold_count": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 3
-          },
-          {
-            "key": "2025-08-08",
-            "value": 2
-          },
-          {
-            "key": "2025-08-09",
-            "value": 2
-          },
-          {
-            "key": "2025-08-10",
-            "value": 3
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
           {
             "key": "2025-08-12",
             "value": 2
@@ -365,32 +345,32 @@
           {
             "key": "2025-11-04",
             "value": 1
+          },
+          {
+            "key": "2025-11-05",
+            "value": 5
+          },
+          {
+            "key": "2025-11-06",
+            "value": 2
+          },
+          {
+            "key": "2025-11-07",
+            "value": 2
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
+            "value": 4
           }
         ],
-        "total": 293
+        "total": 296
       },
       "follower": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 533
-          },
-          {
-            "key": "2025-08-08",
-            "value": 533
-          },
-          {
-            "key": "2025-08-09",
-            "value": 533
-          },
-          {
-            "key": "2025-08-10",
-            "value": 533
-          },
-          {
-            "key": "2025-08-11",
-            "value": 533
-          },
           {
             "key": "2025-08-12",
             "value": 533
@@ -730,32 +710,32 @@
           {
             "key": "2025-11-04",
             "value": 190
+          },
+          {
+            "key": "2025-11-05",
+            "value": 220
+          },
+          {
+            "key": "2025-11-06",
+            "value": 377
+          },
+          {
+            "key": "2025-11-07",
+            "value": 0
+          },
+          {
+            "key": "2025-11-08",
+            "value": 704
+          },
+          {
+            "key": "2025-11-09",
+            "value": 267
           }
         ],
-        "total": 37110
+        "total": 36013
       },
       "play": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 749134
-          },
-          {
-            "key": "2025-08-08",
-            "value": 1106689
-          },
-          {
-            "key": "2025-08-09",
-            "value": 771450
-          },
-          {
-            "key": "2025-08-10",
-            "value": 573265
-          },
-          {
-            "key": "2025-08-11",
-            "value": 224661
-          },
           {
             "key": "2025-08-12",
             "value": 465883
@@ -1095,32 +1075,32 @@
           {
             "key": "2025-11-04",
             "value": 82652
+          },
+          {
+            "key": "2025-11-05",
+            "value": 278195
+          },
+          {
+            "key": "2025-11-06",
+            "value": 410930
+          },
+          {
+            "key": "2025-11-07",
+            "value": 322637
+          },
+          {
+            "key": "2025-11-08",
+            "value": 117122
+          },
+          {
+            "key": "2025-11-09",
+            "value": 114959
           }
         ],
-        "total": 31649575
+        "total": 29468219
       },
       "like": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 0
-          },
-          {
-            "key": "2025-08-08",
-            "value": 0
-          },
-          {
-            "key": "2025-08-09",
-            "value": 0
-          },
-          {
-            "key": "2025-08-10",
-            "value": 0
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
           {
             "key": "2025-08-12",
             "value": 0
@@ -1460,32 +1440,32 @@
           {
             "key": "2025-11-04",
             "value": 0
+          },
+          {
+            "key": "2025-11-05",
+            "value": 0
+          },
+          {
+            "key": "2025-11-06",
+            "value": 0
+          },
+          {
+            "key": "2025-11-07",
+            "value": 0
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
+            "value": 0
           }
         ],
         "total": 0
       },
       "video_comment": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 284
-          },
-          {
-            "key": "2025-08-08",
-            "value": 246
-          },
-          {
-            "key": "2025-08-09",
-            "value": 255
-          },
-          {
-            "key": "2025-08-10",
-            "value": 138
-          },
-          {
-            "key": "2025-08-11",
-            "value": 37
-          },
           {
             "key": "2025-08-12",
             "value": 78
@@ -1825,32 +1805,32 @@
           {
             "key": "2025-11-04",
             "value": 26
+          },
+          {
+            "key": "2025-11-05",
+            "value": 96
+          },
+          {
+            "key": "2025-11-06",
+            "value": 73
+          },
+          {
+            "key": "2025-11-07",
+            "value": 75
+          },
+          {
+            "key": "2025-11-08",
+            "value": 23
+          },
+          {
+            "key": "2025-11-09",
+            "value": 47
           }
         ],
-        "total": 7432
+        "total": 6786
       },
       "video_collect": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 6306
-          },
-          {
-            "key": "2025-08-08",
-            "value": 8783
-          },
-          {
-            "key": "2025-08-09",
-            "value": 4224
-          },
-          {
-            "key": "2025-08-10",
-            "value": 4367
-          },
-          {
-            "key": "2025-08-11",
-            "value": 963
-          },
           {
             "key": "2025-08-12",
             "value": 2636
@@ -2190,32 +2170,32 @@
           {
             "key": "2025-11-04",
             "value": 350
+          },
+          {
+            "key": "2025-11-05",
+            "value": 2923
+          },
+          {
+            "key": "2025-11-06",
+            "value": 3191
+          },
+          {
+            "key": "2025-11-07",
+            "value": 2011
+          },
+          {
+            "key": "2025-11-08",
+            "value": 1127
+          },
+          {
+            "key": "2025-11-09",
+            "value": 713
           }
         ],
-        "total": 236090
+        "total": 221412
       },
       "video_share": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 233725
-          },
-          {
-            "key": "2025-08-08",
-            "value": 331828
-          },
-          {
-            "key": "2025-08-09",
-            "value": 221820
-          },
-          {
-            "key": "2025-08-10",
-            "value": 328674
-          },
-          {
-            "key": "2025-08-11",
-            "value": 23227
-          },
           {
             "key": "2025-08-12",
             "value": 214707
@@ -2555,32 +2535,32 @@
           {
             "key": "2025-11-04",
             "value": 33100
+          },
+          {
+            "key": "2025-11-05",
+            "value": 90142
+          },
+          {
+            "key": "2025-11-06",
+            "value": 111263
+          },
+          {
+            "key": "2025-11-07",
+            "value": 87321
+          },
+          {
+            "key": "2025-11-08",
+            "value": 40305
+          },
+          {
+            "key": "2025-11-09",
+            "value": 33109
           }
         ],
-        "total": 10012482
+        "total": 9235348
       },
       "sale_amount": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 86.83
-          },
-          {
-            "key": "2025-08-08",
-            "value": 66.59
-          },
-          {
-            "key": "2025-08-09",
-            "value": 101.99
-          },
-          {
-            "key": "2025-08-10",
-            "value": 110.38
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
           {
             "key": "2025-08-12",
             "value": 101.99
@@ -2920,32 +2900,32 @@
           {
             "key": "2025-11-04",
             "value": 47.98
+          },
+          {
+            "key": "2025-11-05",
+            "value": 74.64
+          },
+          {
+            "key": "2025-11-06",
+            "value": 29.41
+          },
+          {
+            "key": "2025-11-07",
+            "value": 18.98
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
+            "value": 152.29
           }
         ],
-        "total": 7823.729999999999
+        "total": 7733.259999999998
       },
       "video_sold_count": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 3
-          },
-          {
-            "key": "2025-08-08",
-            "value": 2
-          },
-          {
-            "key": "2025-08-09",
-            "value": 2
-          },
-          {
-            "key": "2025-08-10",
-            "value": 3
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
           {
             "key": "2025-08-12",
             "value": 2
@@ -3285,32 +3265,32 @@
           {
             "key": "2025-11-04",
             "value": 1
+          },
+          {
+            "key": "2025-11-05",
+            "value": 5
+          },
+          {
+            "key": "2025-11-06",
+            "value": 2
+          },
+          {
+            "key": "2025-11-07",
+            "value": 2
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
+            "value": 4
           }
         ],
-        "total": 293
+        "total": 296
       },
       "video_sale_amount": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 86.83
-          },
-          {
-            "key": "2025-08-08",
-            "value": 66.59
-          },
-          {
-            "key": "2025-08-09",
-            "value": 101.99
-          },
-          {
-            "key": "2025-08-10",
-            "value": 110.38
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
           {
             "key": "2025-08-12",
             "value": 101.99
@@ -3650,32 +3630,32 @@
           {
             "key": "2025-11-04",
             "value": 47.98
+          },
+          {
+            "key": "2025-11-05",
+            "value": 74.64
+          },
+          {
+            "key": "2025-11-06",
+            "value": 29.41
+          },
+          {
+            "key": "2025-11-07",
+            "value": 18.98
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
+            "value": 152.29
           }
         ],
-        "total": 7823.729999999999
+        "total": 7733.259999999998
       },
       "live_sold_count": {
         "list": [
-          {
-            "key": "2025-08-07",
-            "value": 0
-          },
-          {
-            "key": "2025-08-08",
-            "value": 0
-          },
-          {
-            "key": "2025-08-09",
-            "value": 0
-          },
-          {
-            "key": "2025-08-10",
-            "value": 0
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
           {
             "key": "2025-08-12",
             "value": 0
@@ -4014,6 +3994,26 @@
           },
           {
             "key": "2025-11-04",
+            "value": 0
+          },
+          {
+            "key": "2025-11-05",
+            "value": 0
+          },
+          {
+            "key": "2025-11-06",
+            "value": 0
+          },
+          {
+            "key": "2025-11-07",
+            "value": 0
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
             "value": 0
           }
         ],
@@ -4022,26 +4022,6 @@
       "live_sale_amount": {
         "list": [
           {
-            "key": "2025-08-07",
-            "value": 0
-          },
-          {
-            "key": "2025-08-08",
-            "value": 0
-          },
-          {
-            "key": "2025-08-09",
-            "value": 0
-          },
-          {
-            "key": "2025-08-10",
-            "value": 0
-          },
-          {
-            "key": "2025-08-11",
-            "value": 0
-          },
-          {
             "key": "2025-08-12",
             "value": 0
           },
@@ -4379,6 +4359,26 @@
           },
           {
             "key": "2025-11-04",
+            "value": 0
+          },
+          {
+            "key": "2025-11-05",
+            "value": 0
+          },
+          {
+            "key": "2025-11-06",
+            "value": 0
+          },
+          {
+            "key": "2025-11-07",
+            "value": 0
+          },
+          {
+            "key": "2025-11-08",
+            "value": 0
+          },
+          {
+            "key": "2025-11-09",
             "value": 0
           }
         ],
@@ -4395,7 +4395,7 @@
       "verify_type": "0",
       "account_type": "0",
       "category_name": "其他",
-      "update_at": 1762194172,
+      "update_at": 1762633145,
       "product_category_id": [
         14,
         25,
@@ -4417,23 +4417,23 @@
       "region_name": "美国"
     },
     "authorIndex": {
-      "region_rank": 199699,
-      "last_region_rank": 204579,
-      "region_rank_rate": "2.39%",
-      "category_rank": 92022,
-      "last_category_rank": 94466,
-      "category_rank_rate": "2.59%",
+      "region_rank": 194907,
+      "last_region_rank": 197982,
+      "region_rank_rate": "1.55%",
+      "category_rank": 89287,
+      "last_category_rank": 90841,
+      "category_rank_rate": "1.71%",
       "flow_index": 89,
-      "carry_index": 45,
-      "follower_count": 119345,
-      "follower_28_count": 8449,
-      "follower_28_last_count": 7995,
-      "follower_28_count_rate": "0.06%",
+      "carry_index": 44,
+      "follower_count": 120913,
+      "follower_28_count": 7367,
+      "follower_28_last_count": 8129,
+      "follower_28_count_rate": "-0.09%",
       "aweme_28_count": 57,
       "live_28_count": 0,
-      "last_video_time": "2025/11/02",
-      "video_28_avg_play_count": 130159,
-      "video_28_avg_interaction_count": 32495,
+      "last_video_time": "2025/11/09",
+      "video_28_avg_play_count": 141381,
+      "video_28_avg_interaction_count": 32059,
       "goods_28_avg_sole_count": 0,
       "goods_28_avg_sale_amount": 0,
       "region": "US",
@@ -4443,25 +4443,25 @@
       "region_name": "美国"
     },
     "getStatInfo": {
-      "goods_sale_amount": 7909.33,
+      "goods_sale_amount": 8138.77,
       "goods_sale_country_rank": 200000,
       "goods_sale_last_country_rank": "200000+",
       "region": "US",
-      "video_sale_amount": 7909.33,
+      "video_sale_amount": 8138.77,
       "live_sale_amount": 0,
       "live_gpm_min": 0,
       "live_gpm_max": 0,
-      "aweme_min_gpm": 23.86,
-      "aweme_max_gpm": 23.86,
+      "aweme_min_gpm": 21.78,
+      "aweme_max_gpm": 21.78,
       "aweme_total_count": 310,
-      "aweme_count": 108,
-      "aweme_left_count": 202,
-      "aweme_play_count": 85347067,
-      "aweme_avg_play_count": 291211,
-      "aweme_mid_play_count": 28600,
-      "aweme_avg_interaction_rate": "38.96%",
+      "aweme_count": 114,
+      "aweme_left_count": 196,
+      "aweme_play_count": 87682265,
+      "aweme_avg_play_count": 285402,
+      "aweme_mid_play_count": 26400,
+      "aweme_avg_interaction_rate": "38.79%",
       "aweme_ipm_count": 40,
-      "aweme_pop_rate": "199.4%",
+      "aweme_pop_rate": "198.36%",
       "live_count": 0,
       "live_avg_time": "0",
       "live_max_user_count": 0,
@@ -4546,115 +4546,115 @@
       "label_list": [
         {
           "key": "racha",
-          "value": "12.6685",
-          "count": "94"
+          "value": "12.4216",
+          "count": "99"
         },
         {
           "key": "laracha",
-          "value": "9.0296",
-          "count": "67"
+          "value": "9.0339",
+          "count": "72"
+        },
+        {
+          "key": "rachas",
+          "value": "5.2698",
+          "count": "42"
         },
         {
           "key": "mascotastiktok",
-          "value": "5.3908",
+          "value": "5.0188",
           "count": "40"
         },
         {
           "key": "rachitas",
-          "value": "5.2561",
-          "count": "39"
-        },
-        {
-          "key": "rachas",
-          "value": "5.2561",
+          "value": "4.8934",
           "count": "39"
         },
         {
           "key": "activarlaracha",
-          "value": "4.8518",
+          "value": "4.5169",
           "count": "36"
         },
         {
           "key": "rachita",
-          "value": "3.5040",
+          "value": "3.2622",
           "count": "26"
         },
         {
           "key": "larachaaaaaaaaaa🔥",
-          "value": "2.8302",
+          "value": "2.6349",
           "count": "21"
         },
         {
-          "key": "paraactivarlarachita🔥🔥",
-          "value": "2.6954",
-          "count": "20"
-        },
-        {
           "key": "larachaaaaa🔥🔥🔥",
-          "value": "2.6954",
+          "value": "2.5094",
           "count": "20"
         },
         {
-          "key": "skincare",
-          "value": "1.3477",
-          "count": "10"
+          "key": "paraactivarlarachita🔥🔥",
+          "value": "2.5094",
+          "count": "20"
         },
         {
           "key": "rachita🔥",
-          "value": "1.2129",
-          "count": "9"
+          "value": "1.7566",
+          "count": "14"
+        },
+        {
+          "key": "skincare",
+          "value": "1.5056",
+          "count": "12"
         },
         {
           "key": "frasesparalaracha",
-          "value": "0.8086",
-          "count": "6"
+          "value": "1.3802",
+          "count": "11"
         },
         {
           "key": "paralaracha",
-          "value": "0.8086",
+          "value": "0.7528",
           "count": "6"
         },
         {
+          "key": "rachatiktok",
+          "value": "0.5019",
+          "count": "4"
+        },
+        {
           "key": "dance",
-          "value": "0.5391",
+          "value": "0.5019",
           "count": "4"
         },
         {
           "key": "activalaracha🔥🔥🔥🔥🔥🔥🔥👸",
-          "value": "0.5391",
-          "count": "4"
-        },
-        {
-          "key": "rachatiktok",
-          "value": "0.5391",
+          "value": "0.5019",
           "count": "4"
         },
         {
           "key": "serum",
-          "value": "0.4043",
+          "value": "0.3764",
           "count": "3"
         },
         {
-          "key": "pestañas",
-          "value": "0.4043",
+          "key": "videosparalaracha",
+          "value": "0.3764",
           "count": "3"
         },
         {
           "key": "eyelashes",
-          "value": "0.4043",
+          "value": "0.3764",
           "count": "3"
         }
       ],
       "label_max": {
         "key": "racha",
-        "value": "12.6685",
-        "count": "94"
+        "value": "12.4216",
+        "count": "99"
       }
     },
     "cargoStat": {
       "live_type": 1,
       "first_video_time": "2025/06/06",
-      "video_sold_count": 354,
+      "video_sold_count": 367,
       "live_sold_count": 0,
       "max_sold_type": 1,
       "first_video_time_at": 1749139200
@@ -4664,72 +4664,72 @@
         {
           "category_id": "14",
           "key": "美妆个护",
-          "value": 62.5
+          "value": 62.32
         },
         {
           "category_id": 0,
           "key": "其他",
-          "value": 14.06
+          "value": 13.77
         },
         {
           "category_id": "25",
           "key": "保健",
-          "value": 9.38
+          "value": 9.42
         },
         {
           "category_id": "2",
           "key": "女装与女士内衣",
-          "value": 7.03
+          "value": 7.25
         },
         {
           "category_id": "16",
           "key": "手机与数码",
-          "value": 7.03
+          "value": 7.25
         }
       ],
       "most_sold_category_list": [
         {
           "category_id": "14",
           "key": "美妆个护",
-          "value": 52.82
+          "value": 50.95
         },
         {
           "category_id": 0,
           "key": "其他",
-          "value": 15.82
+          "value": 16.89
         },
         {
           "category_id": "2",
           "key": "女装与女士内衣",
-          "value": 11.3
+          "value": 11.44
         },
         {
           "category_id": "25",
           "key": "保健",
-          "value": 10.45
+          "value": 11.44
         },
         {
           "category_id": "16",
           "key": "手机与数码",
-          "value": 9.6
+          "value": 9.26
         }
       ],
-      "shop_count": 100,
-      "shop_live_count": 3,
-      "shop_video_count": 95,
-      "goods_count": 126,
-      "goods_live_count": 3,
-      "goods_video_count": 118,
-      "total_sold_count": 354,
+      "shop_count": 108,
+      "shop_live_count": 6,
+      "shop_video_count": 103,
+      "goods_count": 135,
+      "goods_live_count": 6,
+      "goods_video_count": 127,
+      "total_sold_count": 367,
       "live_sold_count": 0,
-      "video_sold_count": 354,
+      "video_sold_count": 367,
       "other_sold_count": 0,
-      "total_sale_amount": 7909.33,
-      "video_sale_amount": 7909.33,
+      "total_sale_amount": 8138.77,
+      "video_sale_amount": 8138.77,
       "live_sale_amount": 0,
       "other_sale_amount": 0,
       "video_avg_sold_count": 2,
-      "video_avg_sale_amount": 25.51,
+      "video_avg_sale_amount": 26.25,
       "live_avg_sold_count": 0,
       "live_avg_sale_amount": 0,
       "per_customer_amount": 23,
