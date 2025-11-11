@@ -44,6 +44,15 @@ try:
 except RuntimeError:
     print("⚠️ static 目录不存在，将在后续步骤创建")
 
+# 挂载 output 目录（用于提供报告文件和图表）
+try:
+    import os
+    os.makedirs("output/reports", exist_ok=True)
+    app.mount("/reports", StaticFiles(directory="output/reports"), name="reports")
+    print("✅ 报告服务已启用: /reports")
+except RuntimeError:
+    print("⚠️ output/reports 目录创建失败")
+
 
 # ==================== 辅助函数 ====================
 
