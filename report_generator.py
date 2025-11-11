@@ -56,10 +56,31 @@ class ReportGenerator:
             # 1. 读取达人数据
             print(f"📖 读取达人数据...")
             with open(json_file_path, 'r', encoding='utf-8') as f:
-                influencers_data = json.load(f)
+                raw_data = json.load(f)
+
+            # 处理不同的数据格式
+            if isinstance(raw_data, list):
+                influencers_data = raw_data
+            elif isinstance(raw_data, dict):
+                # 如果是字典，尝试找到包含达人列表的键
+                # 可能的键名: 'data', 'influencers', 'results', 'items'
+                for key in ['data', 'influencers', 'results', 'items', 'list']:
+                    if key in raw_data and isinstance(raw_data[key], list):
+                        influencers_data = raw_data[key]
+                        break
+                else:
+                    # 如果找不到列表，将字典的值转换为列表
+                    if raw_data:
+                        influencers_data = [raw_data]
+                    else:
+                        raise ValueError("无法从 JSON 数据中提取达人列表")
+            else:
+                raise ValueError(f"不支持的数据格式: {type(raw_data)}")
 
             if not influencers_data:
                 raise ValueError("达人数据为空")
+
+            print(f"✅ 成功读取 {len(influencers_data)} 个达人数据")
 
             # 2. 使用 LLM 分析并排序达人
             print(f"🤖 使用 AI 分析达人数据...")
@@ -124,6 +145,15 @@ class ReportGenerator:
             排序后的达人列表（包含推荐理由）
         """
         # 准备提示词
+        # 获取达人ID字段名
+        id_field = None
+        for field in ["达人ID", "influencer_id", "id", "user_id", "ID"]:
+            if influencers and field in influencers[0]:
+                id_field = field
+                break
+        if not id_field:
+            id_field = "达人ID"  # 使用默认值
+
         prompt = f"""你是一位专业的 TikTok 达人推荐专家。请根据用户需求分析以下达人数据，选出最合适的 {top_n} 位达人。
 
 **用户需求：**
@@ -131,7 +161,7 @@ class ReportGenerator:
 详细需求：{user_requirements}
 
 **达人数据：**
-{json.dumps(influencers[:20], ensure_ascii=False, indent=2)}  # 只发送前20个给 LLM 分析
+{json.dumps(influencers[:20], ensure_ascii=False, indent=2)}
 
 **任务：**
 1. 综合考虑以下因素：
@@ -147,7 +177,7 @@ class ReportGenerator:
 ```json
 [
   {{
-    "influencer_id": "达人ID",
+    "influencer_id": "达人的{id_field}字段值",
     "rank": 1,
     "score": 95,
     "recommendation_reason": "推荐理由（50-100字）",
@@ -156,6 +186,8 @@ class ReportGenerator:
   ...
 ]
 ```
+
+**重要**: influencer_id 必须使用达人数据中的 "{id_field}" 字段的值。
 
 请直接返回 JSON，不要包含其他文字。"""
 
@@ -197,10 +229,16 @@ class ReportGenerator:
             for ranking in rankings:
                 # 查找对应的达人数据
                 influencer_id = ranking.get("influencer_id")
-                influencer_data = next(
-                    (inf for inf in influencers if str(inf.get("达人ID")) == str(influencer_id)),
-                    None
-                )
+
+                # 尝试多种可能的 ID 字段名
+                influencer_data = None
+                for id_field in ["达人ID", "influencer_id", "id", "user_id", "ID"]:
+                    influencer_data = next(
+                        (inf for inf in influencers if str(inf.get(id_field, "")) == str(influencer_id)),
+                        None
+                    )
+                    if influencer_data:
+                        break
 
                 if influencer_data:
                     # 合并数据
@@ -215,9 +253,17 @@ class ReportGenerator:
         except Exception as e:
             print(f"⚠️ LLM 分析失败，使用默认排序: {e}")
             # 降级方案：按粉丝数排序
+            # 尝试多种可能的粉丝数字段名
+            def get_followers_count(inf):
+                for field in ["粉丝数", "followers", "follower_count", "fans"]:
+                    value = inf.get(field, "0")
+                    if value:
+                        return self._parse_number(str(value))
+                return 0
+
             sorted_influencers = sorted(
                 influencers,
-                key=lambda x: self._parse_number(x.get("粉丝数", "0")),
+                key=get_followers_count,
                 reverse=True
             )[:top_n]
 
@@ -228,6 +274,24 @@ class ReportGenerator:
                 inf["highlights"] = ["粉丝基础良好", "数据表现稳定"]
 
             return sorted_influencers
+
+    def _get_field_value(self, data: Dict, field_names: List[str], default: str = "未知") -> str:
+        """
+        从数据中获取字段值，尝试多个可能的字段名
+
+        Args:
+            data: 数据字典
+            field_names: 可能的字段名列表
+            default: 默认值
+
+        Returns:
+            字段值或默认值
+        """
+        for field in field_names:
+            value = data.get(field)
+            if value is not None and value != "":
+                return str(value)
+        return default
 
     def _create_html_report(
         self,
@@ -242,12 +306,12 @@ class ReportGenerator:
         influencer_cards = ""
         for inf in influencers:
             rank = inf.get("rank", 0)
-            nickname = inf.get("达人昵称", "未知")
-            avatar = inf.get("达人头像", "")
-            followers = inf.get("粉丝数", "0")
-            engagement_rate = inf.get("互动率", "0%")
-            video_avg_views = inf.get("近28天视频平均播放量", "0")
-            total_sales = inf.get("近28天总销量", "0")
+            nickname = self._get_field_value(inf, ["达人昵称", "nickname", "name", "username"], "未知")
+            avatar = self._get_field_value(inf, ["达人头像", "avatar", "profile_image", "picture"], "")
+            followers = self._get_field_value(inf, ["粉丝数", "followers", "follower_count"], "0")
+            engagement_rate = self._get_field_value(inf, ["互动率", "engagement_rate", "engagement"], "0%")
+            video_avg_views = self._get_field_value(inf, ["近28天视频平均播放量", "avg_views", "average_views"], "0")
+            total_sales = self._get_field_value(inf, ["近28天总销量", "total_sales", "sales"], "0")
             reason = inf.get("recommendation_reason", "综合数据表现优秀")
             highlights = inf.get("highlights", [])
             score = inf.get("ai_score", 0)
