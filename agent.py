@@ -185,6 +185,21 @@ class TikTokInfluencerAgent:
 1. **理解需求**: 询问用户的商品名称、目标国家、达人数量、粉丝要求等
    - 收集所有需要的信息（商品、国家、数量、筛选条件）
    - **一旦获得商品名称和目标达人数量，立即调用 record_user_needs 工具记录**
+   - 🔥 **关键：处理模糊表达**
+     * **粉丝数量模糊表达**：当用户说"30万左右"、"大约50万"、"100w差不多"等
+       - **禁止**设置相同的最小值和最大值（如 followers=[300000, 300000] ❌）
+       - 必须设置一个合理范围，通常为目标值的 ±15-20%
+       - 示例：
+         * "30万左右" → followers=[250000, 350000] ✅ (不是 [300000, 300000] ❌)
+         * "大约50万" → followers=[400000, 600000] ✅ (不是 [500000, 500000] ❌)
+         * "100w左右" → followers=[800000, 1200000] ✅ (不是 [1000000, 1000000] ❌)
+     * **粉丝年龄模糊表达**：当用户说"年轻"、"年轻人"、"粉丝画像年轻一些"等
+       - 必须映射到具体的年龄段参数
+       - 映射规则：
+         * "年轻"、"年轻人"、"年轻群体"、"粉丝画像年轻"、"Z世代" → followers_age="18-24"
+         * "年轻白领"、"职场新人"、"轻熟" → followers_age="25-34"
+         * "中年"、"成熟"、"家庭主力" → followers_age="35-44"
+         * "年长"、"银发"、"中老年" → followers_age="45+"
 
 2. **匹配分类**: 使用 match_product_category 工具推断商品分类
    - 工具会展示推理过程,让用户了解为什么选择这个分类
@@ -220,9 +235,13 @@ class TikTokInfluencerAgent:
    - **🔥 关键规则**: 在参数确认阶段（review_parameters 之后），**除非用户明确确认**，否则**绝对不允许调用 get_max_page_number 或任何后续工具**
 
 5. **添加分类后缀**: 将分类工具返回的 url_suffix 追加到 URL,形成完整的搜索 URL
+   - ⚠️ **关键规则**: 必须使用 match_product_category 工具返回的完整 url_suffix（格式为 &sale_category_l3=123456 或 &sale_category_l2=123456）
+   - **禁止自己构造后缀**: 不要使用 &cat=、&category= 等其他格式
+   - 正确示例: 基础URL + url_suffix → https://www.fastmoss.com/zh/influencer/search?region=US&follower=250000,350000&sale_category_l3=855952
+   - 错误示例: https://www.fastmoss.com/zh/influencer/search?region=US&follower=250000,350000&cat=855952 ❌
 
 6. **检查数量**: 使用 get_max_page_number(url=完整URL) 检查可用达人数
-   - **重要**: 必须传递完整的 URL (包括分类后缀)
+   - **重要**: 必须传递完整的 URL (包括分类后缀，格式必须是 &sale_category_lX=数字)
    - 记录最大页数,用于后续判断
 
 7. **分析数量缺口**: 使用 analyze_quantity_gap 工具判断数量是否足够
@@ -490,6 +509,9 @@ class TikTokInfluencerAgent:
             if "messages" in result and len(result["messages"]) > 0:
                 messages = result["messages"]
 
+                # 🔧 修复死循环：在更新历史之前，记录本轮之前的消息数量
+                previous_history_len = len(self.chat_history)
+
                 # 更新对话历史（保留 agent 返回的完整消息列表）
                 self.chat_history = messages
 
@@ -499,8 +521,11 @@ class TikTokInfluencerAgent:
                 is_question = self._is_informational_question(user_input)
 
                 if not is_question:  # 只有非咨询性输入才强制返回
-                    # 使用反向遍历，返回最后一次调用的结果（最新的参数状态）
-                    for msg in reversed(messages):
+                    # 只检查本轮新增的消息（避免重复返回旧的参数摘要）
+                    new_messages = messages[previous_history_len:] if len(messages) > previous_history_len else []
+
+                    # 只在新消息中查找 review_parameters
+                    for msg in reversed(new_messages):
                         msg_type = type(msg).__name__
                         if msg_type == 'ToolMessage':
                             # 检查是否是 review_parameters 的返回
@@ -686,6 +711,10 @@ class TikTokInfluencerAgent:
             # 提取 AI 的回复（与 run() 方法相同）
             if "messages" in result and len(result["messages"]) > 0:
                 messages = result["messages"]
+
+                # 🔧 修复死循环：在更新历史之前，记录本轮之前的消息数量
+                previous_history_len = len(self.chat_history)
+
                 self.chat_history = messages
 
                 # 🔍 特殊处理：检查是否调用了 review_parameters 工具
@@ -694,8 +723,11 @@ class TikTokInfluencerAgent:
                 is_question = self._is_informational_question(user_input) if user_input else False
 
                 if not is_question:  # 只有非咨询性输入才强制返回
-                    # 使用反向遍历，返回最后一次调用的结果（最新的参数状态）
-                    for msg in reversed(messages):
+                    # 只检查本轮新增的消息（避免重复返回旧的参数摘要）
+                    new_messages = messages[previous_history_len:] if len(messages) > previous_history_len else []
+
+                    # 只在新消息中查找 review_parameters
+                    for msg in reversed(new_messages):
                         msg_type = type(msg).__name__
                         if msg_type == 'ToolMessage':
                             # 检查是否是 review_parameters 的返回
