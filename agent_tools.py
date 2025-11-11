@@ -554,6 +554,14 @@ class ProcessInfluencerListInput(BaseModel):
     cache_days: int = Field(3, ge=1, le=30, description="缓存有效天数（1-30天，默认3天）")
 
 
+class GenerateReportInput(BaseModel):
+    """生成推荐报告的输入参数"""
+    json_file_path: str = Field(description="达人数据 JSON 文件路径")
+    product_name: str = Field(description="商品名称")
+    user_requirements: str = Field(description="用户需求描述")
+    top_n: int = Field(10, ge=1, le=50, description="推荐达人数量（默认10）")
+
+
 class ReviewParametersInput(BaseModel):
     """审查参数的输入参数"""
     # 不需要任何参数，工具会自动从 agent 实例中读取
@@ -986,6 +994,84 @@ class ProcessInfluencerListTool(BaseTool):
             return f"{hours} 小时 {minutes} 分"
 
 
+class GenerateReportTool(BaseTool):
+    """生成达人推荐报告的工具"""
+    name: str = "generate_recommendation_report"
+    description: str = """
+    生成精美的达人推荐 HTML 报告。
+
+    功能：
+    - 使用 AI 分析达人数据
+    - 根据用户需求智能排序推荐
+    - 为每位达人生成推荐理由和亮点
+    - 创建美观的网页报告
+    - 返回可访问的报告链接
+
+    参数：
+    - json_file_path: 达人数据文件路径
+    - product_name: 商品名称
+    - user_requirements: 用户需求描述
+    - top_n: 推荐达人数量（默认10）
+
+    注意：
+    - 需要在获取完达人详细数据后调用
+    - 报告会保存到 static/reports 目录
+    - 返回可在浏览器中打开的 URL
+    """
+    args_schema: type[BaseModel] = GenerateReportInput
+
+    def _run(self, json_file_path: str, product_name: str, user_requirements: str, top_n: int = 10) -> str:
+        """执行报告生成"""
+        try:
+            from report_generator import ReportGenerator
+
+            print(f"📝 开始生成达人推荐报告...")
+
+            # 获取 agent 实例以获取图片数据
+            agent = get_agent_instance()
+            image_data = None
+            if agent and hasattr(agent, 'current_image'):
+                image_data = agent.current_image
+
+            # 生成报告
+            generator = ReportGenerator()
+            result = generator.generate_report(
+                json_file_path=json_file_path,
+                product_name=product_name,
+                user_requirements=user_requirements,
+                image_data=image_data,
+                top_n=top_n
+            )
+
+            if not result.get("success"):
+                return f"❌ 报告生成失败: {result.get('error', '未知错误')}"
+
+            # 构建完整 URL（用于前端访问）
+            # 如果是 web 模式，使用相对路径；如果是 CLI 模式，使用绝对路径
+            report_url = result.get("url")
+            full_url = f"http://127.0.0.1:8001{report_url}"
+
+            output = f"""✅ 达人推荐报告生成成功！
+
+📊 **报告详情**
+   • 分析达人数: {result.get('total_analyzed', 0)} 位
+   • 推荐达人数: {result.get('top_recommended', 0)} 位
+   • 报告文件: {result.get('filename', '')}
+
+🔗 **查看报告**
+   点击链接在浏览器中打开：{full_url}
+
+💡 报告包含 AI 智能分析的推荐理由、数据亮点和详细对比，助您快速选择最合适的达人！"""
+
+            return output
+
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"详细错误信息:\n{error_details}")
+            return f"❌ 生成报告失败: {str(e)}"
+
+
 # ==================== 工具列表 ====================
 
 def get_all_tools() -> List[BaseTool]:
@@ -1006,7 +1092,8 @@ def get_all_tools() -> List[BaseTool]:
         SuggestAdjustmentsTool(),         # 生成调整建议
         GetSortSuffixTool(),
         ScrapeInfluencersTool(),          # 搜索并保存达人候选
-        ProcessInfluencerListTool()       # 批量获取达人详细数据
+        ProcessInfluencerListTool(),      # 批量获取达人详细数据
+        GenerateReportTool()              # 生成推荐报告
     ]
 
 

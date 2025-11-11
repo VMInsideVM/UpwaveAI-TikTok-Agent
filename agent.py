@@ -43,6 +43,10 @@ class TikTokInfluencerAgent:
         self.target_influencer_count = None  # 目标达人数量
         self.waiting_for_param_confirmation = False  # 🆕 是否正在等待参数确认
 
+        # 新增：图片数据（用于报告生成）
+        self.current_image = None  # 用户上传的商品图片（Base64）
+        self.user_requirements_summary = ""  # 用户需求汇总（用于报告）
+
         # 设置全局 agent 实例，供工具访问
         set_agent_instance(self)
 
@@ -322,7 +326,26 @@ class TikTokInfluencerAgent:
      * 显示预估完成时间
      * 批量获取所有达人的详细信息（粉丝画像、带货数据等）
    - **注意**: 这是一个耗时操作，工具会自动显示进度，不需要你做任何额外提示
-   - 等待工具完成后，告知用户："所有达人的详细数据已获取完成，可供后续分析使用"
+
+13. **生成推荐报告** (最终步骤):
+   - 在详细数据获取完成后，**立即调用** generate_recommendation_report 工具
+   - 传入参数:
+     * json_file_path: 与步骤12相同的 JSON 文件路径
+     * product_name: 商品名称
+     * user_requirements: 用户需求摘要（从对话历史中总结，包括国家、粉丝要求、带货需求等）
+     * top_n: 推荐达人数量（默认10，根据用户需要的达人数量调整）
+   - 工具会:
+     * 使用 AI 智能分析所有达人数据
+     * 根据用户需求进行精准排序和推荐
+     * 为每位达人生成推荐理由和亮点标签
+     * 生成精美的 HTML 网页报告
+     * 返回可在浏览器中打开的报告链接
+   - 将报告链接展示给用户，告知他们：
+     "✅ 所有达人数据分析完成！已为您生成精美的推荐报告，包含 AI 智能分析的推荐理由和数据亮点。
+
+     🔗 点击链接在浏览器中查看完整报告：[报告链接]
+
+     报告包含详细的达人对比和推荐排名，助您快速选择最合适的合作对象！"
 
 ## 重要规则:
 - **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
@@ -478,6 +501,13 @@ class TikTokInfluencerAgent:
             Agent 的回复
         """
         try:
+            # 保存用户需求摘要（用于报告生成）
+            if user_input and user_input.strip():
+                if not self.user_requirements_summary:
+                    self.user_requirements_summary = user_input
+                else:
+                    self.user_requirements_summary += f"\n{user_input}"
+
             # 将用户输入添加到历史记录
             from langchain_core.messages import HumanMessage
             self.chat_history.append(HumanMessage(content=user_input))
@@ -648,6 +678,10 @@ class TikTokInfluencerAgent:
             Agent 的回复
         """
         try:
+            # 保存图片数据（用于后续报告生成）
+            if image_data:
+                self.current_image = image_data
+
             # 将用户输入添加到历史记录（包含图片）
             from langchain_core.messages import HumanMessage
 
@@ -657,6 +691,12 @@ class TikTokInfluencerAgent:
 
             # 添加文本内容
             if user_input and user_input.strip():
+                # 同时保存用户需求摘要（用于报告）
+                if not self.user_requirements_summary:
+                    self.user_requirements_summary = user_input
+                else:
+                    self.user_requirements_summary += f"\n{user_input}"
+
                 message_content.append({
                     "type": "text",
                     "text": user_input
