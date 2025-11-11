@@ -1021,47 +1021,58 @@ class GenerateReportTool(BaseTool):
     args_schema: type[BaseModel] = GenerateReportInput
 
     def _run(self, json_file_path: str, product_name: str, user_requirements: str, top_n: int = 10) -> str:
-        """执行报告生成"""
+        """执行报告生成（使用完整的 report_agent）"""
         try:
-            from report_generator import ReportGenerator
+            from report_agent import TikTokInfluencerReportAgent
 
             print(f"📝 开始生成达人推荐报告...")
 
-            # 获取 agent 实例以获取图片数据
-            agent = get_agent_instance()
-            image_data = None
-            if agent and hasattr(agent, 'current_image'):
-                image_data = agent.current_image
+            # 从完整路径提取文件名（report_agent 只需要文件名）
+            json_filename = os.path.basename(json_file_path)
 
-            # 生成报告
-            generator = ReportGenerator()
-            result = generator.generate_report(
-                json_file_path=json_file_path,
-                product_name=product_name,
-                user_requirements=user_requirements,
-                image_data=image_data,
-                top_n=top_n
+            # 构建产品详细信息（合并商品名称和用户需求）
+            product_info = f"{product_name}。用户需求：{user_requirements}"
+
+            # 初始化报告 agent
+            report_agent = TikTokInfluencerReportAgent()
+
+            # 生成报告（返回 HTML 文件路径）
+            report_path = report_agent.generate_report(
+                json_filename=json_filename,
+                user_query=user_requirements,
+                target_count=top_n,
+                product_info=product_info
             )
 
-            if not result.get("success"):
-                return f"❌ 报告生成失败: {result.get('error', '未知错误')}"
+            if not report_path or not os.path.exists(report_path):
+                return f"❌ 报告生成失败：未能生成报告文件"
 
-            # 构建完整 URL（用于前端访问）
-            # 如果是 web 模式，使用相对路径；如果是 CLI 模式，使用绝对路径
-            report_url = result.get("url")
-            full_url = f"http://127.0.0.1:8001{report_url}"
+            # 将报告文件路径转换为 web 可访问的 URL
+            # report_path 格式: output/reports/20251105_180530/report.html
+            # 需要转换为: /reports/20251105_180530/report.html
+            relative_path = report_path.replace("output/", "/")
+            full_url = f"http://127.0.0.1:8001{relative_path}"
+
+            # 计算报告中的达人数量
+            # 报告包含 3 个 tier，每个 tier 有 top_n 个达人
+            total_in_report = top_n * 3
 
             output = f"""✅ 达人推荐报告生成成功！
 
 📊 **报告详情**
-   • 分析达人数: {result.get('total_analyzed', 0)} 位
-   • 推荐达人数: {result.get('top_recommended', 0)} 位
-   • 报告文件: {result.get('filename', '')}
+   • 推荐层级: Tier 1 ({top_n}个) + Tier 2 ({top_n}个) + Tier 3 ({top_n}个)
+   • 报告总数: {total_in_report} 位达人
+   • 数据来源: {json_filename}
 
 🔗 **查看报告**
    点击链接在浏览器中打开：{full_url}
 
-💡 报告包含 AI 智能分析的推荐理由、数据亮点和详细对比，助您快速选择最合适的达人！"""
+💡 报告包含：
+   ✓ 多维度智能评分与排名
+   ✓ 详细的达人分析（优势/风险/合作建议）
+   ✓ 数据可视化图表
+   ✓ 受众画像与内容契合度分析
+   ✓ 达人联系方式提取"""
 
             return output
 
