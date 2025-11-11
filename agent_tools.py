@@ -89,6 +89,9 @@ _scraped_data = None
 # 全局变量：存储 agent 实例（用于工具访问 agent 状态）
 _agent_instance = None
 
+# 全局变量：进度回调函数（用于 WebSocket 模式的进度报告）
+_progress_callback = None
+
 def get_classifier():
     """获取分类器单例实例"""
     global _classifier_instance
@@ -106,6 +109,17 @@ def set_agent_instance(agent):
 def get_agent_instance():
     """获取全局 agent 实例"""
     return _agent_instance
+
+
+def set_progress_callback(callback):
+    """设置进度回调函数"""
+    global _progress_callback
+    _progress_callback = callback
+
+
+def get_progress_callback():
+    """获取进度回调函数"""
+    return _progress_callback
 
 def match_product_category(product_name: str) -> Optional[Dict]:
     """
@@ -808,6 +822,9 @@ class ProcessInfluencerListTool(BaseTool):
     def _run(self, json_file_path: str, cache_days: int = 3) -> str:
         """执行批量处理（流式接收，实时显示进度）"""
         try:
+            # 获取进度回调函数（用于 WebSocket 模式）
+            progress_callback = get_progress_callback()
+
             print(f"📊 开始批量获取达人详细数据...")
 
             # 验证文件存在
@@ -845,7 +862,16 @@ class ProcessInfluencerListTool(BaseTool):
 
                     if event["type"] == "init":
                         total = event["total"]
-                        print(f"⏳ 共需处理 {total} 个达人，请耐心等待\n")
+                        msg = f"⏳ 共需处理 {total} 个达人，请耐心等待"
+                        print(f"{msg}\n")
+
+                        # 发送到前端
+                        if progress_callback:
+                            progress_callback({
+                                "type": "crawler_init",
+                                "total": total,
+                                "message": msg
+                            })
 
                     elif event["type"] == "progress":
                         current = event["current"]
@@ -867,7 +893,7 @@ class ProcessInfluencerListTool(BaseTool):
                         if should_display:
                             last_percent = percent
 
-                            # 绘制进度条
+                            # 绘制进度条（命令行模式）
                             bar_len = 30
                             filled = int(bar_len * percent / 100)
                             bar = '█' * filled + '░' * (bar_len - filled)
@@ -886,14 +912,41 @@ class ProcessInfluencerListTool(BaseTool):
                             print(time_info)
                             print(f"✓ 成功: {success}  |  ⚡ 缓存: {cached}  |  ✗ 失败: {failed}\n")
 
+                            # 发送到前端（WebSocket 模式）
+                            if progress_callback:
+                                progress_callback({
+                                    "type": "crawler_progress",
+                                    "current": current,
+                                    "total": total,
+                                    "percent": percent,
+                                    "success": success,
+                                    "cached": cached,
+                                    "failed": failed,
+                                    "elapsed": elapsed,
+                                    "remaining": int((total - current) * avg_time) if current > 0 and elapsed > 0 else 0
+                                })
+
                     elif event["type"] == "complete":
                         stats = event["stats"]
                         total_elapsed = time.time() - start_time
                         print(f"处理进度: {'█' * 30} 100% ({stats['total']}/{stats['total']})")
                         print(f"⏱️ 总耗时: {self._format_time(int(total_elapsed))}\n")
 
+                        # 发送完成消息到前端
+                        if progress_callback:
+                            progress_callback({
+                                "type": "crawler_complete",
+                                "stats": stats
+                            })
+
                     elif event["type"] == "error":
-                        return f"❌ 处理失败: {event['message']}"
+                        error_msg = f"❌ 处理失败: {event['message']}"
+                        if progress_callback:
+                            progress_callback({
+                                "type": "crawler_error",
+                                "message": event['message']
+                            })
+                        return error_msg
 
             # 显示最终统计
             if stats:

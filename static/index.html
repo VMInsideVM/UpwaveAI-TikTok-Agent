@@ -306,6 +306,95 @@
             font-weight: 500;
         }
 
+        /* 爬虫进度条样式 */
+        .crawler-progress-container {
+            display: none;
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .crawler-progress-container.active {
+            display: block;
+        }
+
+        .crawler-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .crawler-progress-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .crawler-progress-percent {
+            font-size: 18px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .crawler-progress-bar-wrapper {
+            width: 100%;
+            height: 24px;
+            background: #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 12px;
+        }
+
+        .crawler-progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 8px;
+        }
+
+        .crawler-progress-bar-text {
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .crawler-progress-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .crawler-progress-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .crawler-progress-stat-value {
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .crawler-progress-time {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #9ca3af;
+            text-align: center;
+        }
+
         /* 图片上传相关样式 */
         .image-upload-btn {
             padding: 12px;
@@ -756,6 +845,136 @@
             };
         }
 
+        function showCrawlerProgress(progressData) {
+            // 获取或创建进度条容器
+            let progressContainer = document.getElementById('crawler-progress');
+
+            if (!progressContainer) {
+                progressContainer = document.createElement('div');
+                progressContainer.className = 'crawler-progress-container active';
+                progressContainer.id = 'crawler-progress';
+                progressContainer.innerHTML = `
+                    <div class="crawler-progress-header">
+                        <div class="crawler-progress-title">📊 正在获取达人详细数据</div>
+                        <div class="crawler-progress-percent">0%</div>
+                    </div>
+                    <div class="crawler-progress-bar-wrapper">
+                        <div class="crawler-progress-bar-fill" style="width: 0%">
+                            <span class="crawler-progress-bar-text"></span>
+                        </div>
+                    </div>
+                    <div class="crawler-progress-stats">
+                        <div class="crawler-progress-stat">
+                            <span>当前进度:</span>
+                            <span class="crawler-progress-stat-value" id="progress-current">0/0</span>
+                        </div>
+                        <div class="crawler-progress-stat">
+                            <span>✓ 成功:</span>
+                            <span class="crawler-progress-stat-value" id="progress-success">0</span>
+                        </div>
+                        <div class="crawler-progress-stat">
+                            <span>⚡ 缓存:</span>
+                            <span class="crawler-progress-stat-value" id="progress-cached">0</span>
+                        </div>
+                        <div class="crawler-progress-stat">
+                            <span>✗ 失败:</span>
+                            <span class="crawler-progress-stat-value" id="progress-failed">0</span>
+                        </div>
+                    </div>
+                    <div class="crawler-progress-time" id="progress-time">准备中...</div>
+                `;
+                chatMessages.appendChild(progressContainer);
+            }
+
+            // 更新进度数据
+            const progressType = progressData.type;
+
+            if (progressType === 'crawler_init') {
+                // 初始化
+                document.querySelector('#progress-current').textContent = `0/${progressData.total}`;
+            } else if (progressType === 'crawler_progress') {
+                // 更新进度
+                const percent = progressData.percent;
+                const current = progressData.current;
+                const total = progressData.total;
+                const success = progressData.success;
+                const cached = progressData.cached;
+                const failed = progressData.failed;
+                const elapsed = progressData.elapsed;
+                const remaining = progressData.remaining;
+
+                // 更新百分比
+                document.querySelector('.crawler-progress-percent').textContent = `${percent}%`;
+
+                // 更新进度条
+                const progressBar = document.querySelector('.crawler-progress-bar-fill');
+                progressBar.style.width = `${percent}%`;
+
+                // 更新进度条文本
+                const progressBarText = document.querySelector('.crawler-progress-bar-text');
+                if (percent > 10) {
+                    progressBarText.textContent = `${current}/${total}`;
+                } else {
+                    progressBarText.textContent = '';
+                }
+
+                // 更新统计数据
+                document.querySelector('#progress-current').textContent = `${current}/${total}`;
+                document.querySelector('#progress-success').textContent = success;
+                document.querySelector('#progress-cached').textContent = cached;
+                document.querySelector('#progress-failed').textContent = failed;
+
+                // 更新时间信息
+                const elapsedStr = formatTime(elapsed);
+                const remainingStr = formatTime(remaining);
+                document.querySelector('#progress-time').textContent =
+                    `⏱️ 已用时: ${elapsedStr} | 预计剩余: ${remainingStr}`;
+            } else if (progressType === 'crawler_complete') {
+                // 完成
+                const stats = progressData.stats;
+                document.querySelector('.crawler-progress-percent').textContent = '100%';
+                document.querySelector('.crawler-progress-bar-fill').style.width = '100%';
+                document.querySelector('#progress-time').textContent = '✅ 处理完成！';
+
+                // 3 秒后隐藏进度条
+                setTimeout(() => {
+                    const container = document.getElementById('crawler-progress');
+                    if (container) {
+                        container.classList.remove('active');
+                        setTimeout(() => container.remove(), 300);
+                    }
+                }, 3000);
+            } else if (progressType === 'crawler_error') {
+                // 错误
+                document.querySelector('#progress-time').textContent = `❌ ${progressData.message}`;
+
+                // 5 秒后隐藏进度条
+                setTimeout(() => {
+                    const container = document.getElementById('crawler-progress');
+                    if (container) {
+                        container.classList.remove('active');
+                        setTimeout(() => container.remove(), 300);
+                    }
+                }, 5000);
+            }
+
+            scrollToBottom();
+        }
+
+        function formatTime(seconds) {
+            if (seconds < 60) {
+                return `${seconds} 秒`;
+            } else if (seconds < 3600) {
+                const minutes = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${minutes} 分 ${secs} 秒`;
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                return `${hours} 小时 ${minutes} 分`;
+            }
+        }
+
         function handleWebSocketMessage(data) {
             const { type, content, timestamp } = data;
 
@@ -796,6 +1015,17 @@
                     }
 
                     scrollToBottom();
+                    break;
+
+                case 'crawler_progress':
+                    // 爬虫进度更新
+                    hideTypingIndicator();
+                    // 移除状态消息
+                    const crawlerStatus = document.getElementById('current-status');
+                    if (crawlerStatus) crawlerStatus.remove();
+
+                    // 显示进度条
+                    showCrawlerProgress(data.data);
                     break;
 
                 case 'typing':
