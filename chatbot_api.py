@@ -72,6 +72,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         import sys
         import io
         from contextlib import redirect_stdout
+        from agent_tools import set_progress_callback
 
         # 发送开始处理的消息
         await websocket.send_json({
@@ -120,6 +121,28 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             except:
                 pass  # 忽略发送失败
 
+        # 爬虫进度回调函数
+        def progress_callback(progress_data: dict):
+            """
+            爬虫进度回调（同步函数，在工具线程中调用）
+            将进度数据添加到队列中，由主线程发送
+            """
+            try:
+                # 使用 asyncio 的线程安全方法将任务添加到事件循环
+                asyncio.run_coroutine_threadsafe(
+                    websocket.send_json({
+                        "type": "crawler_progress",
+                        "data": progress_data,
+                        "timestamp": datetime.now().isoformat()
+                    }),
+                    loop
+                )
+            except Exception as e:
+                print(f"[Error] 发送进度更新失败: {e}")
+
+        # 设置进度回调
+        set_progress_callback(progress_callback)
+
         # 使用进度包装器执行 agent
         def run_with_progress():
             """在进度包装器中运行 agent"""
@@ -167,6 +190,9 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                     await processing_task
                 except asyncio.CancelledError:
                     pass
+
+                # 清除进度回调
+                set_progress_callback(None)
         finally:
             # 取消心跳任务
             heartbeat_task.cancel()
