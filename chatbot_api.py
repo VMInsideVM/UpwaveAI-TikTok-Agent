@@ -65,6 +65,29 @@ def check_playwright_api() -> bool:
         return False
 
 
+async def safe_send_json(websocket: WebSocket, data: dict) -> bool:
+    """
+    安全发送 JSON 消息到 WebSocket
+
+    Args:
+        websocket: WebSocket 连接
+        data: 要发送的数据
+
+    Returns:
+        bool: 发送成功返回 True，失败返回 False
+    """
+    try:
+        # 检查 WebSocket 状态
+        if websocket.client_state.name != "CONNECTED":
+            return False
+
+        await websocket.send_json(data)
+        return True
+    except Exception as e:
+        print(f"[WebSocket] 发送失败: {e}")
+        return False
+
+
 async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None):
     """
     流式传输 agent 响应到 WebSocket
@@ -84,7 +107,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         from agent_tools import set_progress_callback
 
         # 发送开始处理的消息
-        await websocket.send_json({
+        await safe_send_json(websocket, {
             "type": "status",
             "content": "正在处理您的请求...",
             "timestamp": datetime.now().isoformat()
@@ -99,10 +122,12 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             try:
                 while True:
                     await asyncio.sleep(10)  # 每 10 秒发送一次心跳
-                    await websocket.send_json({
+                    success = await safe_send_json(websocket, {
                         "type": "heartbeat",
                         "timestamp": datetime.now().isoformat()
                     })
+                    if not success:
+                        break  # WebSocket 已关闭，停止心跳
             except:
                 pass  # WebSocket 关闭时会抛出异常，忽略即可
 
@@ -121,14 +146,11 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                 return
             last_progress_time[0] = current_time
 
-            try:
-                await websocket.send_json({
-                    "type": "status",
-                    "content": msg,
-                    "timestamp": datetime.now().isoformat()
-                })
-            except:
-                pass  # 忽略发送失败
+            await safe_send_json(websocket, {
+                "type": "status",
+                "content": msg,
+                "timestamp": datetime.now().isoformat()
+            })
 
         # 爬虫进度回调函数
         def progress_callback(progress_data: dict):
@@ -139,7 +161,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             try:
                 # 使用 asyncio 的线程安全方法将任务添加到事件循环
                 asyncio.run_coroutine_threadsafe(
-                    websocket.send_json({
+                    safe_send_json(websocket, {
                         "type": "crawler_progress",
                         "data": progress_data,
                         "timestamp": datetime.now().isoformat()
@@ -218,16 +240,19 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             lines = response.split('\n')
             for line in lines:
                 if line.strip():
-                    await websocket.send_json({
+                    success = await safe_send_json(websocket, {
                         "type": "message",
                         "content": line + '\n',
                         "timestamp": datetime.now().isoformat()
                     })
+                    if not success:
+                        print("[WebSocket] 连接已关闭，停止发送消息")
+                        return  # WebSocket 已关闭，停止发送
                     # 添加小延迟模拟打字效果
                     await asyncio.sleep(0.03)
 
         # 发送完成信号
-        await websocket.send_json({
+        await safe_send_json(websocket, {
             "type": "complete",
             "timestamp": datetime.now().isoformat()
         })
@@ -238,14 +263,12 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         import traceback
         traceback.print_exc()
 
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "content": error_message,
-                "timestamp": datetime.now().isoformat()
-            })
-        except:
-            print("[Error] 无法发送错误消息，WebSocket 可能已关闭")
+        # 尝试发送错误消息（可能失败）
+        await safe_send_json(websocket, {
+            "type": "error",
+            "content": error_message,
+            "timestamp": datetime.now().isoformat()
+        })
 
 
 # ==================== API 端点 ====================
