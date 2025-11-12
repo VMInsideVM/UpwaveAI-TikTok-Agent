@@ -28,7 +28,7 @@ app = FastAPI(
     description="基于 LangChain Agent 的智能聊天服务",
     version="1.0.0"
 )
-
+#测试
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
