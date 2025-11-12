@@ -88,7 +88,7 @@ async def safe_send_json(websocket: WebSocket, data: dict) -> bool:
         return False
 
 
-async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None):
+async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None, session_id: Optional[str] = None):
     """
     流式传输 agent 响应到 WebSocket
     包含进度更新和心跳保活
@@ -98,6 +98,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         user_input: 用户文本输入
         websocket: WebSocket 连接
         image_data: Base64 编码的图片数据（可选）
+        session_id: 会话 ID（用于保存聊天记录）
     """
     try:
         # 创建一个包装函数来捕获 agent 的处理过程
@@ -258,6 +259,15 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                     # 添加小延迟模拟打字效果
                     await asyncio.sleep(0.03)
 
+            # 保存助手响应到持久化存储
+            if session_id:
+                session_manager.save_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=response,
+                    timestamp=datetime.now().isoformat()
+                )
+
         # 发送完成信号
         await safe_send_json(websocket, {
             "type": "complete",
@@ -396,6 +406,53 @@ async def list_sessions():
     })
 
 
+@app.get("/api/sessions/{session_id}/history")
+async def get_session_history(session_id: str):
+    """
+    获取会话的聊天历史记录
+    用于断线重连后恢复对话
+    """
+    # 检查会话是否存在
+    agent = session_manager.get_agent(session_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    # 加载历史记录
+    history = session_manager.load_chat_history(session_id)
+
+    return JSONResponse({
+        "session_id": session_id,
+        "message_count": len(history),
+        "history": history
+    })
+
+
+@app.delete("/api/sessions/{session_id}/history")
+async def clear_session_history(session_id: str):
+    """
+    清除会话的聊天历史记录
+    会话本身不会被删除，只是清空对话历史
+    """
+    # 检查会话是否存在
+    agent = session_manager.get_agent(session_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    # 清除历史记录
+    success = session_manager.clear_session_history(session_id)
+
+    if not success:
+        return JSONResponse({
+            "message": "没有需要清除的历史记录",
+            "session_id": session_id
+        })
+
+    return JSONResponse({
+        "message": "历史记录已清除",
+        "session_id": session_id
+    })
+
+
 # ==================== WebSocket 端点 ====================
 
 @app.websocket("/ws/{session_id}")
@@ -423,13 +480,34 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await websocket.close()
         return
 
-    # 发送欢迎消息
-    welcome = agent.welcome_message()
-    await websocket.send_json({
-        "type": "welcome",
-        "content": welcome,
-        "timestamp": datetime.now().isoformat()
-    })
+    # 检查是否有历史记录
+    has_history = session_manager.session_has_history(session_id)
+
+    if has_history:
+        # 加载并发送历史记录
+        history = session_manager.load_chat_history(session_id)
+        await websocket.send_json({
+            "type": "history",
+            "content": history,
+            "timestamp": datetime.now().isoformat()
+        })
+    else:
+        # 发送欢迎消息
+        welcome = agent.welcome_message()
+        current_time = datetime.now().isoformat()
+        await websocket.send_json({
+            "type": "welcome",
+            "content": welcome,
+            "timestamp": current_time
+        })
+
+        # 保存欢迎消息到历史记录
+        session_manager.save_message(
+            session_id=session_id,
+            role="assistant",
+            content=welcome,
+            timestamp=current_time
+        )
 
     try:
         while True:
@@ -444,10 +522,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 image_data = message_data.get("image", None)  # 获取图片数据
 
                 if message_type == "message" and (content or image_data):
+                    # 保存用户消息到持久化存储
+                    current_time = datetime.now().isoformat()
+                    user_message_content = content if content else "[图片消息]"
+                    session_manager.save_message(
+                        session_id=session_id,
+                        role="user",
+                        content=user_message_content,
+                        timestamp=current_time
+                    )
+
                     # 发送"正在输入"指示器
                     await websocket.send_json({
                         "type": "typing",
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": current_time
                     })
 
                     # 记录消息接收（LangSmith 追踪将在 agent.run() 中自动启用）
@@ -456,7 +544,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                     # 处理并流式返回响应（包括图片）
                     # agent.run_with_image() 和 agent.run() 内部已经有完整的 LangSmith 追踪
-                    await stream_agent_response(agent, content, websocket, image_data)
+                    await stream_agent_response(agent, content, websocket, image_data, session_id)
 
                 elif message_type == "ping":
                     # 心跳响应
@@ -468,11 +556,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             except json.JSONDecodeError:
                 # 兼容纯文本消息
                 if data.strip():
+                    # 保存用户消息
+                    current_time = datetime.now().isoformat()
+                    session_manager.save_message(
+                        session_id=session_id,
+                        role="user",
+                        content=data,
+                        timestamp=current_time
+                    )
+
                     await websocket.send_json({
                         "type": "typing",
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": current_time
                     })
-                    await stream_agent_response(agent, data, websocket)
+                    await stream_agent_response(agent, data, websocket, None, session_id)
 
     except WebSocketDisconnect as e:
         # 记录详细的断开信息

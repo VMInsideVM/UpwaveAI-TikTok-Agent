@@ -506,9 +506,18 @@
     <div class="chat-container">
         <div class="chat-header">
             <h1>🤖 TikTok 达人推荐助手</h1>
-            <div class="status-indicator">
-                <div class="status-dot"></div>
-                <span id="status-text">连接中...</span>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span id="status-text">连接中...</span>
+                </div>
+                <button id="clearHistoryBtn" onclick="clearHistory()"
+                    style="padding: 5px 12px; font-size: 13px; background: #ff5252; color: white; border: none; border-radius: 4px; cursor: pointer; transition: all 0.3s;"
+                    onmouseover="this.style.background='#ff1744'"
+                    onmouseout="this.style.background='#ff5252'"
+                    title="清除当前会话的聊天历史">
+                    🗑️ 清除历史
+                </button>
             </div>
         </div>
 
@@ -847,7 +856,7 @@
 
             websocket.onclose = () => {
                 console.log('WebSocket 连接关闭');
-                updateStatus(false, '连接已断开');
+                updateStatus(false, '连接已断开，准备重连...');
                 isConnected = false;
 
                 // 停止客户端心跳
@@ -856,13 +865,22 @@
                     clientPingInterval = null;
                 }
 
-                // 5秒后尝试重连
+                // 3秒后尝试重连
                 setTimeout(() => {
                     if (!isConnected) {
-                        console.log('尝试重新连接...');
-                        createSession();
+                        console.log('[Reconnect] 尝试重新连接...');
+
+                        // 如果有现有会话，尝试重用
+                        if (sessionId) {
+                            console.log('[Reconnect] 重用现有会话:', sessionId);
+                            updateStatus(false, '正在恢复会话...');
+                            connectWebSocket();  // 直接重连到现有会话
+                        } else {
+                            console.log('[Reconnect] 创建新会话');
+                            createSession();  // 创建新会话
+                        }
                     }
-                }, 5000);
+                }, 3000);
             };
         }
 
@@ -1075,6 +1093,39 @@
                     currentMessageDiv = null;
                     break;
 
+                case 'history':
+                    // 恢复历史记录
+                    chatMessages.innerHTML = '';
+                    const history = content;
+
+                    if (history && history.length > 0) {
+                        console.log(`[History] 恢复 ${history.length} 条历史消息`);
+
+                        // 显示历史恢复提示
+                        const restoreDiv = document.createElement('div');
+                        restoreDiv.className = 'system-message';
+                        restoreDiv.style.cssText = 'text-align: center; padding: 10px; margin: 10px 0; background: #e3f2fd; color: #1976d2; border-radius: 5px; font-size: 13px;';
+                        restoreDiv.textContent = `✓ 已恢复 ${history.length} 条历史消息`;
+                        chatMessages.appendChild(restoreDiv);
+
+                        // 按顺序显示所有历史消息
+                        history.forEach(msg => {
+                            const isUser = msg.role === 'user';
+                            addMessage(msg.content, isUser);
+                        });
+
+                        // 3秒后淡出提示
+                        setTimeout(() => {
+                            restoreDiv.style.transition = 'opacity 0.5s';
+                            restoreDiv.style.opacity = '0';
+                            setTimeout(() => restoreDiv.remove(), 500);
+                        }, 3000);
+                    }
+
+                    currentMessageDiv = null;
+                    scrollToBottom();
+                    break;
+
                 case 'status':
                     // 显示/更新处理状态（实时更新，不累积）
                     hideTypingIndicator();
@@ -1236,6 +1287,58 @@
                 websocket.send(JSON.stringify({ type: 'ping' }));
             }
         }, 30000); // 每30秒发送一次心跳
+
+        // ==================== 清除历史记录 ====================
+
+        async function clearHistory() {
+            if (!sessionId) {
+                showError('没有活跃的会话');
+                return;
+            }
+
+            if (!confirm('确定要清除当前会话的所有聊天历史吗？\n\n这将删除所有对话记录，但不会断开当前连接。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}/history`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('清除历史失败');
+                }
+
+                const data = await response.json();
+                console.log('[History] 清除成功:', data);
+
+                // 清空聊天界面
+                chatMessages.innerHTML = '';
+
+                // 显示成功提示
+                const successDiv = document.createElement('div');
+                successDiv.className = 'system-message';
+                successDiv.style.cssText = 'text-align: center; padding: 10px; margin: 10px 0; background: #e8f5e9; color: #2e7d32; border-radius: 5px; font-size: 13px;';
+                successDiv.textContent = '✓ 历史记录已清除';
+                chatMessages.appendChild(successDiv);
+
+                // 3秒后淡出提示并显示欢迎消息
+                setTimeout(() => {
+                    successDiv.style.transition = 'opacity 0.5s';
+                    successDiv.style.opacity = '0';
+                    setTimeout(() => {
+                        chatMessages.innerHTML = '';
+                        const agent = session_manager ? session_manager.get_agent(sessionId) : null;
+                        // 显示新的欢迎消息
+                        addMessage('历史记录已清除。您可以开始新的对话了！', false);
+                    }, 500);
+                }, 3000);
+
+            } catch (error) {
+                console.error('[History] 清除失败:', error);
+                showError('清除历史记录失败: ' + error.message);
+            }
+        }
 
         // ==================== 初始化 ====================
 
