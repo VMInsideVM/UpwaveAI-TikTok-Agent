@@ -817,8 +817,8 @@
                 console.log('WebSocket 连接成功');
                 updateStatus(true, '已连接');
 
-                // 启动客户端心跳（每20秒发送一次ping）
-                // 这比服务器的30秒ping间隔更频繁，确保连接保持活跃
+                // 启动客户端心跳（每5秒发送一次ping）
+                // 在长时间操作（如报告生成）中，频繁心跳确保连接不断
                 if (clientPingInterval) {
                     clearInterval(clientPingInterval);
                 }
@@ -827,7 +827,7 @@
                         console.log('[KeepAlive] 发送客户端 ping');
                         websocket.send(JSON.stringify({ type: 'ping' }));
                     }
-                }, 20000); // 20秒
+                }, 5000); // 5秒（之前是20秒，太长导致超时）
             };
 
             websocket.onmessage = (event) => {

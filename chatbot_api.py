@@ -152,17 +152,24 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                 "timestamp": datetime.now().isoformat()
             })
 
-        # 爬虫进度回调函数
+        # 进度回调函数（支持爬虫和报告生成）
         def progress_callback(progress_data: dict):
             """
-            爬虫进度回调（同步函数，在工具线程中调用）
+            通用进度回调（同步函数，在工具线程中调用）
             将进度数据添加到队列中，由主线程发送
+
+            支持的消息类型：
+            - crawler_progress: 爬虫进度
+            - report_generation_progress: 报告生成进度
             """
             try:
+                # 获取消息类型（如果没有type字段，默认为crawler_progress）
+                message_type = progress_data.get('type', 'crawler_progress')
+
                 # 使用 asyncio 的线程安全方法将任务添加到事件循环
                 asyncio.run_coroutine_threadsafe(
                     safe_send_json(websocket, {
-                        "type": "crawler_progress",
+                        "type": message_type,  # 使用progress_data中的type
                         "data": progress_data,
                         "timestamp": datetime.now().isoformat()
                     }),
