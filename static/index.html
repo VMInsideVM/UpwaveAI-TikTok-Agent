@@ -801,6 +801,9 @@
             }
         }
 
+        // 客户端心跳定时器
+        let clientPingInterval = null;
+
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
@@ -813,6 +816,18 @@
             websocket.onopen = () => {
                 console.log('WebSocket 连接成功');
                 updateStatus(true, '已连接');
+
+                // 启动客户端心跳（每20秒发送一次ping）
+                // 这比服务器的30秒ping间隔更频繁，确保连接保持活跃
+                if (clientPingInterval) {
+                    clearInterval(clientPingInterval);
+                }
+                clientPingInterval = setInterval(() => {
+                    if (websocket && websocket.readyState === WebSocket.OPEN) {
+                        console.log('[KeepAlive] 发送客户端 ping');
+                        websocket.send(JSON.stringify({ type: 'ping' }));
+                    }
+                }, 20000); // 20秒
             };
 
             websocket.onmessage = (event) => {
@@ -834,6 +849,12 @@
                 console.log('WebSocket 连接关闭');
                 updateStatus(false, '连接已断开');
                 isConnected = false;
+
+                // 停止客户端心跳
+                if (clientPingInterval) {
+                    clearInterval(clientPingInterval);
+                    clientPingInterval = null;
+                }
 
                 // 5秒后尝试重连
                 setTimeout(() => {

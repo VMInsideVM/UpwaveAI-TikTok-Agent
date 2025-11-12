@@ -514,9 +514,21 @@ def start_server(host: str = "127.0.0.1", port: int = 8001):
     print(f"📍 地址: http://{host}:{port}")
     print(f"📖 API 文档: http://{host}:{port}/docs")
     print(f"💬 聊天界面: http://{host}:{port}/")
+    print(f"⏱️  WebSocket 超时: 4小时 (支持长时间操作)")
     print(f"\n按 Ctrl+C 停止服务\n")
 
-    uvicorn.run(app, host=host, port=port)
+    # 配置 uvicorn 以支持长时间 WebSocket 连接
+    # timeout_keep_alive: 保持连接的超时时间（秒）
+    # ws_ping_interval: WebSocket ping 间隔（秒）
+    # ws_ping_timeout: WebSocket ping 超时（秒）
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        timeout_keep_alive=14400,  # 4小时（14400秒）
+        ws_ping_interval=30,       # 每30秒发送一次ping
+        ws_ping_timeout=60          # ping超时60秒
+    )
 
 
 if __name__ == "__main__":
