@@ -467,11 +467,23 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     })
                     await stream_agent_response(agent, data, websocket)
 
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as e:
+        # 记录详细的断开信息
+        close_code = getattr(e, 'code', 'unknown')
+        close_reason = getattr(e, 'reason', 'no reason provided')
         print(f"[WebSocket] 客户端断开连接: {session_id}")
+        print(f"  断开码: {close_code}")
+        print(f"  断开原因: {close_reason}")
+        import traceback
+        traceback.print_exc()
 
     except Exception as e:
         print(f"[WebSocket] 错误: {e}")
+        print(f"  会话ID: {session_id}")
+        print(f"  错误类型: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+
         try:
             await websocket.send_json({
                 "type": "error",
@@ -483,7 +495,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
     finally:
         # 不自动删除会话，让用户或定时任务来清理
-        pass
+        print(f"[WebSocket] 连接清理: {session_id}")
 
 
 # ==================== 启动函数 ====================
