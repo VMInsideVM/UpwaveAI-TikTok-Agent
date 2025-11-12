@@ -39,8 +39,14 @@ class TikTokInfluencerReportAgent:
     6. Compile HTML report
     """
 
-    def __init__(self):
-        """Initialize the report generation agent."""
+    def __init__(self, progress_callback=None):
+        """
+        Initialize the report generation agent.
+
+        Args:
+            progress_callback: Optional callback function to report progress
+                               Should accept dict with keys: step, current, total, message
+        """
         self.llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct"),
             temperature=0.3,
@@ -53,6 +59,32 @@ class TikTokInfluencerReportAgent:
         self.scorer_tool = MultiDimensionScorerTool()
         self.content_tool = ContentAlignmentTool()
         self.viz_tool = None  # Will be initialized in generate_report with timestamped path
+
+        # Progress callback
+        self.progress_callback = progress_callback
+
+    def _report_progress(self, step: str, current: int, total: int, message: str):
+        """
+        Report progress to callback if available.
+
+        Args:
+            step: Step name (e.g., 'content_analysis', 'visualization')
+            current: Current item number
+            total: Total items
+            message: Progress message
+        """
+        if self.progress_callback:
+            try:
+                self.progress_callback({
+                    'type': 'report_progress',
+                    'step': step,
+                    'current': current,
+                    'total': total,
+                    'message': message,
+                    'percent': int(current / total * 100) if total > 0 else 0
+                })
+            except Exception as e:
+                print(f"⚠️ 进度回调失败: {e}")
 
     def _load_from_json_file(self, json_filename: str) -> Dict[str, Any]:
         """
@@ -203,6 +235,14 @@ class TikTokInfluencerReportAgent:
             # Step 4: Content alignment analysis (for top influencers)
             print(f"🔍 步骤4: 内容契合度分析 (Top {len(ranked_influencers)}达人)...")
             for i, inf in enumerate(ranked_influencers, 1):
+                # 发送进度更新到前端
+                self._report_progress(
+                    step='content_analysis',
+                    current=i,
+                    total=len(ranked_influencers),
+                    message=f"正在分析 {inf['nickname']} 的内容契合度..."
+                )
+
                 print(f"  分析 {i}/{len(ranked_influencers)}: {inf['nickname']}...", end=' ')
 
                 content_result = json.loads(self.content_tool._run(
@@ -246,8 +286,17 @@ class TikTokInfluencerReportAgent:
             # Step 5: Generate visualizations (for top influencers)
             print(f"📈 步骤5: 生成可视化图表...")
             charts_generated = 0
-            for i, inf in enumerate(ranked_influencers[:10], 1):  # Only top 10 to save time
-                print(f"  生成图表 {i}/10: {inf['nickname']}...", end=' ')
+            top_influencers_for_viz = ranked_influencers[:10]  # Only top 10 to save time
+            for i, inf in enumerate(top_influencers_for_viz, 1):
+                # 发送进度更新到前端
+                self._report_progress(
+                    step='visualization',
+                    current=i,
+                    total=len(top_influencers_for_viz),
+                    message=f"正在为 {inf['nickname']} 生成可视化图表..."
+                )
+
+                print(f"  生成图表 {i}/{len(top_influencers_for_viz)}: {inf['nickname']}...", end=' ')
 
                 viz_result = json.loads(self.viz_tool._run(
                     influencer_id=inf['influencer_id'],

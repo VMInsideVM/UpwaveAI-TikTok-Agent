@@ -1033,8 +1033,28 @@ class GenerateReportTool(BaseTool):
             # 构建产品详细信息（合并商品名称和用户需求）
             product_info = f"{product_name}。用户需求：{user_requirements}"
 
-            # 初始化报告 agent
-            report_agent = TikTokInfluencerReportAgent()
+            # 获取进度回调（如果有的话）
+            progress_callback = get_progress_callback()
+
+            # 定义报告生成的进度回调包装器
+            def report_progress_wrapper(progress_data: dict):
+                """将报告生成进度转发到 WebSocket"""
+                if progress_callback:
+                    try:
+                        # 转换为前端可识别的格式
+                        progress_callback({
+                            "type": "report_generation_progress",
+                            "step": progress_data.get('step', 'unknown'),
+                            "current": progress_data.get('current', 0),
+                            "total": progress_data.get('total', 0),
+                            "percent": progress_data.get('percent', 0),
+                            "message": progress_data.get('message', '')
+                        })
+                    except Exception as e:
+                        print(f"[Error] 发送报告生成进度失败: {e}")
+
+            # 初始化报告 agent（传入进度回调）
+            report_agent = TikTokInfluencerReportAgent(progress_callback=report_progress_wrapper)
 
             # 生成报告（返回 HTML 文件路径）
             report_path = report_agent.generate_report(

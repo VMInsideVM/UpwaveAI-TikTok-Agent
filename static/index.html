@@ -982,6 +982,73 @@
             scrollToBottom();
         }
 
+        function showReportProgress(progressData) {
+            // 获取或创建报告生成进度条容器
+            let progressContainer = document.getElementById('report-progress');
+
+            if (!progressContainer) {
+                progressContainer = document.createElement('div');
+                progressContainer.className = 'crawler-progress-container active';
+                progressContainer.id = 'report-progress';
+                progressContainer.innerHTML = `
+                    <div class="crawler-progress-header">
+                        <div class="crawler-progress-title">📝 正在生成推荐报告</div>
+                        <div class="crawler-progress-percent" id="report-percent">0%</div>
+                    </div>
+                    <div class="crawler-progress-bar-wrapper">
+                        <div class="crawler-progress-bar-fill" id="report-bar" style="width: 0%">
+                            <span class="crawler-progress-bar-text" id="report-bar-text"></span>
+                        </div>
+                    </div>
+                    <div class="crawler-progress-time" id="report-message">准备中...</div>
+                `;
+                chatMessages.appendChild(progressContainer);
+            }
+
+            // 更新进度数据
+            const percent = progressData.percent || 0;
+            const current = progressData.current || 0;
+            const total = progressData.total || 0;
+            const message = progressData.message || '';
+            const step = progressData.step || '';
+
+            // 更新百分比
+            document.querySelector('#report-percent').textContent = `${percent}%`;
+
+            // 更新进度条
+            const progressBar = document.querySelector('#report-bar');
+            progressBar.style.width = `${percent}%`;
+
+            // 更新进度条文本
+            const progressBarText = document.querySelector('#report-bar-text');
+            if (percent > 10) {
+                progressBarText.textContent = `${current}/${total}`;
+            } else {
+                progressBarText.textContent = '';
+            }
+
+            // 更新消息
+            let stepName = step === 'content_analysis' ? '内容契合度分析' :
+                           step === 'visualization' ? '可视化图表生成' : '处理中';
+            document.querySelector('#report-message').textContent = `🔄 ${stepName}: ${message}`;
+
+            // 如果完成了
+            if (percent >= 100) {
+                document.querySelector('#report-message').textContent = '✅ 报告生成完成！';
+
+                // 3 秒后隐藏进度条
+                setTimeout(() => {
+                    const container = document.getElementById('report-progress');
+                    if (container) {
+                        container.classList.remove('active');
+                        setTimeout(() => container.remove(), 300);
+                    }
+                }, 3000);
+            }
+
+            scrollToBottom();
+        }
+
         function formatTime(seconds) {
             if (seconds < 60) {
                 return `${seconds} 秒`;
@@ -1047,6 +1114,17 @@
 
                     // 显示进度条
                     showCrawlerProgress(data.data);
+                    break;
+
+                case 'report_generation_progress':
+                    // 报告生成进度更新
+                    hideTypingIndicator();
+                    // 移除状态消息
+                    const reportStatus = document.getElementById('current-status');
+                    if (reportStatus) reportStatus.remove();
+
+                    // 显示报告生成进度
+                    showReportProgress(data.data);
                     break;
 
                 case 'typing':
