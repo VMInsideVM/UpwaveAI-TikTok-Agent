@@ -612,7 +612,7 @@ class ReviewParametersTool(BaseTool):
             output += f"🎯 **商品信息**\n"
             output += f"   • 商品名称: {product_name}\n"
             if category_info:
-                output += f"   • 商品分类: {category_info.get('main_category', '未知')} > {category_info.get('category_name', '未知')}\n"
+                output += f"   • 商品分类: {category_info.get('category_name', '未知')}\n"
             output += f"   • 目标数量: {target_count} 个达人\n\n"
 
             # 2. 国家/地区

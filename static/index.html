@@ -933,6 +933,9 @@
             };
         }
 
+        // 当前正在流式接收的消息
+        let currentStreamingMessage = null;
+
         // 处理消息
         function handleMessage(data) {
             const { type, content } = data;
@@ -942,8 +945,19 @@
                     document.getElementById('chatMessages').innerHTML = '';
                     addMessage(content, false);
                     break;
-                case 'message':
-                    addMessage(content, false);
+                case 'message_start':
+                    // 开始新消息，创建消息气泡
+                    currentStreamingMessage = createStreamingMessage();
+                    break;
+                case 'message_chunk':
+                    // 追加内容到当前消息气泡
+                    if (currentStreamingMessage) {
+                        appendToStreamingMessage(content);
+                    }
+                    break;
+                case 'message_end':
+                    // 消息接收完成
+                    currentStreamingMessage = null;
                     break;
                 case 'typing':
                     showTyping();
@@ -988,6 +1002,51 @@
 
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // 创建流式消息（返回气泡元素引用）
+        function createStreamingMessage() {
+            const messagesDiv = document.getElementById('chatMessages');
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot';
+            messageDiv.id = 'streaming-message';
+
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = '';
+
+            const time = document.createElement('div');
+            time.className = 'message-time';
+            time.textContent = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+            contentDiv.appendChild(bubble);
+            contentDiv.appendChild(time);
+
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(contentDiv);
+
+            messagesDiv.appendChild(messageDiv);
+
+            return bubble; // 返回气泡元素用于后续追加内容
+        }
+
+        // 追加内容到流式消息
+        function appendToStreamingMessage(chunk) {
+            if (currentStreamingMessage) {
+                currentStreamingMessage.textContent += chunk;
+
+                // 自动滚动到底部
+                const messagesDiv = document.getElementById('chatMessages');
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
         }
 
         // 显示输入中

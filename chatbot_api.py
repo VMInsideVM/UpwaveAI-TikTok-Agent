@@ -196,17 +196,27 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         if response:
             response = clean_response(response)
 
-            # 按行分割并发送
-            lines = response.split('\n')
-            for line in lines:
-                if line.strip():
-                    await websocket.send_json({
-                        "type": "message",
-                        "content": line + '\n',
-                        "timestamp": datetime.now().isoformat()
-                    })
-                    # 添加小延迟模拟打字效果
-                    await asyncio.sleep(0.03)
+            # 发送开始标记，告诉前端开始新消息
+            await websocket.send_json({
+                "type": "message_start",
+                "timestamp": datetime.now().isoformat()
+            })
+
+            # 逐字符流式发送（模拟打字效果）
+            for char in response:
+                await websocket.send_json({
+                    "type": "message_chunk",
+                    "content": char,
+                    "timestamp": datetime.now().isoformat()
+                })
+                # 添加小延迟模拟打字效果
+                await asyncio.sleep(0.02)
+
+            # 发送结束标记
+            await websocket.send_json({
+                "type": "message_end",
+                "timestamp": datetime.now().isoformat()
+            })
 
         # 保存 assistant 响应到数据库
         if session_id and response:
