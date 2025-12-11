@@ -14,9 +14,21 @@ import uvicorn
 import requests
 from datetime import datetime
 
-from session_manager import session_manager
+from session_manager_db import session_manager  # 使用数据库版本
 from agent import TikTokInfluencerAgent
 from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_call
+
+# 导入认证相关
+from database.connection import get_db
+from database.models import User
+from auth.dependencies import get_current_user, get_optional_user
+from fastapi import Depends, Query
+from sqlalchemy.orm import Session as DBSession
+
+# 导入新的 API 路由
+from api.auth import router as auth_router
+from api.reports import router as reports_router
+from api.admin import router as admin_router
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -25,14 +37,23 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 配置 CORS
+# 配置 CORS（修复安全问题）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=[
+        "http://127.0.0.1:8001",
+        "http://localhost:8001",
+        # 生产环境添加实际域名
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册 API 路由
+app.include_router(auth_router)
+app.include_router(reports_router)
+app.include_router(admin_router)
 
 # 挂载静态文件目录（用于提供前端页面）
 try:
@@ -52,7 +73,7 @@ def check_playwright_api() -> bool:
         return False
 
 
-async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None):
+async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None, session_id: Optional[str] = None):
     """
     流式传输 agent 响应到 WebSocket
     包含进度更新和心跳保活
@@ -187,6 +208,15 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                     # 添加小延迟模拟打字效果
                     await asyncio.sleep(0.03)
 
+        # 保存 assistant 响应到数据库
+        if session_id and response:
+            session_manager.save_message(
+                session_id=session_id,
+                role="assistant",
+                content=response,
+                message_type="text"
+            )
+
         # 发送完成信号
         await websocket.send_json({
             "type": "complete",
@@ -232,6 +262,36 @@ async def root():
         )
 
 
+@app.get("/login.html", response_class=HTMLResponse)
+async def login_page():
+    """返回登录页面"""
+    try:
+        with open("static/login.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>404 - 登录页面不存在</h1>", status_code=404)
+
+
+@app.get("/register.html", response_class=HTMLResponse)
+async def register_page():
+    """返回注册页面"""
+    try:
+        with open("static/register.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>404 - 注册页面不存在</h1>", status_code=404)
+
+
+@app.get("/admin.html", response_class=HTMLResponse)
+async def admin_page():
+    """返回管理员后台页面"""
+    try:
+        with open("static/admin.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>404 - 管理后台页面不存在</h1>", status_code=404)
+
+
 @app.get("/api/health")
 async def health_check():
     """健康检查"""
@@ -244,7 +304,7 @@ async def health_check():
             "chatbot_api": "running",
             "playwright_api": "running" if playwright_status else "unavailable"
         },
-        "active_sessions": len(session_manager.sessions)
+        "active_agents": len(session_manager._agent_cache)
     })
 
 
@@ -266,8 +326,11 @@ async def check_playwright():
 
 
 @app.post("/api/sessions")
-async def create_session():
-    """创建新的聊天会话"""
+async def create_session(
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """创建新的聊天会话（需要认证）"""
     try:
         # 检查 Playwright API 是否可用
         if not check_playwright_api():
@@ -276,10 +339,15 @@ async def create_session():
                 detail="Playwright API 服务不可用，无法创建会话"
             )
 
-        session_id = session_manager.create_session()
+        # 使用数据库版本的 session_manager
+        session_id = session_manager.create_session(
+            user_id=current_user.user_id,
+            title="新对话"
+        )
 
         return JSONResponse({
             "session_id": session_id,
+            "user_id": current_user.user_id,
             "created_at": datetime.now().isoformat(),
             "message": "会话创建成功"
         })
@@ -289,8 +357,18 @@ async def create_session():
 
 
 @app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """删除指定会话"""
+async def delete_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """删除指定会话（需要认证和权限验证）"""
+    # 验证用户是否有权删除此会话
+    if not session_manager.verify_session_access(session_id, current_user.user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="无权删除此会话"
+        )
+
     success = session_manager.delete_session(session_id)
 
     if not success:
@@ -303,20 +381,42 @@ async def delete_session(session_id: str):
 
 
 @app.get("/api/sessions/{session_id}/status")
-async def get_session_status(session_id: str):
-    """获取会话状态"""
-    info = session_manager.get_session_info(session_id)
+async def get_session_status(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """获取会话状态（需要认证和权限验证）"""
+    # 验证用户是否有权访问此会话
+    if not session_manager.verify_session_access(session_id, current_user.user_id) and not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="无权访问此会话"
+        )
 
-    if not info:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    # 从数据库获取会话历史
+    history = session_manager.get_session_history(session_id, limit=50)
 
-    return JSONResponse(info)
+    return JSONResponse({
+        "session_id": session_id,
+        "user_id": current_user.user_id,
+        "message_count": len(history),
+        "messages": history
+    })
 
 
 @app.get("/api/sessions")
-async def list_sessions():
-    """列出所有活跃会话"""
-    sessions = session_manager.get_all_sessions()
+async def list_user_sessions(
+    current_user: User = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0
+):
+    """列出当前用户的所有会话"""
+    sessions = session_manager.get_user_sessions(
+        user_id=current_user.user_id,
+        limit=limit,
+        offset=offset
+    )
 
     return JSONResponse({
         "total": len(sessions),
@@ -327,9 +427,13 @@ async def list_sessions():
 # ==================== WebSocket 端点 ====================
 
 @app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+    token: str = Query(...)  # JWT token from query parameter
+):
     """
-    WebSocket 聊天端点
+    WebSocket 聊天端点（需要认证）
 
     消息格式：
     - 客户端发送: {"type": "message", "content": "用户消息"}
@@ -339,6 +443,51 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """
     # 接受 WebSocket 连接
     await websocket.accept()
+
+    # 验证 JWT token
+    try:
+        from auth.security import decode_token
+        from database.connection import get_db_context
+
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access":
+            await websocket.send_json({
+                "type": "error",
+                "content": "认证失败，请重新登录",
+                "timestamp": datetime.now().isoformat()
+            })
+            await websocket.close(code=4001)
+            return
+
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.send_json({
+                "type": "error",
+                "content": "无效的认证令牌",
+                "timestamp": datetime.now().isoformat()
+            })
+            await websocket.close(code=4001)
+            return
+
+        # 验证用户是否有权访问此会话
+        if not session_manager.verify_session_access(session_id, user_id):
+            await websocket.send_json({
+                "type": "error",
+                "content": "无权访问此会话",
+                "timestamp": datetime.now().isoformat()
+            })
+            await websocket.close(code=4003)
+            return
+
+    except Exception as e:
+        print(f"[WebSocket] 认证错误: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "content": "认证失败",
+            "timestamp": datetime.now().isoformat()
+        })
+        await websocket.close(code=4001)
+        return
 
     # 验证会话是否存在
     agent = session_manager.get_agent(session_id)
@@ -372,6 +521,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 image_data = message_data.get("image", None)  # 获取图片数据
 
                 if message_type == "message" and (content or image_data):
+                    # 保存用户消息到数据库
+                    session_manager.save_message(
+                        session_id=session_id,
+                        role="user",
+                        content=content,
+                        message_type="text" if not image_data else "image",
+                        attachments={"image": image_data} if image_data else None
+                    )
+
                     # 发送"正在输入"指示器
                     await websocket.send_json({
                         "type": "typing",
@@ -379,7 +537,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     })
 
                     # 处理并流式返回响应（包括图片）
-                    await stream_agent_response(agent, content, websocket, image_data)
+                    await stream_agent_response(agent, content, websocket, image_data, session_id)
 
                 elif message_type == "ping":
                     # 心跳响应

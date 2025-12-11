@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员后台 - TikTok 达人推荐系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f3f4f6;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
+        .navbar {
+            background: white;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-brand {
+            font-size: 20px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .navbar-user {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f3f4f6;
+            border-radius: 8px;
+        }
+
+        .btn-logout {
+            padding: 8px 20px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-logout:hover {
+            background: #dc2626;
+        }
+
+        /* 主容器 */
+        .container {
+            max-width: 1400px;
+            margin: 24px auto;
+            padding: 0 24px;
+        }
+
+        /* 标签页导航 */
+        .tabs {
+            background: white;
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            color: #6b7280;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background: #f3f4f6;
+        }
+
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+
+        /* 内容区域 */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f3f4f6;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        /* 按钮 */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 14px;
+        }
+
+        /* 表格 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f9fafb;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        /* 徽章 */
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-admin {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-user {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-warning {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-info {
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-label {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .stat-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+
+        /* 表单 */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 15px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f3f4f6;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        /* 提示框 */
+        .alert {
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        /* 加载动画 */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f4f6;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 代码块 */
+        .code-block {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <div class="navbar">
+        <div class="navbar-brand">🤖 TikTok 达人推荐 - 管理后台</div>
+        <div class="navbar-user">
+            <div class="user-info">
+                <span>👤</span>
+                <span id="adminUsername">加载中...</span>
+            </div>
+            <button class="btn-logout" onclick="logout()">退出登录</button>
+        </div>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <!-- 标签页导航 -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('overview')">📊 概览</button>
+            <button class="tab" onclick="switchTab('users')">👥 用户管理</button>
+            <button class="tab" onclick="switchTab('invitations')">🎫 邀请码</button>
+            <button class="tab" onclick="switchTab('reports')">📄 报告管理</button>
+            <button class="tab" onclick="switchTab('tasks')">⚙️ 任务队列</button>
+        </div>
+
+        <!-- 概览标签页 -->
+        <div id="overview-tab" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-label">总用户数</div>
+                    <div class="stat-value" id="totalUsers">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🎫</div>
+                    <div class="stat-label">未使用邀请码</div>
+                    <div class="stat-value" id="unusedCodes">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📄</div>
+                    <div class="stat-label">总报告数</div>
+                    <div class="stat-value" id="totalReports">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚙️</div>
+                    <div class="stat-label">队列任务</div>
+                    <div class="stat-value" id="queuedTasks">-</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">系统信息</h2>
+                </div>
+                <div id="systemInfo">
+                    <p><strong>API 状态:</strong> <span id="apiStatus" class="badge badge-success">正常</span></p>
+                    <p><strong>Playwright API:</strong> <span id="playwrightStatus" class="badge badge-success">正常</span></p>
+                    <p><strong>活跃 Agent 数:</strong> <span id="activeAgents">0</span></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户管理标签页 -->
+        <div id="users-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">用户列表</h2>
+                    <button class="btn btn-primary btn-sm" onclick="refreshUsers()">🔄 刷新</button>
+                </div>
+                <div id="usersTable">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 邀请码标签页 -->
+        <div id="invitations-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">邀请码管理</h2>
+                    <button class="btn btn-primary btn-sm" onclick="showGenerateCodesModal()">➕ 生成邀请码</button>
+                </div>
+                <div id="invitationsTable">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 报告管理标签页 -->
+        <div id="reports-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">所有报告</h2>
+                    <button class="btn btn-primary btn-sm" onclick="refreshReports()">🔄 刷新</button>
+                </div>
+                <div id="reportsTable">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 任务队列标签页 -->
+        <div id="tasks-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">任务队列状态</h2>
+                    <button class="btn btn-primary btn-sm" onclick="refreshTasks()">🔄 刷新</button>
+                </div>
+                <div id="tasksInfo">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改用户配额模态框 -->
+    <div id="quotaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">修改用户配额</h3>
+                <button class="modal-close" onclick="closeQuotaModal()">×</button>
+            </div>
+            <div id="quotaAlert" class="alert"></div>
+            <form id="quotaForm" onsubmit="updateQuota(event)">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" id="quotaUsername" class="form-input" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">当前配额</label>
+                    <input type="text" id="quotaCurrent" class="form-input" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">新配额</label>
+                    <input type="number" id="quotaNew" class="form-input" min="0" required>
+                </div>
+                <input type="hidden" id="quotaUserId">
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">确定</button>
+                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeQuotaModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 生成邀请码模态框 -->
+    <div id="generateCodesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">生成邀请码</h3>
+                <button class="modal-close" onclick="closeGenerateCodesModal()">×</button>
+            </div>
+            <div id="generateCodesAlert" class="alert"></div>
+            <form id="generateCodesForm" onsubmit="generateCodes(event)">
+                <div class="form-group">
+                    <label class="form-label">生成数量（1-100）</label>
+                    <input type="number" id="codesCount" class="form-input" min="1" max="100" value="5" required>
+                </div>
+                <div id="generatedCodesResult" style="display: none; margin-top: 20px;">
+                    <p><strong>生成成功！邀请码如下：</strong></p>
+                    <div id="generatedCodesList"></div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">生成</button>
+                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeGenerateCodesModal()">关闭</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:8001';
+        let currentTab = 'overview';
+        let accessToken = localStorage.getItem('access_token');
+
+        // 检查管理员权限
+        function checkAdminAuth() {
+            if (!accessToken) {
+                window.location.href = '/login.html';
+                return false;
+            }
+
+            const isAdmin = localStorage.getItem('is_admin') === 'true';
+            if (!isAdmin) {
+                alert('需要管理员权限');
+                window.location.href = '/';
+                return false;
+            }
+
+            return true;
+        }
+
+        // 初始化
+        async function init() {
+            if (!checkAdminAuth()) return;
+
+            const username = localStorage.getItem('username');
+            document.getElementById('adminUsername').textContent = username;
+
+            await loadOverview();
+        }
+
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // 更新内容显示
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+
+            currentTab = tabName;
+
+            // 加载对应数据
+            switch(tabName) {
+                case 'overview':
+                    loadOverview();
+                    break;
+                case 'users':
+                    loadUsers();
+                    break;
+                case 'invitations':
+                    loadInvitations();
+                    break;
+                case 'reports':
+                    loadReports();
+                    break;
+                case 'tasks':
+                    loadTasks();
+                    break;
+            }
+        }
+
+        // API 请求
+        async function apiRequest(url, options = {}) {
+            const headers = {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+
+            const response = await fetch(`${API_BASE_URL}${url}`, {
+                ...options,
+                headers
+            });
+
+            if (response.status === 401) {
+                alert('登录已过期，请重新登录');
+                logout();
+                return null;
+            }
+
+            return response;
+        }
+
+        // 加载概览
+        async function loadOverview() {
+            try {
+                const [healthRes, usersRes, codesRes] = await Promise.all([
+                    apiRequest('/api/health'),
+                    apiRequest('/api/admin/users'),
+                    apiRequest('/api/admin/invitation-codes')
+                ]);
+
+                const health = await healthRes.json();
+                const users = await usersRes.json();
+                const codes = await codesRes.json();
+
+                // 更新统计数据
+                document.getElementById('totalUsers').textContent = users.length;
+                document.getElementById('unusedCodes').textContent = codes.filter(c => !c.is_used).length;
+
+                // 更新系统状态
+                document.getElementById('apiStatus').textContent = health.status === 'healthy' ? '正常' : '异常';
+                document.getElementById('apiStatus').className = `badge badge-${health.status === 'healthy' ? 'success' : 'warning'}`;
+
+                const playwrightRunning = health.services?.playwright_api === 'running';
+                document.getElementById('playwrightStatus').textContent = playwrightRunning ? '正常' : '离线';
+                document.getElementById('playwrightStatus').className = `badge badge-${playwrightRunning ? 'success' : 'warning'}`;
+
+                document.getElementById('activeAgents').textContent = health.active_agents || 0;
+
+                // 尝试加载报告和任务数据
+                try {
+                    const reportsRes = await apiRequest('/api/admin/reports');
+                    const reports = await reportsRes.json();
+                    document.getElementById('totalReports').textContent = reports.length;
+
+                    const tasksRes = await apiRequest('/api/admin/tasks');
+                    const tasks = await tasksRes.json();
+                    document.getElementById('queuedTasks').textContent = tasks.queue_length || 0;
+                } catch (e) {
+                    document.getElementById('totalReports').textContent = '-';
+                    document.getElementById('queuedTasks').textContent = '-';
+                }
+
+            } catch (error) {
+                console.error('Failed to load overview:', error);
+            }
+        }
+
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const response = await apiRequest('/api/admin/users');
+                const users = await response.json();
+
+                const html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>角色</th>
+                                <th>配额</th>
+                                <th>已使用</th>
+                                <th>剩余</th>
+                                <th>注册时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${users.map(user => `
+                                <tr>
+                                    <td>${user.username}</td>
+                                    <td>${user.email}</td>
+                                    <td><span class="badge badge-${user.is_admin ? 'admin' : 'user'}">${user.is_admin ? '管理员' : '普通用户'}</span></td>
+                                    <td>${user.total_quota}</td>
+                                    <td>${user.used_count}</td>
+                                    <td>${user.remaining_quota}</td>
+                                    <td>${new Date(user.created_at).toLocaleString('zh-CN')}</td>
+                                    <td>
+                                        ${!user.is_admin ? `<button class="btn btn-primary btn-sm" onclick='showQuotaModal(${JSON.stringify(user)})'>修改配额</button>` : '-'}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('usersTable').innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load users:', error);
+                document.getElementById('usersTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
+            }
+        }
+
+        // 加载邀请码列表
+        async function loadInvitations() {
+            try {
+                const response = await apiRequest('/api/admin/invitation-codes');
+                const codes = await response.json();
+
+                if (codes.length === 0) {
+                    document.getElementById('invitationsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎫</div><p>暂无邀请码</p></div>';
+                    return;
+                }
+
+                const html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>邀请码</th>
+                                <th>状态</th>
+                                <th>使用者</th>
+                                <th>创建时间</th>
+                                <th>使用时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${codes.map(code => `
+                                <tr>
+                                    <td><code class="code-block">${code.code}</code></td>
+                                    <td><span class="badge badge-${code.is_used ? 'warning' : 'success'}">${code.is_used ? '已使用' : '未使用'}</span></td>
+                                    <td>${code.used_by_username || '-'}</td>
+                                    <td>${new Date(code.created_at).toLocaleString('zh-CN')}</td>
+                                    <td>${code.used_at ? new Date(code.used_at).toLocaleString('zh-CN') : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('invitationsTable').innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load invitations:', error);
+                document.getElementById('invitationsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
+            }
+        }
+
+        // 加载报告列表
+        async function loadReports() {
+            try {
+                const response = await apiRequest('/api/admin/reports');
+                const reports = await response.json();
+
+                if (reports.length === 0) {
+                    document.getElementById('reportsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📄</div><p>暂无报告</p></div>';
+                    return;
+                }
+
+                const html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>报告标题</th>
+                                <th>用户</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>完成时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${reports.map(report => `
+                                <tr>
+                                    <td>${report.title}</td>
+                                    <td>${report.username}</td>
+                                    <td><span class="badge badge-${getStatusBadgeClass(report.status)}">${getStatusText(report.status)}</span></td>
+                                    <td>${new Date(report.created_at).toLocaleString('zh-CN')}</td>
+                                    <td>${report.completed_at ? new Date(report.completed_at).toLocaleString('zh-CN') : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('reportsTable').innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load reports:', error);
+                document.getElementById('reportsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
+            }
+        }
+
+        // 加载任务队列
+        async function loadTasks() {
+            try {
+                const response = await apiRequest('/api/admin/tasks');
+                const data = await response.json();
+
+                const html = `
+                    <div style="font-size: 16px; line-height: 1.8;">
+                        <p><strong>当前任务:</strong> ${data.current_task || '无'}</p>
+                        <p><strong>队列长度:</strong> ${data.queue_length || 0}</p>
+                        <p><strong>处理中:</strong> ${data.is_processing ? '是' : '否'}</p>
+                        ${data.queue_length > 0 ? `
+                            <div style="margin-top: 20px;">
+                                <p><strong>等待队列:</strong></p>
+                                <ul style="margin-left: 20px;">
+                                    ${data.queued_reports?.map(r => `<li>${r}</li>`).join('') || ''}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                document.getElementById('tasksInfo').innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load tasks:', error);
+                document.getElementById('tasksInfo').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
+            }
+        }
+
+        // 显示配额修改模态框
+        function showQuotaModal(user) {
+            document.getElementById('quotaUserId').value = user.user_id;
+            document.getElementById('quotaUsername').value = user.username;
+            document.getElementById('quotaCurrent').value = `${user.used_count} / ${user.total_quota}`;
+            document.getElementById('quotaNew').value = user.total_quota;
+            document.getElementById('quotaModal').classList.add('show');
+        }
+
+        function closeQuotaModal() {
+            document.getElementById('quotaModal').classList.remove('show');
+            document.getElementById('quotaAlert').classList.remove('show');
+        }
+
+        // 更新配额
+        async function updateQuota(event) {
+            event.preventDefault();
+
+            const userId = document.getElementById('quotaUserId').value;
+            const newQuota = parseInt(document.getElementById('quotaNew').value);
+
+            try {
+                const response = await apiRequest(`/api/admin/users/${userId}/quota`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ new_quota: newQuota })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showModalAlert('quotaAlert', '配额更新成功！', 'success');
+                    setTimeout(() => {
+                        closeQuotaModal();
+                        refreshUsers();
+                    }, 1500);
+                } else {
+                    showModalAlert('quotaAlert', data.detail || '更新失败', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to update quota:', error);
+                showModalAlert('quotaAlert', '更新失败: ' + error.message, 'error');
+            }
+        }
+
+        // 显示生成邀请码模态框
+        function showGenerateCodesModal() {
+            document.getElementById('generateCodesModal').classList.add('show');
+            document.getElementById('generatedCodesResult').style.display = 'none';
+            document.getElementById('generateCodesAlert').classList.remove('show');
+        }
+
+        function closeGenerateCodesModal() {
+            document.getElementById('generateCodesModal').classList.remove('show');
+            document.getElementById('generatedCodesResult').style.display = 'none';
+        }
+
+        // 生成邀请码
+        async function generateCodes(event) {
+            event.preventDefault();
+
+            const count = parseInt(document.getElementById('codesCount').value);
+
+            try {
+                const response = await apiRequest('/api/admin/invitation-codes', {
+                    method: 'POST',
+                    body: JSON.stringify({ count })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    const codesList = data.codes.map(code =>
+                        `<div class="code-block">${code}</div>`
+                    ).join('');
+
+                    document.getElementById('generatedCodesList').innerHTML = codesList;
+                    document.getElementById('generatedCodesResult').style.display = 'block';
+                    showModalAlert('generateCodesAlert', `成功生成 ${count} 个邀请码！`, 'success');
+
+                    // 刷新邀请码列表
+                    if (currentTab === 'invitations') {
+                        loadInvitations();
+                    }
+                } else {
+                    showModalAlert('generateCodesAlert', data.detail || '生成失败', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to generate codes:', error);
+                showModalAlert('generateCodesAlert', '生成失败: ' + error.message, 'error');
+            }
+        }
+
+        // 工具函数
+        function showModalAlert(elementId, message, type) {
+            const alert = document.getElementById(elementId);
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+        }
+
+        function getStatusBadgeClass(status) {
+            const map = {
+                'queued': 'info',
+                'generating': 'warning',
+                'completed': 'success',
+                'failed': 'error'
+            };
+            return map[status] || 'info';
+        }
+
+        function getStatusText(status) {
+            const map = {
+                'queued': '排队中',
+                'generating': '生成中',
+                'completed': '已完成',
+                'failed': '失败'
+            };
+            return map[status] || status;
+        }
+
+        function refreshUsers() {
+            loadUsers();
+        }
+
+        function refreshReports() {
+            loadReports();
+        }
+
+        function refreshTasks() {
+            loadTasks();
+        }
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/login.html';
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

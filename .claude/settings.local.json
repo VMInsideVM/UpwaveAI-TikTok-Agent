@@ -12,7 +12,22 @@
       "Bash(powershell -Command:*)",
       "Bash(OPTIMIZATION_SUMMARY.md)",
       "Bash(if [ ! -d \"static\" ])",
-      "Bash(then mkdir static)"
+      "Bash(then mkdir static)",
+      "Bash(find:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(sqlite3:*)",
+      "Bash(if [ -f \"chatbot.db\" ])",
+      "Bash(then rm chatbot.db)",
+      "Bash(else echo \"❌ Database file not found\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiYzViNjYwNC01MzRiLTQ3ODktYjhmYy00YjcyODUxYTNlZDAiLCJleHAiOjE3NjU0MzMwOTksInR5cGUiOiJhY2Nlc3MifQ.RI58a-YIUNUTyLoozo2ZGsFmMC73Fo_3yutsC3KCItM\")",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiYzViNjYwNC01MzRiLTQ3ODktYjhmYy00YjcyODUxYTNlZDAiLCJleHAiOjE3NjU0MzYzNTksInR5cGUiOiJhY2Nlc3MifQ.9RtiZAsgb2YG6UcSnJqgwIfEFCAG4ZSJPBn9uv_UdXQ\")",
+      "Bash(USER_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMTJiM2I3Mi1lOWViLTQwODUtYTg4OS0yODM5Y2ZlOTFlYjUiLCJleHAiOjE3NjU0MzY0MDUsInR5cGUiOiJhY2Nlc3MifQ.VuGlbYubxExAogCscZktd7xv6XW4luoXI5r-JZSfN78\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiYzViNjYwNC01MzRiLTQ3ODktYjhmYy00YjcyODUxYTNlZDAiLCJleHAiOjE3NjU0Mzc4NzgsInR5cGUiOiJhY2Nlc3MifQ.dmCBjkN2Q84pS7ahEQa9nqqkuZr7YOmnsPn99S_tZS8\")",
+      "Bash(ADMIN_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiYzViNjYwNC01MzRiLTQ3ODktYjhmYy00YjcyODUxYTNlZDAiLCJleHAiOjE3NjU0Mzc5NDMsInR5cGUiOiJhY2Nlc3MifQ.dCE6374rKqFc5TBocRcy1JLqSt3sBMR9XZCAMIKRcaE\")"
     ],
     "deny": [],
     "ask": []

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试登录</title>
+</head>
+<body>
+    <h1>测试登录</h1>
+    <div id="result"></div>
+
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:8001';
+
+        async function testLogin() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '正在测试登录...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'test1234'
+                    })
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+
+                const text = await response.text();
+                console.log('Response text:', text);
+
+                if (!response.ok) {
+                    resultDiv.innerHTML = `
+                        <h2 style="color: red;">❌ 登录失败</h2>
+                        <p>状态码: ${response.status}</p>
+                        <p>响应内容: ${text}</p>
+                    `;
+                    return;
+                }
+
+                const data = JSON.parse(text);
+                resultDiv.innerHTML = `
+                    <h2 style="color: green;">✅ 登录成功</h2>
+                    <p>用户名: ${data.username}</p>
+                    <p>用户ID: ${data.user_id}</p>
+                    <p>是否管理员: ${data.is_admin}</p>
+                    <p>Access Token: ${data.access_token.substring(0, 50)}...</p>
+                `;
+
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `
+                    <h2 style="color: red;">❌ 请求异常</h2>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+
+        // 页面加载时自动测试
+        testLogin();
+    </script>
+</body>
+</html>

@@ -1,0 +1,298 @@
+"""
+Report Generation Queue
+报告生成队列系统（异步后台任务）
+"""
+import asyncio
+from typing import Dict, List, Optional
+from datetime import datetime
+import json
+import os
+from pathlib import Path
+
+from database.connection import get_db_context
+from database.models import Report, UserUsage
+
+
+class ReportQueue:
+    """报告生成队列（单线程串行处理）"""
+
+    def __init__(self):
+        self._queue = asyncio.Queue()  # 任务队列
+        self._current_task: Optional[str] = None  # 当前正在执行的任务
+        self._is_processing = False  # 是否正在处理
+        self._task_statuses: Dict[str, dict] = {}  # report_id -> status dict
+        self._processor_task: Optional[asyncio.Task] = None
+
+    async def enqueue_report(
+        self,
+        report_id: str,
+        user_id: str,
+        session_id: str,
+        json_file_path: str,
+        product_name: str
+    ) -> str:
+        """
+        将报告生成任务加入队列
+
+        Args:
+            report_id: 报告 ID
+            user_id: 用户 ID
+            session_id: 会话 ID
+            json_file_path: JSON 数据文件路径
+            product_name: 产品名称
+
+        Returns:
+            str: 报告 ID
+        """
+        # 添加到队列
+        await self._queue.put({
+            "report_id": report_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "json_file_path": json_file_path,
+            "product_name": product_name
+        })
+
+        # 初始化状态
+        self._task_statuses[report_id] = {
+            "report_id": report_id,
+            "status": "queued",
+            "progress": 0,
+            "queue_position": self._queue.qsize(),
+            "created_at": datetime.utcnow().isoformat()
+        }
+
+        # 如果队列处理器未运行，启动它
+        if not self._is_processing:
+            self._processor_task = asyncio.create_task(self._process_queue())
+
+        return report_id
+
+    async def _process_queue(self):
+        """
+        单线程队列处理器（串行处理报告生成）
+
+        由于 Playwright 是单浏览器实例，必须一个接一个处理
+        """
+        self._is_processing = True
+        print("🚀 报告队列处理器启动")
+
+        while True:
+            try:
+                # 从队列获取任务（阻塞等待，5秒超时）
+                try:
+                    task_data = await asyncio.wait_for(self._queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    # 队列空闲，检查是否应该停止
+                    if self._queue.empty():
+                        break
+                    continue
+
+                report_id = task_data["report_id"]
+                self._current_task = report_id
+
+                print(f"📊 开始生成报告: {report_id}")
+
+                # 更新状态为 'generating'
+                await self._update_status(report_id, "generating", progress=10)
+
+                # 执行报告生成
+                try:
+                    await self._generate_report(task_data)
+                    await self._update_status(report_id, "completed", progress=100)
+
+                    # 消耗用户配额
+                    await self._consume_user_quota(task_data["user_id"])
+
+                    print(f"✅ 报告生成完成: {report_id}")
+
+                except Exception as e:
+                    error_msg = str(e)
+                    await self._update_status(report_id, "failed", error=error_msg)
+                    print(f"❌ 报告生成失败: {report_id} - {error_msg}")
+
+                self._current_task = None
+                self._queue.task_done()
+
+            except asyncio.CancelledError:
+                print("⚠️ 报告队列处理器被取消")
+                break
+            except Exception as e:
+                print(f"❌ 队列处理器错误: {e}")
+
+        self._is_processing = False
+        print("🛑 报告队列处理器停止")
+
+    async def _generate_report(self, task_data: dict):
+        """
+        调用 report_agent.py 生成报告
+
+        注意：这是同步操作，会阻塞队列
+
+        Args:
+            task_data: 任务数据
+        """
+        report_id = task_data["report_id"]
+        json_file_path = task_data["json_file_path"]
+        product_name = task_data["product_name"]
+
+        # 检查 JSON 文件是否存在
+        if not os.path.exists(json_file_path):
+            raise FileNotFoundError(f"数据文件不存在: {json_file_path}")
+
+        # 读取 JSON 文件获取达人列表
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        influencer_ids = data.get("data_row_keys", [])
+        if not influencer_ids:
+            raise ValueError("数据文件中没有达人 ID")
+
+        # 更新进度：30%
+        await self._update_status(report_id, "generating", progress=30)
+
+        # 动态导入 report_agent（避免循环导入）
+        try:
+            from report_agent import TikTokInfluencerReportAgent
+
+            # 创建报告生成器
+            report_agent = TikTokInfluencerReportAgent()
+
+            # 估算完成时间（每个达人约 10 秒）
+            estimated_time = len(influencer_ids) * 10
+
+            # 更新数据库中的预估时间
+            with get_db_context() as db:
+                report = db.query(Report).filter(Report.report_id == report_id).first()
+                if report:
+                    report.estimated_time = estimated_time
+                    db.commit()
+
+            # 更新进度：50%
+            await self._update_status(report_id, "generating", progress=50)
+
+            # 生成报告（同步调用）
+            # 在事件循环中运行同步函数
+            loop = asyncio.get_event_loop()
+            report_path = await loop.run_in_executor(
+                None,
+                report_agent.generate_report,
+                influencer_ids,
+                product_name,
+                3  # 推荐 3 个达人
+            )
+
+            # 更新进度：90%
+            await self._update_status(report_id, "generating", progress=90)
+
+            # 更新数据库中的报告路径和状态
+            with get_db_context() as db:
+                report = db.query(Report).filter(Report.report_id == report_id).first()
+                if report:
+                    report.report_path = report_path
+                    report.status = "completed"
+                    report.completed_at = datetime.utcnow()
+                    db.commit()
+
+            print(f"✅ 报告已保存到: {report_path}")
+
+        except ImportError as e:
+            raise RuntimeError(f"无法导入报告生成器: {e}")
+
+    async def _update_status(
+        self,
+        report_id: str,
+        status: str,
+        progress: int = 0,
+        error: Optional[str] = None
+    ):
+        """
+        更新任务状态
+
+        Args:
+            report_id: 报告 ID
+            status: 状态
+            progress: 进度（0-100）
+            error: 错误信息
+        """
+        self._task_statuses[report_id] = {
+            "report_id": report_id,
+            "status": status,
+            "progress": progress,
+            "error": error,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+        # 同步更新数据库
+        with get_db_context() as db:
+            report = db.query(Report).filter(Report.report_id == report_id).first()
+            if report:
+                report.status = status
+                if error:
+                    report.error_message = error
+                if status == "completed":
+                    report.completed_at = datetime.utcnow()
+                db.commit()
+
+    async def _consume_user_quota(self, user_id: str):
+        """
+        消耗用户配额（只在报告成功生成后调用）
+
+        Args:
+            user_id: 用户 ID
+        """
+        with get_db_context() as db:
+            usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
+            if usage:
+                usage.used_count += 1
+                db.commit()
+                print(f"✅ 用户 {user_id} 配额已消耗: {usage.used_count}/{usage.total_quota}")
+
+    def get_task_status(self, report_id: str) -> Optional[dict]:
+        """
+        获取报告生成状态（实时）
+
+        Args:
+            report_id: 报告 ID
+
+        Returns:
+            Optional[dict]: 状态信息
+        """
+        return self._task_statuses.get(report_id)
+
+    def get_all_tasks(self) -> dict:
+        """
+        获取所有任务（用于管理后台）
+
+        Returns:
+            dict: 任务队列信息
+        """
+        # 计算队列位置
+        all_statuses = []
+        position = 1
+
+        for report_id, status in self._task_statuses.items():
+            if status["status"] == "queued":
+                status["queue_position"] = position
+                position += 1
+            all_statuses.append(status)
+
+        return {
+            "current_task": self._current_task,
+            "queue_size": self._queue.qsize(),
+            "is_processing": self._is_processing,
+            "all_statuses": all_statuses
+        }
+
+    async def stop(self):
+        """停止队列处理器"""
+        if self._processor_task:
+            self._processor_task.cancel()
+            try:
+                await self._processor_task
+            except asyncio.CancelledError:
+                pass
+
+
+# 全局实例
+report_queue = ReportQueue()

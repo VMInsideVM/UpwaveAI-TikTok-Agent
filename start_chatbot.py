@@ -117,14 +117,35 @@ def start_chatbot_service():
     print("\n🚀 启动聊天机器人服务...\n")
 
     try:
-        # 导入并启动服务
+        # 1. 初始化数据库
+        print("🔧 初始化数据库...")
+        from database.connection import init_db, create_admin_user
+        import os
+
+        init_db()
+        print("✅ 数据库表创建完成")
+
+        # 2. 创建管理员账户（如果不存在）
+        admin_username = os.getenv("INITIAL_ADMIN_USERNAME", "admin")
+        admin_password = os.getenv("INITIAL_ADMIN_PASSWORD", "***REMOVED***")
+        admin_email = os.getenv("INITIAL_ADMIN_EMAIL", "admin@fastmoss.com")
+
+        create_admin_user(admin_username, admin_password, admin_email)
+
+        # 3. 导入并启动服务
         from chatbot_api import start_server
 
-        print("=" * 60)
+        print("\n" + "=" * 60)
         print("📍 服务地址:")
+        print("   - 登录页面: http://127.0.0.1:8001/login.html")
         print("   - 聊天界面: http://127.0.0.1:8001/")
+        print("   - 管理后台: http://127.0.0.1:8001/admin.html")
         print("   - API 文档: http://127.0.0.1:8001/docs")
-        print("   - 健康检查: http://127.0.0.1:8001/api/health")
+        print("=" * 60)
+        print("\n🔐 管理员账户:")
+        print(f"   - 用户名: {admin_username}")
+        print(f"   - 密码: {admin_password}")
+        print("   ⚠️  请在首次登录后立即修改密码！")
         print("=" * 60)
         print("\n💡 提示: 按 Ctrl+C 停止服务\n")
         print("=" * 60)
