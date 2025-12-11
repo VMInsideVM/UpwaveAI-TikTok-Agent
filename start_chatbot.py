@@ -8,7 +8,30 @@ import sys
 import time
 import requests
 import subprocess
+import shutil
+from pathlib import Path
 from typing import Tuple
+
+
+def clear_python_cache():
+    """清理Python缓存文件，确保代码修改生效"""
+    print("🧹 清理Python缓存...")
+
+    # 清理 __pycache__ 目录
+    for pycache_dir in Path('.').rglob('__pycache__'):
+        try:
+            shutil.rmtree(pycache_dir)
+        except Exception as e:
+            pass
+
+    # 清理 .pyc 文件
+    for pyc_file in Path('.').rglob('*.pyc'):
+        try:
+            pyc_file.unlink()
+        except Exception as e:
+            pass
+
+    print("✅ 缓存清理完成")
 
 
 def print_banner():
@@ -164,6 +187,10 @@ def start_chatbot_service():
 def main():
     """主函数"""
     print_banner()
+
+    # 清理Python缓存，确保代码修改生效
+    clear_python_cache()
+    print()
 
     # 检查依赖
     chrome_ok, playwright_ok, port_available = check_dependencies()

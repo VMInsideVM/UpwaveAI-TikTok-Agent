@@ -10,12 +10,11 @@ import os
 import re
 
 # 密码加密上下文
-# 修复 bcrypt 72 字节限制问题：使用 truncate_error=False 避免错误
+# bcrypt 有 72 字节限制，我们在应用层处理
 pwd_context = CryptContext(
     schemes=["bcrypt"],
     deprecated="auto",
-    bcrypt__default_rounds=12,
-    bcrypt__truncate_error=False  # 自动截断超过 72 字节的密码
+    bcrypt__default_rounds=12
 )
 
 # JWT 配置
@@ -23,6 +22,31 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here-change-in-pro
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+
+def _truncate_password(password: str) -> str:
+    """
+    截断密码到 72 字节（bcrypt 限制）
+
+    Args:
+        password: 明文密码
+
+    Returns:
+        str: 截断后的密码
+    """
+    # bcrypt 限制为 72 字节
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        # 截断到 72 字节，确保不会在 UTF-8 字符中间截断
+        password_bytes = password_bytes[:72]
+        # 尝试解码，如果失败则继续向前截断
+        while len(password_bytes) > 0:
+            try:
+                return password_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                password_bytes = password_bytes[:-1]
+        return ""
+    return password
 
 
 def hash_password(password: str) -> str:
@@ -35,7 +59,9 @@ def hash_password(password: str) -> str:
     Returns:
         str: 哈希后的密码
     """
-    return pwd_context.hash(password)
+    # 先截断密码以满足 bcrypt 72 字节限制
+    truncated = _truncate_password(password)
+    return pwd_context.hash(truncated)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -49,7 +75,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         bool: 密码是否匹配
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    # 先截断密码以满足 bcrypt 72 字节限制
+    truncated = _truncate_password(plain_password)
+    return pwd_context.verify(truncated, hashed_password)
 
 
 def validate_password_strength(password: str) -> Tuple[bool, str]:
