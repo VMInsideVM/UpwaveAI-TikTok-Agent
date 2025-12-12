@@ -170,7 +170,8 @@ class SessionManagerDB:
         self,
         user_id: str,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
+        include_empty: bool = False  # 新增参数：是否包含空会话
     ) -> List[dict]:
         """
         获取用户的所有会话
@@ -179,6 +180,7 @@ class SessionManagerDB:
             user_id: 用户 ID
             limit: 限制数量
             offset: 偏移量
+            include_empty: 是否包含没有消息的空会话（默认False,不包含）
 
         Returns:
             List[dict]: 会话列表
@@ -192,17 +194,21 @@ class SessionManagerDB:
 
             result = []
             for session in sessions:
+                # 获取消息数量
+                message_count = db.query(Message).filter(
+                    Message.session_id == session.session_id
+                ).count()
+
+                # 如果不包含空会话且会话没有消息，跳过
+                if not include_empty and message_count == 0:
+                    continue
+
                 # 获取最后一条消息
                 last_message = db.query(Message).filter(
                     Message.session_id == session.session_id
                 ).order_by(
                     Message.created_at.desc()
                 ).first()
-
-                # 计算消息数量
-                message_count = db.query(Message).filter(
-                    Message.session_id == session.session_id
-                ).count()
 
                 result.append({
                     "session_id": session.session_id,

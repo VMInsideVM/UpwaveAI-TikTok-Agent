@@ -53,6 +53,7 @@ class TikTokInfluencerAgent:
         self.current_params = {}  # 当前收集到的所有筛选参数
         self.params_confirmed = False  # 参数是否已确认
         self.target_influencer_count = None  # 目标达人数量
+        self.user_confirmed_scraping = False  # 用户是否已确认开始搜索（新增）
 
         # 设置全局 agent 实例，供工具访问
         set_agent_instance(self)
@@ -196,18 +197,20 @@ class TikTokInfluencerAgent:
      现在可以为您提交搜索任务了！系统将在后台为您搜索和分析约 X 个达人的数据。
 
      请输入【确认】开始搜索，或继续调整筛选条件。"
-   - **等待用户确认**
+   - **⚠️ 严格等待用户确认，绝对不要自动调用任何搜索工具！**
 
 11. **提交搜索任务并结束对话**:
    - **触发条件**: 用户输入"确认"、"开始"、"提交"、"好的"等确认词汇
-   - **计算爬取页数**:
-     * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
-     * 实际页数 = min(目标页数, 最大可用页数)
-     * 例如: 用户要 50 个达人 → 目标 50 页，如果只有 30 页可用 → 爬取 30 页
-   - **调用 submit_search_task 工具提交后台任务**，传入:
-     * urls: 所有排序维度的完整 URL 列表
-     * max_pages: 计算出的实际页数
-     * product_name: 商品名称
+   - **⚠️ 严格执行以下步骤，不得跳过**:
+     a. **第一步**: 调用 confirm_scraping 工具记录用户已确认
+     b. **第二步**: 计算爬取页数:
+        * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
+        * 实际页数 = min(目标页数, 最大可用页数)
+        * 例如: 用户要 50 个达人 → 目标 50 页，如果只有 30 页可用 → 爬取 30 页
+     c. **第三步**: 调用 submit_search_task 工具提交后台任务，传入:
+        * urls: 所有排序维度的完整 URL 列表
+        * max_pages: 计算出的实际页数
+        * product_name: 商品名称
    - 工具会立即返回报告 ID
    - **立即告知用户任务已提交**:
      "✅ 搜索任务已提交！
@@ -238,19 +241,20 @@ class TikTokInfluencerAgent:
 - 多维度排序时保留第一次出现的达人(去重)
 
 ## 可用工具:
-你有 10 个工具可以使用,它们的描述已经包含在工具定义中。
+你有 11 个工具可以使用,它们的描述已经包含在工具定义中。
 
 工具列表:
 1. build_search_url - 构建搜索 URL（自动存储参数）
 2. match_product_category - 匹配商品分类（自动存储分类信息）
-3. review_parameters - **【新增】展示参数摘要供用户确认**
-4. update_parameter - **【新增】更新特定筛选参数**
+3. review_parameters - 展示参数摘要供用户确认
+4. update_parameter - 更新特定筛选参数
 5. get_max_page_number - 获取最大页数
 6. analyze_quantity_gap - 分析数量缺口
 7. suggest_parameter_adjustments - 生成参数调整建议
 8. get_sort_suffix - 获取排序后缀
-9. scrape_and_export_json - 搜索达人候选并保存列表
-10. process_influencer_detail - 批量获取达人详细数据（自动显示进度）"""
+9. confirm_scraping - **【重要】记录用户已确认开始搜索（必须在 submit_search_task 之前调用）**
+10. submit_search_task - 提交后台搜索任务（必须在 confirm_scraping 之后调用）
+11. process_influencer_detail - 批量获取达人详细数据（已废弃，请使用 submit_search_task）"""
 
         # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
         agent = langchain_create_agent(

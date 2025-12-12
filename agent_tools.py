@@ -397,12 +397,51 @@ class GetSortSuffixTool(BaseTool):
             return f"❌ 获取排序后缀失败: {str(e)},请检查排序参数是否正确"
 
 
+class ConfirmScrapingInput(BaseModel):
+    """确认开始搜索的输入参数"""
+    pass
+
+
+class ConfirmScrapingTool(BaseTool):
+    """用户确认开始搜索的工具"""
+    name: str = "confirm_scraping"
+    description: str = """
+    当用户输入"确认"、"开始"、"提交"、"好的"等确认词汇时，调用此工具记录用户已确认。
+
+    ⚠️ **必须在调用 scrape_and_export_json 之前调用此工具！**
+
+    调用时机：
+    - 已向用户展示了"请输入【确认】开始搜索"的提示
+    - 用户明确回复了确认词汇（如"确认"、"好的"、"开始"等）
+
+    此工具没有参数。
+    """
+    args_schema: type[BaseModel] = ConfirmScrapingInput
+
+    def _run(self) -> str:
+        """标记用户已确认开始搜索"""
+        global _agent_instance
+        if _agent_instance:
+            _agent_instance.user_confirmed_scraping = True
+            return "✅ 用户已确认开始搜索，现在可以调用 scrape_and_export_json 工具了"
+        return "❌ 无法记录确认状态"
+
+
 class ScrapeInfluencersTool(BaseTool):
     """搜索并保存达人候选列表的工具"""
     name: str = "scrape_and_export_json"
     description: str = """
+    ⚠️ 【重要】调用此工具前必须先调用 confirm_scraping 工具！
+
     根据筛选条件搜索 TikTok 达人候选并保存列表。
     支持多个排序维度的 URL,会自动合并去重。
+
+    **严格的调用流程**：
+    1. 完成排序选择
+    2. 向用户展示"请输入【确认】开始搜索"
+    3. 等待用户回复确认词汇
+    4. 调用 confirm_scraping 工具记录用户确认
+    5. 最后调用此工具开始搜索
 
     参数:
     - urls: URL 列表(可以是多个排序维度的完整 URL)
@@ -415,6 +454,19 @@ class ScrapeInfluencersTool(BaseTool):
 
     def _run(self, urls: List[str], max_pages: int, product_name: str) -> str:
         """执行数据爬取和导出（通过 API）"""
+        # ⚠️ 检查用户是否已确认
+        global _agent_instance
+        if _agent_instance and not _agent_instance.user_confirmed_scraping:
+            return """❌ 错误：用户尚未确认开始搜索！
+
+请按照以下流程操作：
+1. 向用户展示："请输入【确认】开始搜索，或继续调整筛选条件。"
+2. 等待用户回复
+3. 如果用户回复了确认词汇，先调用 confirm_scraping 工具
+4. 然后再调用本工具开始搜索
+
+请不要在用户确认之前调用此工具。"""
+
         try:
             print(f"📊 开始搜索达人候选...")
 
@@ -441,6 +493,10 @@ class ScrapeInfluencersTool(BaseTool):
                 return "❌ 未能获取到达人数据，可能是筛选条件太严格或网络异常"
 
             print(f"✅ 搜索完成！")
+
+            # ⚠️ 重置确认标记，允许下一次任务使用
+            if _agent_instance:
+                _agent_instance.user_confirmed_scraping = False
 
             # 返回包含文件路径的信息（用于 agent 传递给下一个工具）
             return f"""✅ 成功获取 {total_rows} 个达人候选
@@ -903,7 +959,16 @@ class SubmitSearchTaskTool(BaseTool):
     """提交后台搜索任务的工具"""
     name: str = "submit_search_task"
     description: str = """
+    ⚠️ 【重要】调用此工具前必须先调用 confirm_scraping 工具！
+
     提交达人搜索任务到后台队列，立即返回任务 ID。
+
+    **严格的调用流程**：
+    1. 完成排序选择
+    2. 向用户展示"请输入【确认】开始搜索"
+    3. 等待用户回复确认词汇
+    4. 调用 confirm_scraping 工具记录用户确认
+    5. 最后调用此工具提交任务
 
     这个工具会：
     1. 创建数据库报告记录
@@ -928,6 +993,19 @@ class SubmitSearchTaskTool(BaseTool):
 
     def _run(self, urls: List[str], max_pages: int, product_name: str) -> str:
         """提交任务到后台队列"""
+        # ⚠️ 检查用户是否已确认
+        global _agent_instance
+        if _agent_instance and not _agent_instance.user_confirmed_scraping:
+            return """❌ 错误：用户尚未确认开始搜索！
+
+请按照以下流程操作：
+1. 向用户展示："请输入【确认】开始搜索，或继续调整筛选条件。"
+2. 等待用户回复
+3. 如果用户回复了确认词汇，先调用 confirm_scraping 工具
+4. 然后再调用本工具提交任务
+
+请不要在用户确认之前调用此工具。"""
+
         try:
             from background_tasks import task_queue
 
@@ -951,6 +1029,10 @@ class SubmitSearchTaskTool(BaseTool):
 
             # 获取报告 ID
             report_id = task_queue.get_report_id(task_id)
+
+            # ⚠️ 重置确认标记，允许下一次任务使用
+            if _agent_instance:
+                _agent_instance.user_confirmed_scraping = False
 
             return f"""✅ 搜索任务已成功提交！
 
@@ -1081,6 +1163,7 @@ def get_all_tools() -> List[BaseTool]:
         AnalyzeQuantityTool(),            # 分析数量缺口
         SuggestAdjustmentsTool(),         # 生成调整建议
         GetSortSuffixTool(),
+        ConfirmScrapingTool(),            # 用户确认开始搜索（新增）
         SubmitSearchTaskTool(),           # 提交后台搜索任务（新增）
         ScrapeInfluencersTool(),          # 搜索并保存达人候选（保留用于兼容）
         ProcessInfluencerListTool()       # 批量获取达人详细数据（保留用于兼容）

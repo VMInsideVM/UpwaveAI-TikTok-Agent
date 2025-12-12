@@ -131,7 +131,14 @@ class TikTokInfluencerReportAgent:
                 'error': f'加载文件失败: {str(e)}'
             }
 
-    def generate_report(self, json_filename: str, user_query: str, target_count: int, product_info: str) -> str:
+    def generate_report(
+        self,
+        json_filename: str,
+        user_query: str,
+        target_count: int,
+        product_info: str,
+        progress_callback=None
+    ) -> str:
         """
         Generate influencer recommendation report.
 
@@ -140,10 +147,15 @@ class TikTokInfluencerReportAgent:
             user_query: User's natural language requirement
             target_count: Number of top influencers needed in final report
             product_info: Detailed product information for preference analysis
+            progress_callback: Optional callback function(progress: int) for real-time progress updates
 
         Returns:
             Path to generated HTML report
         """
+        def update_progress(progress: int):
+            """Helper function to update progress"""
+            if progress_callback:
+                progress_callback(progress)
         try:
             print(f"\n{'='*60}")
             print(f"开始生成推荐报告")
@@ -154,7 +166,8 @@ class TikTokInfluencerReportAgent:
             print(f"目标数量: Top {target_count}个达人")
             print(f"{'='*60}\n")
 
-            # Step 1: Load influencer data from JSON file
+            # Step 1: Load influencer data from JSON file (10%-20%)
+            update_progress(10)
             print("📂 步骤1: 加载达人数据...")
             load_result = self._load_from_json_file(json_filename)
 
@@ -164,8 +177,9 @@ class TikTokInfluencerReportAgent:
 
             influencer_ids = load_result['influencer_ids']
             print(f"✓ 成功加载{len(influencer_ids)}个达人\n")
+            update_progress(20)
 
-            # Step 2: Analyze user preferences
+            # Step 2: Analyze user preferences (20%-30%)
             print("🧠 步骤2: 分析用户偏好...")
             pref_result = json.loads(self.preference_tool._run(
                 user_query=user_query,
@@ -182,8 +196,9 @@ class TikTokInfluencerReportAgent:
             print(f"  产品类目: {preferences.get('product_category')}")
             print(f"  目标受众: {preferences.get('target_audience')}")
             print(f"  优先指标: {preferences.get('priority_metrics')}\n")
+            update_progress(30)
 
-            # Step 3: Score and rank influencers
+            # Step 3: Score and rank influencers (30%-40%)
             print("📊 步骤3: 多维度评分...")
             score_result = json.loads(self.scorer_tool._run(
                 influencer_ids=influencer_ids,
@@ -199,11 +214,17 @@ class TikTokInfluencerReportAgent:
             for i, inf in enumerate(ranked_influencers[:5], 1):
                 print(f"  #{i}: {inf['nickname']} - {inf['total_score']:.1f}分")
             print()
+            update_progress(40)
 
-            # Step 4: Content alignment analysis (for top influencers)
+            # Step 4: Content alignment analysis (40%-80%)
             print(f"🔍 步骤4: 内容契合度分析 (Top {len(ranked_influencers)}达人)...")
+            total_influencers = len(ranked_influencers)
             for i, inf in enumerate(ranked_influencers, 1):
-                print(f"  分析 {i}/{len(ranked_influencers)}: {inf['nickname']}...", end=' ')
+                # 计算当前进度 (40% + 40% * i/total)
+                current_progress = 40 + int(40 * i / total_influencers)
+                update_progress(current_progress)
+
+                print(f"  分析 {i}/{total_influencers}: {inf['nickname']}...", end=' ')
 
                 content_result = json.loads(self.content_tool._run(
                     influencer_id=inf['influencer_id'],
@@ -232,6 +253,7 @@ class TikTokInfluencerReportAgent:
             # Re-sort after content fit update
             ranked_influencers.sort(key=lambda x: x['total_score'], reverse=True)
             print()
+            update_progress(80)
 
             # Create timestamped report directory
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -243,10 +265,14 @@ class TikTokInfluencerReportAgent:
             # Initialize visualizer with timestamped charts directory
             self.viz_tool = DataVisualizationTool(output_dir=charts_dir)
 
-            # Step 5: Generate visualizations (for top influencers)
+            # Step 5: Generate visualizations (80%-90%)
             print(f"📈 步骤5: 生成可视化图表...")
             charts_generated = 0
             for i, inf in enumerate(ranked_influencers[:10], 1):  # Only top 10 to save time
+                # 计算进度 (80% + 10% * i/10)
+                current_progress = 80 + int(10 * i / 10)
+                update_progress(current_progress)
+
                 print(f"  生成图表 {i}/10: {inf['nickname']}...", end=' ')
 
                 viz_result = json.loads(self.viz_tool._run(
@@ -263,8 +289,9 @@ class TikTokInfluencerReportAgent:
                     print("⚠ 跳过")
 
             print(f"✓ 共生成{charts_generated}张图表\n")
+            update_progress(90)
 
-            # Step 6: Compile report
+            # Step 6: Compile report (90%-95%)
             print("📝 步骤6: 编译HTML报告...")
             report_data = {
                 "executive_summary": self._generate_executive_summary(
@@ -280,12 +307,14 @@ class TikTokInfluencerReportAgent:
                 target_count,
                 report_dir
             )
+            update_progress(95)
 
             print(f"\n{'='*60}")
             print(f"✅ 报告生成成功!")
             print(f"{'='*60}")
             print(f"报告路径: {report_path}")
             print(f"{'='*60}\n")
+            update_progress(100)
 
             return report_path
 

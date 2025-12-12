@@ -61,6 +61,15 @@ try:
 except RuntimeError:
     print("⚠️ static 目录不存在，将在后续步骤创建")
 
+# 挂载报告文件目录（用于托管生成的报告和图表）
+import os
+reports_dir = "output/reports"
+if os.path.exists(reports_dir):
+    app.mount("/reports", StaticFiles(directory=reports_dir), name="reports")
+    print(f"✅ 报告静态文件服务已启动: /reports -> {reports_dir}")
+else:
+    print(f"⚠️ 报告目录不存在，将在生成报告时创建: {reports_dir}")
+
 
 # ==================== 辅助函数 ====================
 
@@ -196,6 +205,14 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         if response:
             response = clean_response(response)
 
+            # 检查是否需要用户确认生成报告
+            needs_confirmation = any(keyword in response for keyword in [
+                "请输入【确认】开始搜索",
+                "输入【确认】",
+                '请输入"确认"',
+                "confirm"
+            ]) or "confirm" in response.lower()
+
             # 发送开始标记，告诉前端开始新消息
             await websocket.send_json({
                 "type": "message_start",
@@ -217,6 +234,17 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                 "type": "message_end",
                 "timestamp": datetime.now().isoformat()
             })
+
+            # 如果需要确认，发送确认请求
+            if needs_confirmation:
+                print("🔔 检测到需要用户确认，发送confirm_generate消息")
+                await websocket.send_json({
+                    "type": "confirm_generate",
+                    "data": {
+                        "session_id": session_id
+                    },
+                    "timestamp": datetime.now().isoformat()
+                })
 
         # 保存 assistant 响应到数据库
         if session_id and response:

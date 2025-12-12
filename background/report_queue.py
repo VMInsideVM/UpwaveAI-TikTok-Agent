@@ -101,14 +101,15 @@ class ReportQueue:
                     await self._generate_report(task_data)
                     await self._update_status(report_id, "completed", progress=100)
 
-                    # 消耗用户配额
-                    await self._consume_user_quota(task_data["user_id"])
-
                     print(f"✅ 报告生成完成: {report_id}")
 
                 except Exception as e:
                     error_msg = str(e)
                     await self._update_status(report_id, "failed", error=error_msg)
+
+                    # 失败时退还配额
+                    await self._refund_user_quota(task_data["user_id"])
+
                     print(f"❌ 报告生成失败: {report_id} - {error_msg}")
 
                 self._current_task = None
@@ -148,9 +149,6 @@ class ReportQueue:
         if not influencer_ids:
             raise ValueError("数据文件中没有达人 ID")
 
-        # 更新进度：30%
-        await self._update_status(report_id, "generating", progress=30)
-
         # 动态导入 report_agent（避免循环导入）
         try:
             from report_agent import TikTokInfluencerReportAgent
@@ -168,8 +166,13 @@ class ReportQueue:
                     report.estimated_time = estimated_time
                     db.commit()
 
-            # 更新进度：50%
-            await self._update_status(report_id, "generating", progress=50)
+            # 创建进度回调函数（异步更新状态）
+            def progress_callback(progress: int):
+                """进度回调函数（同步，但会调度异步更新）"""
+                # 在事件循环中调度异步更新
+                asyncio.create_task(
+                    self._update_status(report_id, "generating", progress=progress)
+                )
 
             # 生成报告（同步调用）
             # 在事件循环中运行同步函数
@@ -177,13 +180,12 @@ class ReportQueue:
             report_path = await loop.run_in_executor(
                 None,
                 report_agent.generate_report,
-                influencer_ids,
-                product_name,
-                3  # 推荐 3 个达人
+                json_file_path,  # json_filename
+                f"为{product_name}推荐达人",  # user_query
+                10,  # target_count
+                f"产品名称: {product_name}",  # product_info
+                progress_callback  # progress_callback
             )
-
-            # 更新进度：90%
-            await self._update_status(report_id, "generating", progress=90)
 
             # 更新数据库中的报告路径和状态
             with get_db_context() as db:
@@ -234,19 +236,19 @@ class ReportQueue:
                     report.completed_at = datetime.utcnow()
                 db.commit()
 
-    async def _consume_user_quota(self, user_id: str):
+    async def _refund_user_quota(self, user_id: str):
         """
-        消耗用户配额（只在报告成功生成后调用）
+        退还用户配额（报告生成失败时调用）
 
         Args:
             user_id: 用户 ID
         """
         with get_db_context() as db:
             usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
-            if usage:
-                usage.used_count += 1
+            if usage and usage.used_count > 0:
+                usage.used_count -= 1
                 db.commit()
-                print(f"✅ 用户 {user_id} 配额已消耗: {usage.used_count}/{usage.total_quota}")
+                print(f"♻️ 用户 {user_id} 配额已退还: {usage.used_count}/{usage.total_quota}")
 
     def get_task_status(self, report_id: str) -> Optional[dict]:
         """

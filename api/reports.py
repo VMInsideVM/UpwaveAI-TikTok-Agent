@@ -3,7 +3,7 @@ Reports API Endpoints
 报告管理 API 端点
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
@@ -131,7 +131,12 @@ async def generate_report(
     db.commit()
     db.refresh(new_report)
 
-    # 5. 加入后台队列
+    # 5. 立即扣除配额（失败时会自动退还）
+    usage.used_count += 1
+    db.commit()
+    print(f"✅ 用户 {current_user.user_id} 配额已预扣: {usage.used_count}/{usage.total_quota}")
+
+    # 6. 加入后台队列
     await report_queue.enqueue_report(
         report_id=new_report.report_id,
         user_id=current_user.user_id,
@@ -144,7 +149,7 @@ async def generate_report(
         "report_id": new_report.report_id,
         "message": "报告生成任务已加入队列",
         "status": "queued",
-        "remaining_quota": usage.remaining_quota - 1  # 预估剩余（实际消耗在完成后）
+        "remaining_quota": usage.remaining_quota  # 已扣除后的剩余
     }
 
 
@@ -228,14 +233,32 @@ async def view_report(
             detail="报告文件不存在"
         )
 
-    print(f"📄 返回报告文件: {report.report_path}")
+    # 将绝对路径转换为静态文件URL
+    # 例如: output/reports/20251212_204820/report.html -> /reports/20251212_204820/report.html
+    try:
+        # 提取相对于 output/reports/ 的路径
+        reports_base = "output/reports"
+        if reports_base in report.report_path:
+            relative_path = report.report_path.split(reports_base)[1].replace("\\", "/")
+            static_url = f"/reports{relative_path}"
 
-    # 返回 HTML 文件
-    return FileResponse(
-        report.report_path,
-        media_type="text/html",
-        filename=f"{report.title}.html"
-    )
+            print(f"📄 重定向到报告: {static_url}")
+
+            # 返回重定向（浏览器会直接显示HTML，不会下载）
+            return RedirectResponse(url=static_url, status_code=302)
+        else:
+            # 如果路径不符合预期，仍使用FileResponse
+            print(f"⚠️ 报告路径不符合预期格式，使用FileResponse: {report.report_path}")
+            return FileResponse(
+                report.report_path,
+                media_type="text/html"
+            )
+    except Exception as e:
+        print(f"❌ 处理报告路径失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"无法访问报告文件: {str(e)}"
+        )
 
 
 @router.get("/{report_id}")
