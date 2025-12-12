@@ -892,6 +892,184 @@ class ProcessInfluencerListTool(BaseTool):
 
 # ==================== 工具列表 ====================
 
+class SubmitSearchTaskInput(BaseModel):
+    """提交搜索任务的输入参数"""
+    urls: List[str] = Field(description="搜索 URL 列表（可能包含多个排序维度）")
+    max_pages: int = Field(description="最大爬取页数")
+    product_name: str = Field(description="商品名称")
+
+
+class SubmitSearchTaskTool(BaseTool):
+    """提交后台搜索任务的工具"""
+    name: str = "submit_search_task"
+    description: str = """
+    提交达人搜索任务到后台队列，立即返回任务 ID。
+
+    这个工具会：
+    1. 创建数据库报告记录
+    2. 将爬取任务提交到后台队列
+    3. 立即返回，不等待任务完成
+
+    用户可以在"报告库"中查看任务进度和最终结果。
+
+    参数:
+    - urls: 搜索 URL 列表（包含所有排序维度）
+    - max_pages: 最大爬取页数
+    - product_name: 商品名称
+
+    返回:
+    - 任务 ID 和报告 ID
+    """
+    args_schema: type[BaseModel] = SubmitSearchTaskInput
+
+    # 添加 user_id 和 session_id 属性用于传递当前用户和会话
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+    def _run(self, urls: List[str], max_pages: int, product_name: str) -> str:
+        """提交任务到后台队列"""
+        try:
+            from background_tasks import task_queue
+
+            # 获取用户 ID（从 session 或 agent 实例传递）
+            if not self.user_id:
+                # 如果没有设置 user_id，使用默认值（测试用）
+                self.user_id = "anonymous"
+
+            # ⭐ 收集报告生成所需的所有参数
+            report_params = self._collect_report_parameters(product_name)
+
+            # 提交任务（传递完整参数，包括 session_id）
+            task_id = task_queue.submit_task(
+                user_id=self.user_id,
+                product_name=product_name,
+                urls=urls,
+                max_pages=max_pages,
+                report_params=report_params,  # ⭐ 传递所有报告参数
+                session_id=self.session_id  # ⭐ 传递会话 ID
+            )
+
+            # 获取报告 ID
+            report_id = task_queue.get_report_id(task_id)
+
+            return f"""✅ 搜索任务已成功提交！
+
+📋 任务信息:
+   • 任务 ID: {task_id}
+   • 报告 ID: {report_id}
+   • 商品名称: {product_name}
+   • 爬取页数: {max_pages}
+   • URL 数量: {len(urls)}
+
+⏳ 任务正在后台处理中，通常需要几分钟时间。
+
+💡 后续操作:
+   1. 点击左侧"报告库"按钮查看进度
+   2. 报告完成后状态会变为"已完成"
+   3. 点击报告即可查看详细数据
+
+感谢您的使用！"""
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            return f"❌ 提交任务失败: {str(e)}\n\n详细信息:\n{error_detail}"
+
+    def _collect_report_parameters(self, product_name: str) -> dict:
+        """
+        从 Agent 实例收集报告生成所需的所有参数
+
+        Returns:
+            {
+                'user_query': str,         # 用户查询
+                'target_count': int,       # 每层推荐数量（固定 10）
+                'product_info': str        # 产品详细信息
+            }
+        """
+        try:
+            # 获取 Agent 实例
+            agent = _agent_instance
+
+            if not agent:
+                return self._get_default_report_params(product_name)
+
+            # 1. 重建用户查询（从对话历史）
+            user_query = self._rebuild_user_query_from_history(agent, product_name)
+
+            # 2. 固定 target_count = 10（每层 10 个达人）
+            target_count = 10
+
+            # 3. 构建产品信息字符串
+            product_info = self._build_product_info_from_agent(agent, product_name)
+
+            return {
+                'user_query': user_query,
+                'target_count': target_count,
+                'product_info': product_info
+            }
+
+        except Exception as e:
+            print(f"⚠️ 收集报告参数失败: {e}")
+            return self._get_default_report_params(product_name)
+
+    def _rebuild_user_query_from_history(self, agent, product_name: str) -> str:
+        """从 Agent 对话历史重建用户查询"""
+        if not hasattr(agent, 'chat_history'):
+            return f"推广{product_name}"
+
+        # 提取所有用户消息
+        user_messages = [
+            msg[1] for msg in agent.chat_history
+            if msg[0] == 'user'
+        ]
+
+        # 拼接成完整查询
+        if user_messages:
+            return ' '.join(user_messages)
+        else:
+            return f"推广{product_name}"
+
+    def _build_product_info_from_agent(self, agent, product_name: str) -> str:
+        """从 Agent 的 current_params 构建产品信息"""
+        params = getattr(agent, 'current_params', {})
+
+        parts = [f"产品名称: {product_name}"]
+
+        # 提取分类信息
+        if hasattr(agent, 'category_info') and agent.category_info:
+            category = agent.category_info.get('category_name', '未知')
+            if category != '未知':
+                parts.append(f"产品类目: {category}")
+
+        # 提取国家
+        country = params.get('country_name', '全部')
+        if country != '全部':
+            parts.append(f"目标市场: {country}")
+
+        # 粉丝范围
+        followers_min = params.get('followers_min')
+        followers_max = params.get('followers_max')
+        if followers_min or followers_max:
+            range_str = f"{followers_min or '0'}-{followers_max or '∞'}"
+            parts.append(f"粉丝范围: {range_str}")
+
+        # 粉丝性别
+        gender = params.get('followers_gender', 'all')
+        if gender != 'all':
+            gender_map = {'male': '男性', 'female': '女性'}
+            parts.append(f"目标粉丝: {gender_map.get(gender, gender)}")
+
+        return ', '.join(parts)
+
+    def _get_default_report_params(self, product_name: str) -> dict:
+        """获取默认报告参数（兜底方案）"""
+        return {
+            'user_query': f"推广{product_name}",
+            'target_count': 10,
+            'product_info': f"产品名称: {product_name}"
+        }
+
+
 def get_all_tools() -> List[BaseTool]:
     """获取所有工具的列表"""
     return [
@@ -903,8 +1081,9 @@ def get_all_tools() -> List[BaseTool]:
         AnalyzeQuantityTool(),            # 分析数量缺口
         SuggestAdjustmentsTool(),         # 生成调整建议
         GetSortSuffixTool(),
-        ScrapeInfluencersTool(),          # 搜索并保存达人候选
-        ProcessInfluencerListTool()       # 批量获取达人详细数据
+        SubmitSearchTaskTool(),           # 提交后台搜索任务（新增）
+        ScrapeInfluencersTool(),          # 搜索并保存达人候选（保留用于兼容）
+        ProcessInfluencerListTool()       # 批量获取达人详细数据（保留用于兼容）
     ]
 
 

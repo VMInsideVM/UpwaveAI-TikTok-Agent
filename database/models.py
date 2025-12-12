@@ -48,6 +48,8 @@ class ChatSession(Base):
     # Relationships
     user = relationship("User", back_populates="sessions")
     messages = relationship("Message", back_populates="session", cascade="all, delete-orphan", order_by="Message.created_at")
+    # TODO: 添加 cascade="all, delete-orphan" 以自动删除关联报告（需要数据库迁移）
+    # 当前在 session_manager_db.py 的 delete_session 中手动删除报告
     report = relationship("Report", back_populates="session", uselist=False)
 
     def __repr__(self):

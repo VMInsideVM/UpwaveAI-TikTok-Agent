@@ -153,3 +153,74 @@ async def get_optional_user(
 
     except Exception:
         return None
+
+
+async def get_user_from_token_param(
+    token: Optional[str] = None,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    从 URL 参数或 Authorization 头中提取用户（用于需要在新窗口打开的场景）
+
+    Args:
+        token: URL 查询参数中的令牌
+        credentials: HTTP Authorization 头中的凭据
+        db: 数据库会话
+
+    Returns:
+        User: 当前用户对象
+
+    Raises:
+        HTTPException: 未提供令牌或令牌无效
+    """
+    # 优先从 Authorization 头获取令牌
+    access_token = None
+    if credentials:
+        access_token = credentials.credentials
+    elif token:
+        access_token = token
+
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 解码令牌
+    payload = decode_token(access_token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 检查令牌类型
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="令牌类型错误",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 获取用户 ID
+    user_id: str = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="令牌中缺少用户信息",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 从数据库查询用户
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user

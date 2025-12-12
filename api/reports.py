@@ -13,7 +13,7 @@ import json
 
 from database.connection import get_db
 from database.models import Report, User, UserUsage, ChatSession
-from auth.dependencies import get_current_user, get_current_admin_user
+from auth.dependencies import get_current_user, get_current_admin_user, get_user_from_token_param
 from background.report_queue import report_queue
 
 router = APIRouter(prefix="/api/reports", tags=["报告"])
@@ -184,14 +184,18 @@ async def list_user_reports(
     return result
 
 
-@router.get("/{report_id}")
-async def get_report(
+@router.get("/{report_id}/view")
+async def view_report(
     report_id: str,
-    current_user: User = Depends(get_current_user),
+    token: Optional[str] = None,
+    current_user: User = Depends(get_user_from_token_param),
     db: Session = Depends(get_db)
 ):
     """
-    获取报告（访问控制）
+    查看报告HTML文件（访问控制）
+
+    支持通过 URL 参数传递 token（用于在新窗口打开）
+    也支持通过 Authorization 头传递 token
 
     只有报告所有者或管理员可以访问
     """
@@ -210,27 +214,75 @@ async def get_report(
             detail="无权访问此报告"
         )
 
-    # 如果报告未完成，返回状态信息
+    # 检查报告状态
     if report.status != "completed":
-        return {
-            "report_id": report.report_id,
-            "status": report.status,
-            "error_message": report.error_message,
-            "message": "报告尚未完成"
-        }
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"报告尚未完成，当前状态: {report.status}"
+        )
 
-    # 返回 HTML 文件
-    if not os.path.exists(report.report_path):
+    # 检查文件是否存在
+    if not report.report_path or not os.path.exists(report.report_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="报告文件不存在"
         )
 
+    print(f"📄 返回报告文件: {report.report_path}")
+
+    # 返回 HTML 文件
     return FileResponse(
         report.report_path,
         media_type="text/html",
         filename=f"{report.title}.html"
     )
+
+
+@router.get("/{report_id}")
+async def get_report_detail(
+    report_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取报告详情（JSON格式）
+
+    只有报告所有者或管理员可以访问
+    """
+    report = db.query(Report).filter(Report.report_id == report_id).first()
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="报告不存在"
+        )
+
+    # 访问控制
+    if report.user_id != current_user.user_id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权访问此报告"
+        )
+
+    # 检查文件是否存在
+    file_exists = False
+    if report.report_path and report.status == "completed":
+        file_exists = os.path.exists(report.report_path)
+
+    print(f"📄 获取报告详情: {report_id}, status={report.status}, file_exists={file_exists}")
+
+    # 返回JSON格式的报告详情
+    return {
+        "report_id": report.report_id,
+        "title": report.title,
+        "status": report.status,
+        "file_path": report.report_path,
+        "file_exists": file_exists,
+        "error_message": report.error_message,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "completed_at": report.completed_at.isoformat() if report.completed_at else None,
+        "message": "报告详情获取成功"
+    }
 
 
 @router.get("/{report_id}/status", response_model=ReportStatusResponse)

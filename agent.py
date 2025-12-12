@@ -25,10 +25,22 @@ load_dotenv()
 class TikTokInfluencerAgent:
     """TikTok 达人推荐智能 Agent"""
 
-    def __init__(self):
-        """初始化 Agent"""
+    def __init__(self, user_id: Optional[str] = None, session_id: Optional[str] = None):
+        """
+        初始化 Agent
+
+        Args:
+            user_id: 用户 ID，用于后台任务队列
+            session_id: 会话 ID，用于创建报告记录
+        """
+        self.user_id = user_id  # 存储用户 ID
+        self.session_id = session_id  # 存储会话 ID
         self.llm = self._init_llm()
         self.tools = get_all_tools()
+
+        # 为需要 user_id/session_id 的工具设置参数
+        self._set_context_for_tools()
+
         self.agent = self._create_agent()
         self.scraped_dataframes = []  # 存储爬取的数据
         self.current_product = None  # 当前商品名
@@ -44,6 +56,16 @@ class TikTokInfluencerAgent:
 
         # 设置全局 agent 实例，供工具访问
         set_agent_instance(self)
+
+    def _set_context_for_tools(self):
+        """为需要 user_id/session_id 的工具设置上下文"""
+        for tool in self.tools:
+            # 检查工具是否有 user_id 属性
+            if hasattr(tool, 'user_id'):
+                tool.user_id = self.user_id
+            # 检查工具是否有 session_id 属性
+            if hasattr(tool, 'session_id'):
+                tool.session_id = self.session_id
 
     def _init_llm(self) -> ChatOpenAI:
         """初始化 LLM"""
@@ -167,25 +189,38 @@ class TikTokInfluencerAgent:
      a. 对每个排序维度，使用 get_sort_suffix 获取 URL 后缀
      b. 将后缀追加到之前构建的完整 URL（基础 URL + 分类后缀）
      c. 将所有完整 URL 收集到一个列表中
+   - **❌ 注意**: 这些 URL 仅供内部使用，**绝对不要**在回复中向用户展示任何 URL
+   - **排序处理完成后，主动询问用户**:
+     "✅ 好的，已为您选择【排序方式名称】排序。
 
-11. **搜索达人候选**:
+     现在可以为您提交搜索任务了！系统将在后台为您搜索和分析约 X 个达人的数据。
+
+     请输入【确认】开始搜索，或继续调整筛选条件。"
+   - **等待用户确认**
+
+11. **提交搜索任务并结束对话**:
+   - **触发条件**: 用户输入"确认"、"开始"、"提交"、"好的"等确认词汇
    - **计算爬取页数**:
      * 目标页数 = 用户需要的达人数量(X 个达人就爬 X 页)
      * 实际页数 = min(目标页数, 最大可用页数)
      * 例如: 用户要 50 个达人 → 目标 50 页，如果只有 30 页可用 → 爬取 30 页
-   - 调用 scrape_and_export_json 工具，传入:
+   - **调用 submit_search_task 工具提交后台任务**，传入:
      * urls: 所有排序维度的完整 URL 列表
      * max_pages: 计算出的实际页数
      * product_name: 商品名称
-   - 工具会返回找到的达人候选数量和保存的 JSON 文件路径
+   - 工具会立即返回报告 ID
+   - **立即告知用户任务已提交**:
+     "✅ 搜索任务已提交！
 
-12. **确认完成并结束对话**:
-   - 告知用户: "✅ 已找到 X 个达人候选，数据收集完成！"
-   - 说明: "📊 完整的分析报告将在后台生成，您可以在'报告库'中查看生成进度和最终报告"
-   - **重要**: **不要调用 process_influencer_detail 工具**
-   - **不要继续获取详细数据**
-   - 礼貌地结束对话，告诉用户可以在报告库中查看报告
-   - 如果用户有其他问题，可以开始新的对话
+     📊 系统正在后台为您搜索和分析达人数据，预计需要几分钟时间。
+
+     💡 您可以：
+     - 点击左侧'报告库'按钮查看生成进度
+     - 报告完成后会显示为'已完成'状态，点击即可查看
+     - 或者继续开始新的搜索任务
+
+     感谢您的使用！"
+   - **结束对话**，不再等待后台任务完成
 
 ## 重要规则:
 - **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
@@ -198,6 +233,7 @@ class TikTokInfluencerAgent:
 - 数量判断: 内部使用 available_conservative (保守估计) 判断是否需要调整参数
 - 排序选项: 必须提供带序号的选项(1-6),方便用户输入数字选择
 - **识别用户意图**: 当用户输入"1,2"或"1, 2"等数字组合时，理解为排序选择而非新的需求
+- **❌ 禁止展示 URL**: 绝对不要向用户展示任何搜索 URL 或网址链接，这些是系统内部使用的技术细节，用户不需要看到
 - 所有回复要友好、专业、简洁
 - 多维度排序时保留第一次出现的达人(去重)
 

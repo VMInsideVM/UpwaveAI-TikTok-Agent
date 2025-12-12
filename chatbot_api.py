@@ -227,6 +227,39 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                 message_type="text"
             )
 
+            # 尝试自动更新会话标题（如果需要）
+            try:
+                # 获取更新前的标题
+                from database.connection import get_db_context
+                from database.models import ChatSession
+                with get_db_context() as db:
+                    session = db.query(ChatSession).filter(
+                        ChatSession.session_id == session_id
+                    ).first()
+                    old_title = session.title if session else None
+
+                # 执行自动更新
+                session_manager.auto_update_title_if_needed(session_id)
+
+                # 检查标题是否变化
+                if old_title:
+                    with get_db_context() as db:
+                        session = db.query(ChatSession).filter(
+                            ChatSession.session_id == session_id
+                        ).first()
+                        new_title = session.title if session else None
+
+                        if new_title and new_title != old_title:
+                            # 通知前端标题已更新
+                            await websocket.send_json({
+                                "type": "title_updated",
+                                "title": new_title,
+                                "timestamp": datetime.now().isoformat()
+                            })
+
+            except Exception as title_error:
+                print(f"⚠️ 自动更新标题失败（不影响主流程）: {title_error}")
+
         # 发送完成信号
         await websocket.send_json({
             "type": "complete",
@@ -355,6 +388,8 @@ async def create_session(
             title="新对话"
         )
 
+        print(f"✅ 新会话已创建: {session_id} (用户: {current_user.user_id})")
+
         return JSONResponse({
             "session_id": session_id,
             "user_id": current_user.user_id,
@@ -372,22 +407,82 @@ async def delete_session(
     current_user: User = Depends(get_current_user)
 ):
     """删除指定会话（需要认证和权限验证）"""
+    print(f"🗑️ 收到删除请求: session_id={session_id}, user_id={current_user.user_id}")
+
     # 验证用户是否有权删除此会话
-    if not session_manager.verify_session_access(session_id, current_user.user_id):
+    has_access = session_manager.verify_session_access(session_id, current_user.user_id)
+    print(f"   权限验证结果: {has_access}")
+
+    if not has_access:
+        print(f"❌ 用户 {current_user.user_id} 无权删除会话 {session_id}")
         raise HTTPException(
             status_code=403,
             detail="无权删除此会话"
         )
 
     success = session_manager.delete_session(session_id)
+    print(f"   删除结果: {success}")
 
     if not success:
+        print(f"❌ 会话 {session_id} 不存在")
         raise HTTPException(status_code=404, detail="会话不存在")
 
+    print(f"✅ 会话 {session_id} 已删除")
     return JSONResponse({
         "message": "会话已删除",
         "session_id": session_id
     })
+
+
+@app.patch("/api/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    request: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """更新会话信息（如标题）"""
+    print(f"✏️ 收到重命名请求: session_id={session_id}, user_id={current_user.user_id}")
+
+    # 验证用户是否有权修改此会话
+    has_access = session_manager.verify_session_access(session_id, current_user.user_id)
+    print(f"   权限验证结果: {has_access}")
+
+    if not has_access:
+        print(f"❌ 用户 {current_user.user_id} 无权修改会话 {session_id}")
+        raise HTTPException(
+            status_code=403,
+            detail="无权修改此会话"
+        )
+
+    try:
+        title = request.get('title')
+        if not title:
+            print(f"❌ 标题为空")
+            raise HTTPException(status_code=400, detail="标题不能为空")
+
+        print(f"   新标题: {title}")
+
+        # 更新会话标题
+        success = session_manager.update_session_title(session_id, title)
+
+        if not success:
+            print(f"❌ 会话 {session_id} 不存在")
+            raise HTTPException(status_code=404, detail="会话不存在")
+
+        print(f"✅ 会话 {session_id} 重命名成功")
+        return JSONResponse({
+            "message": "会话已更新",
+            "session_id": session_id,
+            "title": title
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 更新失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
 
 
 @app.get("/api/sessions/{session_id}/status")
@@ -432,6 +527,179 @@ async def list_user_sessions(
         "total": len(sessions),
         "sessions": sessions
     })
+
+
+@app.get("/api/reports")
+async def get_user_reports(
+    current_user: User = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0
+):
+    """获取当前用户的所有报告"""
+    try:
+        from database.connection import get_db_context
+        from database.models import Report
+        from sqlalchemy import desc
+
+        with get_db_context() as db:
+            # 查询当前用户的报告，按创建时间倒序
+            reports = db.query(Report).filter(
+                Report.user_id == current_user.user_id
+            ).order_by(
+                desc(Report.created_at)  # ⭐ 修复：使用 created_at 而不是 updated_at
+            ).offset(offset).limit(limit).all()
+
+            # 转换为字典列表
+            reports_data = []
+            for report in reports:
+                # 从 meta_data 中提取 type 字段
+                report_type = report.meta_data.get('type', 'unknown') if report.meta_data else 'unknown'
+
+                reports_data.append({
+                    "report_id": report.report_id,
+                    "title": report.title,
+                    "status": report.status,
+                    "report_type": report_type,  # ⭐ 从 meta_data 中提取
+                    "file_path": report.report_path,  # ⭐ 修复：使用正确的字段名
+                    "error_message": report.error_message,
+                    "created_at": report.created_at.isoformat() if report.created_at else None,
+                    "completed_at": report.completed_at.isoformat() if report.completed_at else None
+                })
+
+            return JSONResponse({
+                "total": len(reports_data),
+                "reports": reports_data
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"获取报告列表失败: {str(e)}"}
+        )
+
+
+@app.get("/api/reports/{report_id}/view")
+async def view_report(
+    report_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """查看报告HTML文件"""
+    try:
+        from database.connection import get_db_context
+        from database.models import Report
+        from fastapi.responses import FileResponse
+        import os
+
+        with get_db_context() as db:
+            # 查询报告
+            report = db.query(Report).filter(
+                Report.report_id == report_id
+            ).first()
+
+            if not report:
+                raise HTTPException(status_code=404, detail="报告不存在")
+
+            # 验证权限
+            if report.user_id != current_user.user_id and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="无权访问此报告")
+
+            # 检查报告状态
+            if report.status != 'completed':
+                raise HTTPException(status_code=400, detail=f"报告尚未完成，当前状态: {report.status}")
+
+            # 检查文件路径
+            if not report.report_path:
+                raise HTTPException(status_code=404, detail="报告文件路径不存在")
+
+            # 处理路径（支持反斜杠和正斜杠）
+            file_path = report.report_path.replace('\\', os.sep).replace('/', os.sep)
+
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                print(f"❌ 报告文件不存在: {file_path}")
+                raise HTTPException(status_code=404, detail=f"报告文件不存在: {file_path}")
+
+            print(f"📄 返回报告文件: {file_path}")
+
+            # 返回HTML文件
+            return FileResponse(
+                path=file_path,
+                media_type='text/html',
+                filename=os.path.basename(file_path)
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 查看报告失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"查看报告失败: {str(e)}")
+
+
+@app.get("/api/reports/{report_id}")
+async def get_report_detail(
+    report_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """获取单个报告的详细信息"""
+    try:
+        from database.connection import get_db_context
+        from database.models import Report
+        import os
+
+        print(f"📄 获取报告详情: {report_id}")
+
+        with get_db_context() as db:
+            # 查询报告
+            report = db.query(Report).filter(
+                Report.report_id == report_id
+            ).first()
+
+            if not report:
+                raise HTTPException(status_code=404, detail="报告不存在")
+
+            # 验证权限
+            if report.user_id != current_user.user_id and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="无权访问此报告")
+
+            # 检查报告文件是否存在
+            report_file_exists = False
+            if report.report_path and report.status == 'completed':
+                # 处理路径（支持反斜杠和正斜杠）
+                file_path = report.report_path.replace('\\', os.sep).replace('/', os.sep)
+                report_file_exists = os.path.exists(file_path)
+                print(f"   报告路径: {file_path}")
+                print(f"   文件存在: {report_file_exists}")
+
+            # 从 meta_data 中提取信息
+            report_type = report.meta_data.get('type', 'unknown') if report.meta_data else 'unknown'
+
+            result = {
+                "report_id": report.report_id,
+                "title": report.title,
+                "status": report.status,
+                "report_type": report_type,
+                "file_path": report.report_path,
+                "file_exists": report_file_exists,
+                "error_message": report.error_message,
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+                "completed_at": report.completed_at.isoformat() if report.completed_at else None,
+                "message": "报告详情获取成功"
+            }
+
+            print(f"✅ 返回报告详情: status={result['status']}, file_exists={result['file_exists']}")
+            return JSONResponse(result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 获取报告详情失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"获取报告详情失败: {str(e)}")
 
 
 # ==================== WebSocket 端点 ====================
@@ -593,6 +861,14 @@ def start_server(host: str = "127.0.0.1", port: int = 8001):
 ║     🤖 TikTok 达人推荐聊天机器人 API 服务启动中...      ║
 ╚══════════════════════════════════════════════════════════╝
     """)
+
+    # 初始化后台任务队列
+    print("🔧 初始化后台任务队列...")
+    try:
+        from background_tasks import task_queue
+        print("✅ 后台任务队列已就绪")
+    except Exception as e:
+        print(f"⚠️  警告: 后台任务队列初始化失败: {e}")
 
     # 检查 Playwright API
     print("🔍 检查 Playwright API 服务...")
