@@ -246,12 +246,17 @@ async def navigate(req: NavigateRequest):
         print(f"🌐 正在访问: {req.url}")
 
         if req.wait_for_load:
-            await _page.goto(req.url, wait_until="networkidle", timeout=60000)
+            # 使用 domcontentloaded 替代 networkidle，更可靠
+            await _page.goto(req.url, wait_until="domcontentloaded", timeout=30000)
+            # 等待表格容器出现
+            try:
+                await _page.wait_for_selector('.ant-table-container', timeout=10000)
+            except:
+                print("   ⚠️ 未检测到表格容器，继续执行...")
+            await asyncio.sleep(2)
         else:
             await _page.goto(req.url, timeout=30000)
-
-        # 等待表格加载
-        await asyncio.sleep(2)
+            await asyncio.sleep(2)
 
         print(f"✅ 访问成功: {req.url}")
 
@@ -503,6 +508,10 @@ async def process_influencer_list_stream_endpoint(
 
             start_time = datetime.now()
 
+            # ⭐ 新增：专门统计实际请求的耗时
+            api_request_time = 0.0  # 只统计实际 API 请求的总耗时
+            api_request_count = 0   # 实际 API 请求的次数
+
             # 创建 influencer 目录
             influencer_dir = "influencer"
             os.makedirs(influencer_dir, exist_ok=True)
@@ -515,10 +524,14 @@ async def process_influencer_list_stream_endpoint(
                     cached_count += 1
                 else:
                     # 重新爬取
+                    request_start = datetime.now()  # ⭐ 记录单次请求开始时间
                     try:
                         result = await fetch_influencer_detail_async(influencer_id)
                         if result["success"]:
                             fetched_count += 1
+                            api_request_count += 1
+                            # ⭐ 累计实际请求耗时
+                            api_request_time += (datetime.now() - request_start).total_seconds()
                         else:
                             failed_ids.append(influencer_id)
                             failed_count += 1
@@ -530,8 +543,23 @@ async def process_influencer_list_stream_endpoint(
                     if idx < total_count:
                         await asyncio.sleep(2)
 
-                # 推送进度事件
+                # 计算预估剩余时间
                 elapsed = (datetime.now() - start_time).total_seconds()
+
+                # ⭐ 使用实际请求的平均耗时计算剩余时间
+                if api_request_count > 0:
+                    avg_request_time = api_request_time / api_request_count
+                    remaining_uncached = total_count - idx - (cached_count * (total_count - idx) // idx if idx > 0 else 0)
+                    # 更准确的方式：假设剩余达人的缓存比例和已处理的一样
+                    remaining_total = total_count - idx
+                    estimated_cache_ratio = cached_count / idx if idx > 0 else 0
+                    remaining_requests = int(remaining_total * (1 - estimated_cache_ratio))
+                    estimated_remaining_seconds = int(remaining_requests * avg_request_time)
+                else:
+                    # 如果还没有实际请求，无法估算
+                    estimated_remaining_seconds = None
+
+                # 推送进度事件
                 yield f"data: {json.dumps({
                     'type': 'progress',
                     'current': idx,
@@ -539,7 +567,9 @@ async def process_influencer_list_stream_endpoint(
                     'success': fetched_count,
                     'cached': cached_count,
                     'failed': failed_count,
-                    'elapsed_seconds': int(elapsed)
+                    'elapsed_seconds': int(elapsed),
+                    'estimated_remaining_seconds': estimated_remaining_seconds,  # ⭐ 新增字段
+                    'avg_request_time': round(api_request_time / api_request_count, 1) if api_request_count > 0 else None  # ⭐ 平均请求时间
                 })}\n\n"
 
             # 计算总耗时
@@ -874,8 +904,8 @@ async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
         # 设置响应监听器
         _page.on("response", handle_response)
 
-        # 访问目标网页（使用 networkidle 确保基础数据加载完成）
-        await _page.goto(target_url, wait_until="networkidle", timeout=60000)
+        # 访问目标网页（使用 domcontentloaded，更稳定）
+        await _page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
 
         # 等待页面稳定
         await asyncio.sleep(2)
@@ -1018,7 +1048,12 @@ async def get_data_row_keys(url: str, max_pages: int) -> List[str]:
     try:
         # 导航到指定 URL
         print(f"🌐 正在访问: {url}")
-        await _page.goto(url, wait_until="networkidle", timeout=60000)
+        await _page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        # 等待表格容器出现
+        try:
+            await _page.wait_for_selector('.ant-table-container', timeout=10000)
+        except:
+            print("   ⚠️ 未检测到表格容器")
         await asyncio.sleep(2)
 
         # 获取当前URL
@@ -1047,7 +1082,12 @@ async def get_data_row_keys(url: str, max_pages: int) -> List[str]:
                 print(f"      URL: {page_url}")
 
             # 导航到当前页
-            await _page.goto(page_url, wait_until="networkidle", timeout=60000)
+            await _page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
+            # 等待表格出现
+            try:
+                await _page.wait_for_selector('.ant-table-container', timeout=5000)
+            except:
+                pass
 
             # 额外等待,确保页面完全加载
             await asyncio.sleep(1)
@@ -1116,7 +1156,12 @@ async def get_table_data_as_dataframe(url, max_pages=None):
     try:
         # 导航到指定 URL
         print(f"🌐 正在访问: {url}")
-        await _page.goto(url, wait_until="networkidle", timeout=60000)
+        await _page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        # 等待表格容器出现
+        try:
+            await _page.wait_for_selector('.ant-table-container', timeout=10000)
+        except:
+            print("   ⚠️ 未检测到表格容器")
         await asyncio.sleep(2)
 
         # 如果没有指定max_pages，则自动获取实际最大页码
@@ -1151,7 +1196,12 @@ async def get_table_data_as_dataframe(url, max_pages=None):
                 print(f"      URL: {page_url}")
 
             # 导航到当前页
-            await _page.goto(page_url, wait_until="networkidle", timeout=60000)
+            await _page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
+            # 等待表格出现
+            try:
+                await _page.wait_for_selector('.ant-table-container', timeout=5000)
+            except:
+                pass
 
             # 额外等待,确保页面完全加载
             await asyncio.sleep(1)

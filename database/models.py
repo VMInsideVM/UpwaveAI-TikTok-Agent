@@ -147,7 +147,15 @@ class Report(Base):
     title = Column(String(200), nullable=False)
     report_path = Column(String(500), nullable=False)  # 报告文件路径
     status = Column(String(20), default="queued", nullable=False, index=True)  # queued, generating, completed, failed
-    estimated_time = Column(Integer)  # 预计生成时间（秒）
+    progress = Column(Integer, default=0)  # 总进度百分比 (0-100) - 保留用于兼容性
+
+    # 新增：两个独立的进度条
+    scraping_progress = Column(Integer, default=0)  # 爬取达人数据的进度 (0-100)
+    scraping_eta = Column(Integer)  # 爬取阶段预计剩余时间（秒）
+    report_progress = Column(Integer, default=0)  # 报告生成的进度 (0-100)
+    report_eta = Column(Integer)  # 报告生成阶段预计剩余时间（秒）
+
+    estimated_time = Column(Integer)  # 总预计生成时间（秒）- 保留用于兼容性
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime)
     error_message = Column(Text)

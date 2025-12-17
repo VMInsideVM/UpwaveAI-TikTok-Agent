@@ -6,6 +6,7 @@
 import asyncio
 import threading
 import uuid
+import re
 from typing import Dict, List, Optional
 from datetime import datetime
 import json
@@ -120,78 +121,142 @@ class BackgroundTaskQueue:
             )
 
     def _execute_scraping_task(self, task_info: Dict):
-        """执行完整的爬取任务流程"""
-        from agent_tools import ScrapeInfluencersTool, ProcessInfluencerListTool
+        """
+        执行完整的爬取任务流程
 
+        进度分配:
+        - 阶段 1: 搜索达人候选列表 (scraping_progress: 0-20%)
+        - 阶段 2: 获取达人详细信息 (scraping_progress: 20-100%)
+        - 阶段 3: 生成分析报告 (report_progress: 0-100%)
+        """
+        import os
+        import json
+        import requests
+        from agent_tools import call_api
+        import time
+
+        report_id = task_info['report_id']
+        stage_start_time = time.time()
+
+        # ==================== 阶段 1: 搜索达人候选列表 (scraping 0-20%) ====================
         print(f"📥 步骤 1/3: 搜索达人候选列表...")
+        self._update_scraping_progress(report_id, 5, eta=None)
 
-        # 步骤 1: 爬取达人候选列表
-        scrape_tool = ScrapeInfluencersTool()  # ⭐ 修复：正确的工具名
-        result = scrape_tool._run(
-            urls=task_info['urls'],
-            max_pages=task_info['max_pages'],
-            product_name=task_info['product_name']
+        # 直接调用 API，绕过工具层的确认检查
+        result = call_api(
+            "/scrape",
+            method="POST",
+            data={
+                "urls": task_info['urls'],
+                "max_pages": task_info['max_pages'],
+                "product_name": task_info['product_name']
+            },
+            timeout=len(task_info['urls']) * task_info['max_pages'] * 30
         )
 
-        # 解析候选列表结果
-        import re
-        match = re.search(r'成功获取 (\d+) 个达人候选', result)
-        if not match:
-            raise Exception("未能获取达人候选列表")
+        # 检查 API 响应
+        if not result.get("success"):
+            raise Exception("API 返回失败状态")
 
-        candidate_count = int(match.group(1))
+        candidate_count = result.get("total_rows", 0)
+        json_file_path = result.get("filepath", "")
 
-        # 查找 JSON 文件路径
-        match = re.search(r'数据已保存到: (.+\.json)', result)
-        if not match:
+        if candidate_count == 0:
+            raise Exception("未能获取达人候选列表（数量为0）")
+
+        if not json_file_path:
             raise Exception("未找到候选列表文件路径")
 
-        json_file_path = match.group(1)
-
         print(f"✅ 步骤 1/3 完成: 找到 {candidate_count} 个达人候选")
+        self._update_scraping_progress(report_id, 20, eta=None)
+
+        # ==================== 阶段 2: 获取达人详细信息 (scraping 20-100%) ====================
         print(f"📥 步骤 2/3: 获取达人详细信息...")
+        stage_start_time = time.time()  # 重置阶段开始时间
 
-        # 步骤 2: 获取达人详细信息
-        detail_tool = ProcessInfluencerListTool()
-        detail_result = detail_tool._run(
-            json_file_path=json_file_path,
-            cache_days=3  # 缓存 3 天
-        )
+        # 直接调用流式 API，捕获进度事件
+        from agent_tools import API_BASE_URL
 
-        # 解析详细信息结果
-        # 尝试多种格式匹配
-        match = re.search(r'共处理 (\d+) 个达人', detail_result)
-        if not match:
-            match = re.search(r'成功获取 (\d+) 个', detail_result)
-        if not match:
-            match = re.search(r'使用缓存 (\d+) 个', detail_result)
+        url = f"{API_BASE_URL}/process_influencer_list_stream"
+        params = {
+            "json_file_path": json_file_path,
+            "cache_days": 3
+        }
 
-        if not match:
-            # 如果只返回 "✅ 处理完成"，可能是全缓存且数量为 0
-            if "处理完成" in detail_result or "完成！" in detail_result:
-                print(f"⚠️ 步骤 2/3: 详细信息处理完成，但无法获取数量统计")
-                processed_count = candidate_count  # 使用候选列表数量作为估计
-            else:
-                raise Exception(f"获取详细信息失败，无法解析返回结果: {detail_result[:200]}")
-        else:
-            processed_count = int(match.group(1))
+        processed_count = 0
+        stats = None
 
-        print(f"✅ 步骤 2/3 完成: 获取了 {processed_count} 个达人的详细信息")
+        try:
+            with requests.get(url, params=params, stream=True, timeout=3600) as response:
+                response.raise_for_status()
+
+                for line in response.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith('data: '):
+                        continue
+
+                    event_data = line[6:]
+                    event = json.loads(event_data)
+
+                    if event["type"] == "init":
+                        total = event["total"]
+                        print(f"⏳ 共需处理 {total} 个达人")
+
+                    elif event["type"] == "progress":
+                        current = event["current"]
+                        total = event["total"]
+
+                        # 映射到 scraping 20-100% 的进度范围
+                        # 阶段 2 占 scraping 的 80%，所以：20% + (current/total * 80%)
+                        scraping_progress = int(20 + (current / total * 80))
+
+                        # 计算预计剩余时间
+                        elapsed = time.time() - stage_start_time
+                        if current > 0:
+                            avg_time_per_item = elapsed / current
+                            remaining_items = total - current
+                            eta_seconds = int(avg_time_per_item * remaining_items)
+                        else:
+                            eta_seconds = None
+
+                        self._update_scraping_progress(report_id, scraping_progress, eta=eta_seconds)
+
+                        # 显示进度条（保留原有的终端输出）
+                        percent = int(current / total * 100)
+                        bar_len = 30
+                        filled = int(bar_len * percent / 100)
+                        bar = '█' * filled + '░' * (bar_len - filled)
+
+                        eta_text = f" (预计剩余 {eta_seconds}秒)" if eta_seconds else ""
+                        print(f"处理进度: {bar} {percent}% ({current}/{total}){eta_text}")
+
+                    elif event["type"] == "complete":
+                        stats = event["stats"]
+                        processed_count = stats['total']
+                        print(f"✅ 步骤 2/3 完成: 获取了 {processed_count} 个达人的详细信息")
+                        self._update_scraping_progress(report_id, 100, eta=0)
+
+                    elif event["type"] == "error":
+                        raise Exception(f"处理失败: {event['message']}")
+
+        except requests.exceptions.Timeout:
+            raise Exception("处理超时，请稍后重试")
+        except requests.exceptions.ConnectionError:
+            raise Exception("无法连接到服务，请确认 API 服务已启动")
+
+        # ==================== 阶段 3: 生成分析报告 (report_progress 0-100%) ====================
         print(f"📥 步骤 3/3: 生成分析报告...")
+        stage_start_time = time.time()  # 重置阶段开始时间
+        self._update_report_agent_progress(report_id, 0, eta=None)
 
-        # 步骤 3: 调用 Report Agent 生成报告
-        import os
-
-        # 直接使用收集好的参数
+        # 准备报告参数
         report_params = task_info['report_params'].copy()
-
-        # 添加 JSON 文件名
         report_params['json_filename'] = os.path.basename(json_file_path)
 
-        # 调用 Report Agent
+        # 调用 Report Agent（内部会更新 report_progress 0-100%）
         report_html_path = self._generate_report(
-            report_id=task_info['report_id'],
-            report_params=report_params
+            report_id=report_id,
+            report_params=report_params,
+            stage_start_time=stage_start_time  # 传入开始时间用于ETA计算
         )
 
         print(f"✅ 步骤 3/3 完成: 报告已生成")
@@ -205,7 +270,7 @@ class BackgroundTaskQueue:
             self.tasks[task_info['task_id']]['report_html_path'] = report_html_path
             self.tasks[task_info['task_id']]['result'] = f"成功生成报告: {processed_count} 个达人"
 
-        # 更新数据库报告的文件路径（使用 HTML 报告路径）
+        # 更新数据库报告的文件路径
         if report_html_path:
             self._update_report_file_path(task_info['report_id'], report_html_path)
 
@@ -238,7 +303,86 @@ class BackgroundTaskQueue:
         except Exception as e:
             print(f"❌ 更新报告文件路径失败: {e}")
 
-    def _generate_report(self, report_id: str, report_params: Dict) -> str:
+    def _update_report_progress(self, report_id: str, progress: int):
+        """更新报告生成进度（兼容旧接口）"""
+        try:
+            with get_db_context() as db:
+                # 先查询报告是否存在
+                report = db.query(Report).filter(Report.report_id == report_id).first()
+                if not report:
+                    print(f"⚠️ 报告不存在: {report_id}")
+                    return
+
+                # 更新进度
+                report.progress = progress
+                db.commit()
+
+                # 验证更新
+                db.refresh(report)
+                print(f"📊 进度已更新到数据库: {progress}% (验证: {report.progress}%)")
+
+        except Exception as e:
+            print(f"⚠️ 更新进度失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _update_scraping_progress(self, report_id: str, progress: int, eta: Optional[int] = None):
+        """更新爬取阶段的进度和预计剩余时间"""
+        try:
+            with get_db_context() as db:
+                report = db.query(Report).filter(Report.report_id == report_id).first()
+                if not report:
+                    print(f"⚠️ 报告不存在: {report_id}")
+                    return
+
+                # 更新爬取进度和ETA
+                report.scraping_progress = progress
+                if eta is not None:
+                    report.scraping_eta = eta
+
+                # 同步更新总进度（scraping 占 60%）
+                report.progress = int(progress * 0.6)
+
+                db.commit()
+                db.refresh(report)
+
+                eta_text = f", ETA: {eta}秒" if eta is not None else ""
+                print(f"📊 爬取进度: {progress}%{eta_text}")
+
+        except Exception as e:
+            print(f"⚠️ 更新爬取进度失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _update_report_agent_progress(self, report_id: str, progress: int, eta: Optional[int] = None):
+        """更新报告生成阶段的进度和预计剩余时间"""
+        try:
+            with get_db_context() as db:
+                report = db.query(Report).filter(Report.report_id == report_id).first()
+                if not report:
+                    print(f"⚠️ 报告不存在: {report_id}")
+                    return
+
+                # 更新报告生成进度和ETA
+                report.report_progress = progress
+                if eta is not None:
+                    report.report_eta = eta
+
+                # 同步更新总进度（scraping 60% + report 40%）
+                report.progress = 60 + int(progress * 0.4)
+
+                db.commit()
+                db.refresh(report)
+
+                eta_text = f", ETA: {eta}秒" if eta is not None else ""
+                print(f"📊 报告生成进度: {progress}%{eta_text}")
+
+        except Exception as e:
+            print(f"⚠️ 更新报告生成进度失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _generate_report(self, report_id: str, report_params: Dict, stage_start_time: float) -> str:
         """
         调用 Report Agent 生成报告
 
@@ -249,22 +393,46 @@ class BackgroundTaskQueue:
                 - user_query: 用户查询
                 - target_count: 每层推荐数量
                 - product_info: 产品信息
+            stage_start_time: 阶段开始时间（用于计算ETA）
 
         Returns:
             report_html_path: 生成的 HTML 报告路径
+
+        进度说明:
+            Report Agent 内部使用 0-100% 的进度，直接映射到 report_progress
         """
         try:
+            import time
             from report_agent import TikTokInfluencerReportAgent
 
             # 创建 Report Agent 实例
             report_agent = TikTokInfluencerReportAgent()
 
-            # 调用生成方法
+            # 创建进度回调函数
+            def progress_callback(internal_progress: int):
+                """
+                Report Agent 的内部进度直接映射到 report_progress (0-100%)
+                同时计算并更新 ETA
+                """
+                # 计算预计剩余时间
+                elapsed = time.time() - stage_start_time
+                if internal_progress > 0:
+                    # 正确计算: 平均每个百分点的时间 * 剩余百分点
+                    avg_time_per_percent = elapsed / internal_progress
+                    remaining_percent = 100 - internal_progress
+                    eta_seconds = int(avg_time_per_percent * remaining_percent)
+                else:
+                    eta_seconds = None
+
+                self._update_report_agent_progress(report_id, internal_progress, eta=eta_seconds)
+
+            # 调用生成方法，传入进度回调
             report_html_path = report_agent.generate_report(
                 json_filename=report_params['json_filename'],
                 user_query=report_params['user_query'],
                 target_count=report_params['target_count'],
-                product_info=report_params['product_info']
+                product_info=report_params['product_info'],
+                progress_callback=progress_callback  # ⭐ 传入进度回调（含ETA计算）
             )
 
             return report_html_path
@@ -334,7 +502,7 @@ class BackgroundTaskQueue:
         return task_id
 
     def _create_report(self, user_id: str, product_name: str, session_id: str = None) -> str:
-        """在数据库中创建新报告记录"""
+        """在数据库中创建新报告记录（并扣除用户配额）"""
         try:
             with get_db_context() as db:
                 # 如果没有提供 session_id，使用默认值或从数据库获取用户最近的 session
@@ -348,17 +516,51 @@ class BackgroundTaskQueue:
                 if not session_id:
                     raise ValueError("无法找到用户会话")
 
+                # ⭐ 获取会话信息，使用会话标题作为报告标题
+                from database.models import ChatSession
+                session = db.query(ChatSession).filter(
+                    ChatSession.session_id == session_id
+                ).first()
+
+                if not session:
+                    raise ValueError(f"找不到会话: {session_id}")
+
+                # 使用会话标题作为报告标题（如果是"新对话"则使用产品名称）
+                if session.title and session.title != "新对话":
+                    report_title = session.title
+                else:
+                    report_title = f"{product_name} - 达人推荐报告"
+
+                # ⭐ 新增：检查并扣除用户配额
+                from database.models import UserUsage
+                usage = db.query(UserUsage).filter(
+                    UserUsage.user_id == user_id
+                ).first()
+
+                if not usage:
+                    raise ValueError(f"找不到用户 {user_id} 的配额信息")
+
+                if usage.remaining_quota <= 0:
+                    raise ValueError(f"用户配额不足，剩余: {usage.remaining_quota}")
+
+                # 创建报告，使用会话标题
                 report = Report(
                     user_id=user_id,
                     session_id=session_id,
-                    title=f"{product_name} - 达人推荐报告",
+                    title=report_title,
                     report_path="",  # 初始为空，后续更新
                     status='queued',
                     meta_data={'product_name': product_name, 'type': 'influencer_search'}
                 )
                 db.add(report)
+
+                # ⭐ 扣除配额（失败时会自动回滚）
+                usage.used_count += 1
                 db.commit()
                 db.refresh(report)
+
+                print(f"✅ 用户 {user_id} 配额已扣除: {usage.used_count}/{usage.total_quota} (剩余: {usage.remaining_quota})")
+
                 return report.report_id
 
         except Exception as e:

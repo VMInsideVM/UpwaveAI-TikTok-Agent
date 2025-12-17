@@ -164,6 +164,7 @@ class BuildURLInput(BaseModel):
     followers_age: str = Field(default="all", description="粉丝年龄段")
     new_followers_min: Optional[int] = Field(default=None, description="最小新增粉丝")
     new_followers_max: Optional[int] = Field(default=None, description="最大新增粉丝")
+    target_influencer_count: Optional[int] = Field(default=None, description="用户需要的达人数量（用于后续报告生成）")
 
 
 class CategoryInput(BaseModel):
@@ -203,6 +204,7 @@ class BuildURLTool(BaseTool):
     - promotion_channel: "all"(全部)/"video"(短视频)/"live"(直播)
     - affiliate_check: True=只显示联盟达人, False=不限制
     - followers_min/max: 粉丝数范围,如 100000, 500000
+    - target_influencer_count: 用户需要的达人数量（必须传入！用于后续报告生成）
     """
     args_schema: type[BaseModel] = BuildURLInput
 
@@ -219,7 +221,8 @@ class BuildURLTool(BaseTool):
         followers_gender: str = "all",
         followers_age: str = "all",
         new_followers_min: Optional[int] = None,
-        new_followers_max: Optional[int] = None
+        new_followers_max: Optional[int] = None,
+        target_influencer_count: Optional[int] = None
     ) -> str:
         """执行 URL 构建"""
         try:
@@ -238,6 +241,11 @@ class BuildURLTool(BaseTool):
                 agent.current_params['followers_age'] = followers_age
                 agent.current_params['new_followers_min'] = new_followers_min
                 agent.current_params['new_followers_max'] = new_followers_max
+
+                # ⭐ 存储目标达人数量
+                if target_influencer_count is not None:
+                    agent.target_influencer_count = target_influencer_count
+                    agent.current_params['target_count'] = target_influencer_count
 
             # 处理粉丝数范围
             followers = []
@@ -649,6 +657,9 @@ class ReviewParametersTool(BaseTool):
     - category_info: 商品分类信息（可选）
 
     返回格式化的参数摘要，并询问用户是否满意。
+
+    ⚠️ 【强制要求】调用此工具后，你**必须**将返回的完整文本逐字逐句地转发给用户，
+    不得进行任何总结、省略、改写或添加额外内容！这是系统强制要求，违反将导致流程错误！
     """
     args_schema: type[BaseModel] = ReviewParametersInput
 
@@ -736,6 +747,15 @@ class ReviewParametersTool(BaseTool):
             output += "请确认以上参数是否满意？\n"
             output += "• 如果满意，请回复：好的/确认/可以/开始\n"
             output += "• 如果需要调整，请告诉我要修改哪些参数\n"
+
+            # ⭐ 记录工具调用到响应验证器
+            try:
+                from response_validator import get_validator
+                validator = get_validator(debug=False)  # 不启用调试模式，避免过多日志
+                validator.record_tool_call('review_parameters', output)
+            except Exception as log_error:
+                # 记录失败不影响工具执行
+                print(f"⚠️ 记录工具调用到验证器失败: {log_error}")
 
             return output
 
@@ -867,6 +887,8 @@ class ProcessInfluencerListTool(BaseTool):
                         cached = event["cached"]
                         failed = event["failed"]
                         elapsed = event["elapsed_seconds"]
+                        estimated_remaining = event.get("estimated_remaining_seconds")  # ⭐ 新字段
+                        avg_request_time = event.get("avg_request_time")  # ⭐ 平均请求时间
 
                         # 计算进度
                         percent = int(current / total * 100)
@@ -885,13 +907,20 @@ class ProcessInfluencerListTool(BaseTool):
                             filled = int(bar_len * percent / 100)
                             bar = '█' * filled + '░' * (bar_len - filled)
 
-                            # 计算预估时间
-                            if current > 0 and elapsed > 0:
+                            # ⭐ 使用服务器返回的准确预估时间
+                            if estimated_remaining is not None:
+                                elapsed_str = self._format_time(elapsed)
+                                remaining_str = self._format_time(estimated_remaining)
+                                time_info = f"⏱️ 已用时: {elapsed_str} | 预计剩余: {remaining_str}"
+                                if avg_request_time is not None:
+                                    time_info += f" (单个请求: ~{avg_request_time}秒)"
+                            elif current > 0 and elapsed > 0:
+                                # 回退：使用简单平均（当服务器未提供预估时）
                                 avg_time = elapsed / current
                                 remaining = int((total - current) * avg_time)
                                 elapsed_str = self._format_time(elapsed)
                                 remaining_str = self._format_time(remaining)
-                                time_info = f"⏱️ 已用时: {elapsed_str} | 预计剩余: {remaining_str}"
+                                time_info = f"⏱️ 已用时: {elapsed_str} | 预计剩余: {remaining_str} (粗略估算)"
                             else:
                                 time_info = f"⏱️ 处理中..."
 
@@ -1078,8 +1107,9 @@ class SubmitSearchTaskTool(BaseTool):
             # 1. 重建用户查询（从对话历史）
             user_query = self._rebuild_user_query_from_history(agent, product_name)
 
-            # 2. 固定 target_count = 10（每层 10 个达人）
-            target_count = 10
+            # 2. ⭐ 从 Agent 获取用户请求的达人数量（不再硬编码！）
+            target_count = agent.target_influencer_count if agent.target_influencer_count else 10
+            print(f"📊 报告生成使用的目标达人数: {target_count} (来源: {'用户指定' if agent.target_influencer_count else '默认值'})")
 
             # 3. 构建产品信息字符串
             product_info = self._build_product_info_from_agent(agent, product_name)
@@ -1099,11 +1129,20 @@ class SubmitSearchTaskTool(BaseTool):
         if not hasattr(agent, 'chat_history'):
             return f"推广{product_name}"
 
-        # 提取所有用户消息
-        user_messages = [
-            msg[1] for msg in agent.chat_history
-            if msg[0] == 'user'
-        ]
+        # 提取所有用户消息（LangChain 1.0 使用 Message 对象）
+        user_messages = []
+        for msg in agent.chat_history:
+            # 检查是否是 HumanMessage
+            if hasattr(msg, 'type') and msg.type == 'human':
+                if hasattr(msg, 'content') and msg.content:
+                    # content 可能是字符串或列表（多模态消息）
+                    if isinstance(msg.content, str):
+                        user_messages.append(msg.content)
+                    elif isinstance(msg.content, list):
+                        # 提取文本内容
+                        for item in msg.content:
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                user_messages.append(item.get('text', ''))
 
         # 拼接成完整查询
         if user_messages:

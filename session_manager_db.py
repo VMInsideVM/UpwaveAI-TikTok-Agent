@@ -352,7 +352,7 @@ class SessionManagerDB:
 
     def generate_smart_title(self, session_id: str) -> Optional[str]:
         """
-        基于对话历史智能生成会话标题
+        基于对话历史智能生成会话标题（自动处理重复标题）
 
         Args:
             session_id: 会话 ID
@@ -406,20 +406,90 @@ class SessionManagerDB:
 标题："""
 
             response = llm.invoke(prompt)
-            title = response.content.strip()
+            base_title = response.content.strip()
 
             # 清理标题（移除引号、冒号等）
-            title = title.replace('"', '').replace("'", '').replace(':', '').replace('：', '').strip()
+            base_title = base_title.replace('"', '').replace("'", '').replace(':', '').replace('：', '').strip()
 
             # 长度限制
-            if len(title) > 30:
-                title = title[:30] + "..."
+            if len(base_title) > 30:
+                base_title = base_title[:30] + "..."
 
-            return title if title else None
+            if not base_title:
+                return None
+
+            # 检查是否有相同标题，添加区分
+            final_title = self._make_title_unique(session_id, base_title)
+
+            return final_title
 
         except Exception as e:
             print(f"⚠️ 智能生成标题失败: {e}")
             return None
+
+    def _make_title_unique(self, current_session_id: str, base_title: str) -> str:
+        """
+        确保标题唯一，如果有重复则添加序号或时间戳
+
+        Args:
+            current_session_id: 当前会话ID（不与自己比较）
+            base_title: 基础标题
+
+        Returns:
+            str: 唯一的标题
+        """
+        try:
+            with get_db_context() as db:
+                # 获取当前会话的用户ID
+                current_session = db.query(ChatSession).filter(
+                    ChatSession.session_id == current_session_id
+                ).first()
+
+                if not current_session:
+                    return base_title
+
+                user_id = current_session.user_id
+
+                # 查找该用户的所有会话标题（排除当前会话）
+                existing_sessions = db.query(ChatSession).filter(
+                    ChatSession.user_id == user_id,
+                    ChatSession.session_id != current_session_id
+                ).all()
+
+                existing_titles = [s.title for s in existing_sessions]
+
+                # 如果没有重复，直接返回
+                if base_title not in existing_titles:
+                    return base_title
+
+                # 有重复，尝试添加序号
+                # 先检查是否已经有带序号的标题
+                import re
+                pattern = re.compile(rf"^{re.escape(base_title)}\s*\((\d+)\)$")
+
+                max_number = 1
+                for title in existing_titles:
+                    match = pattern.match(title)
+                    if match:
+                        num = int(match.group(1))
+                        max_number = max(max_number, num + 1)
+                    elif title == base_title:
+                        # 原始标题已存在，从(2)开始
+                        max_number = max(max_number, 2)
+
+                # 生成新标题
+                unique_title = f"{base_title} ({max_number})"
+
+                print(f"🔄 标题重复，已添加序号: {base_title} → {unique_title}")
+
+                return unique_title
+
+        except Exception as e:
+            print(f"⚠️ 生成唯一标题失败: {e}")
+            # 失败时使用时间戳作为后备方案
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M")
+            return f"{base_title} {timestamp}"
 
     def auto_update_title_if_needed(self, session_id: str):
         """

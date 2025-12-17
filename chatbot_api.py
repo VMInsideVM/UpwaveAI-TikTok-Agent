@@ -17,6 +17,7 @@ from datetime import datetime
 from session_manager_db import session_manager  # 使用数据库版本
 from agent import TikTokInfluencerAgent
 from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_call
+from response_validator import get_validator  # 导入响应验证器
 
 # 导入认证相关
 from database.connection import get_db
@@ -85,19 +86,18 @@ def check_playwright_api() -> bool:
 async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, websocket: WebSocket, image_data: Optional[str] = None, session_id: Optional[str] = None):
     """
     流式传输 agent 响应到 WebSocket
-    包含进度更新和心跳保活
+    包含进度更新、心跳保活和响应验证
 
     Args:
         agent: Agent 实例
         user_input: 用户文本输入
         websocket: WebSocket 连接
         image_data: Base64 编码的图片数据（可选）
+        session_id: 会话 ID（可选）
     """
     try:
-        # 创建一个包装函数来捕获 agent 的处理过程
-        import sys
-        import io
-        from contextlib import redirect_stdout
+        # 获取响应验证器实例
+        validator = get_validator(debug=True)  # 启用调试模式
 
         # 发送开始处理的消息
         await websocket.send_json({
@@ -149,10 +149,6 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         # 使用进度包装器执行 agent
         def run_with_progress():
             """在进度包装器中运行 agent"""
-            # 注意：由于 asyncio.run_in_executor 在不同线程中运行，
-            # 这里的进度回调需要特殊处理
-            # 简化版本：直接运行，后续可以改进为真正的实时进度
-
             # 如果有图片，调用支持视觉输入的方法
             if image_data:
                 return agent.run_with_image(user_input, image_data)
@@ -184,7 +180,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             processing_task = asyncio.create_task(report_processing())
 
             try:
-                # 执行 agent（同步调用）
+                # ⭐ 执行 agent（同步调用）
                 response = await loop.run_in_executor(None, run_with_progress)
             finally:
                 # 取消处理状态任务
@@ -201,7 +197,70 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             except asyncio.CancelledError:
                 pass
 
-        # 清理响应内容（隐藏品牌相关字样）
+        # ⭐ 响应验证和自动重试机制
+        MAX_RETRIES = 2  # 最多重试 2 次
+        retry_count = 0
+
+        while retry_count <= MAX_RETRIES:
+            # 清理响应内容（隐藏品牌相关字样）
+            if response:
+                response = clean_response(response)
+
+                # ⭐ 验证响应是否正确展示了参数
+                is_valid, retry_prompt = validator.validate_response(response)
+
+                if is_valid:
+                    # 验证通过，跳出循环
+                    break
+                else:
+                    # 验证失败，需要重试
+                    retry_count += 1
+                    print(f"⚠️ 响应验证失败（第 {retry_count}/{MAX_RETRIES} 次），触发自动重试")
+
+                    if retry_count <= MAX_RETRIES:
+                        # 发送重试状态消息
+                        await websocket.send_json({
+                            "type": "status",
+                            "content": f"检测到格式问题，正在重新生成回复...（{retry_count}/{MAX_RETRIES}）",
+                            "timestamp": datetime.now().isoformat()
+                        })
+
+                        # 使用重试提示重新调用 agent
+                        try:
+                            # 启动心跳任务
+                            heartbeat_task = asyncio.create_task(send_heartbeat())
+
+                            # 启动处理状态报告任务
+                            processing_task = asyncio.create_task(report_processing())
+
+                            try:
+                                # 使用重试提示重新生成
+                                response = await loop.run_in_executor(
+                                    None,
+                                    lambda: agent.run_with_image(retry_prompt, None) if image_data else agent.run(retry_prompt)
+                                )
+                            finally:
+                                # 取消任务
+                                processing_task.cancel()
+                                heartbeat_task.cancel()
+                                try:
+                                    await processing_task
+                                    await heartbeat_task
+                                except asyncio.CancelledError:
+                                    pass
+                        except Exception as retry_error:
+                            print(f"❌ 重试失败: {retry_error}")
+                            # 如果重试失败，使用原始响应
+                            break
+                    else:
+                        # 达到最大重试次数，使用当前响应
+                        print(f"❌ 已达到最大重试次数 ({MAX_RETRIES})，使用当前响应")
+                        break
+            else:
+                # 没有响应，跳出循环
+                break
+
+        # 继续原有的响应处理逻辑
         if response:
             response = clean_response(response)
 
@@ -536,6 +595,57 @@ async def get_session_status(
         "message_count": len(history),
         "messages": history
     })
+
+
+@app.get("/api/sessions/{session_id}/reports")
+async def get_session_reports(
+    session_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """获取指定会话关联的所有报告（需要认证和权限验证）"""
+    # 验证用户是否有权访问此会话
+    if not session_manager.verify_session_access(session_id, current_user.user_id) and not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="无权访问此会话"
+        )
+
+    try:
+        from database.connection import get_db_context
+        from database.models import Report
+
+        with get_db_context() as db:
+            # 查询该会话关联的所有报告
+            reports = db.query(Report).filter(
+                Report.session_id == session_id
+            ).all()
+
+            # 转换为字典列表
+            reports_data = []
+            for report in reports:
+                report_type = report.meta_data.get('type', 'unknown') if report.meta_data else 'unknown'
+
+                reports_data.append({
+                    "report_id": report.report_id,
+                    "title": report.title,
+                    "status": report.status,
+                    "report_type": report_type,
+                    "created_at": report.created_at.isoformat() if report.created_at else None,
+                })
+
+            return JSONResponse({
+                "session_id": session_id,
+                "total": len(reports_data),
+                "reports": reports_data
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"获取会话报告失败: {str(e)}"}
+        )
 
 
 @app.get("/api/sessions")

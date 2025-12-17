@@ -36,6 +36,11 @@ class ReportListItem(BaseModel):
     estimated_time: Optional[int]
     progress: Optional[int]
     error_message: Optional[str]
+    # 新增：两个独立的进度条数据
+    scraping_progress: Optional[int]
+    scraping_eta: Optional[int]
+    report_progress: Optional[int]
+    report_eta: Optional[int]
 
 
 class ReportStatusResponse(BaseModel):
@@ -46,6 +51,11 @@ class ReportStatusResponse(BaseModel):
     estimated_time_remaining: Optional[int]
     error: Optional[str]
     queue_position: Optional[int]
+    # 新增：两个独立的进度条数据
+    scraping_progress: int
+    scraping_eta: Optional[int]
+    report_progress: int
+    report_eta: Optional[int]
 
 
 # ==================== API Endpoints ====================
@@ -118,11 +128,17 @@ async def generate_report(
             detail=f"数据文件不存在: {json_file_path}"
         )
 
-    # 4. 创建 Report 记录
+    # 4. 创建 Report 记录，使用会话标题作为报告标题
+    # 如果会话标题是"新对话"，则使用产品名称
+    if session.title and session.title != "新对话":
+        report_title = session.title
+    else:
+        report_title = f"{product_name} - 达人推荐报告"
+
     new_report = Report(
         user_id=current_user.user_id,
         session_id=session_id,
-        title=f"{product_name} - 达人推荐报告",
+        title=report_title,
         report_path="",  # 将在生成完成后更新
         status="queued"
     )
@@ -171,9 +187,16 @@ async def list_user_reports(
 
     result = []
     for report in reports:
-        # 获取实时进度
-        task_status = report_queue.get_task_status(report.report_id)
-        progress = task_status.get("progress", 0) if task_status else 0
+        # 直接从数据库读取进度（而不是从任务队列）
+        progress = report.progress if report.progress is not None else 0
+        scraping_progress = report.scraping_progress if report.scraping_progress is not None else 0
+        report_progress = report.report_progress if report.report_progress is not None else 0
+
+        # 如果是已完成状态，确保进度是100%
+        if report.status == 'completed':
+            progress = 100
+            scraping_progress = 100
+            report_progress = 100
 
         result.append(ReportListItem(
             report_id=report.report_id,
@@ -183,7 +206,11 @@ async def list_user_reports(
             completed_at=report.completed_at,
             estimated_time=report.estimated_time,
             progress=progress,
-            error_message=report.error_message
+            error_message=report.error_message,
+            scraping_progress=scraping_progress,
+            scraping_eta=report.scraping_eta,
+            report_progress=report_progress,
+            report_eta=report.report_eta
         ))
 
     return result
@@ -332,17 +359,22 @@ async def get_report_status(
             detail="无权访问此报告"
         )
 
-    # 从队列获取实时状态
+    # 直接从数据库读取进度
+    progress = report.progress if report.progress is not None else 0
+    scraping_progress = report.scraping_progress if report.scraping_progress is not None else 0
+    report_progress = report.report_progress if report.report_progress is not None else 0
+
+    # 如果是已完成状态，确保进度是100%
+    if report.status == 'completed':
+        progress = 100
+        scraping_progress = 100
+        report_progress = 100
+
+    # 从队列获取队列位置信息
     task_status = report_queue.get_task_status(report_id)
+    queue_position = task_status.get("queue_position") if task_status else None
 
-    if task_status:
-        progress = task_status.get("progress", 0)
-        queue_position = task_status.get("queue_position")
-    else:
-        progress = 100 if report.status == "completed" else 0
-        queue_position = None
-
-    # 计算预计剩余时间
+    # 计算预计剩余时间（兼容旧接口）
     estimated_time_remaining = None
     if report.status == "generating" and report.estimated_time:
         elapsed = (datetime.utcnow() - report.created_at).total_seconds()
@@ -354,7 +386,11 @@ async def get_report_status(
         progress=progress,
         estimated_time_remaining=estimated_time_remaining,
         error=report.error_message,
-        queue_position=queue_position
+        queue_position=queue_position,
+        scraping_progress=scraping_progress,
+        scraping_eta=report.scraping_eta,
+        report_progress=report_progress,
+        report_eta=report.report_eta
     )
 
 
