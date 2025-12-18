@@ -2,11 +2,12 @@
 Authentication API Endpoints
 认证 API 端点
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, validator
 from datetime import datetime, timedelta
 from typing import Optional
+import secrets
 
 from database.connection import get_db
 from database.models import User, UserUsage, InvitationCode
@@ -19,6 +20,7 @@ from auth.security import (
     decode_token
 )
 from auth.dependencies import get_current_user
+from services.sms_service import get_sms_service
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
@@ -71,8 +73,105 @@ class UserInfoResponse(BaseModel):
     is_active: bool
     created_at: datetime
     last_login: Optional[datetime]
-    remaining_quota: int
-    total_quota: int
+    remaining_credits: int
+    total_credits: int
+
+
+# ==================== SMS 认证相关模型 ====================
+
+class SendSMSRequest(BaseModel):
+    """发送短信验证码请求"""
+    phone_number: str
+    code_type: str  # 'register', 'reset_password', 'change_phone'
+
+    @validator('phone_number')
+    def phone_validator(cls, v):
+        import re
+        if not re.match(r'^1[3-9]\d{9}$', v):
+            raise ValueError('请输入正确的11位中国大陆手机号')
+        return v
+
+    @validator('code_type')
+    def code_type_validator(cls, v):
+        if v not in ['register', 'reset_password', 'change_phone']:
+            raise ValueError('验证码类型错误')
+        return v
+
+
+class PhoneRegisterRequest(BaseModel):
+    """手机号注册请求"""
+    phone_number: str
+    password: str
+    sms_code: str
+    username: Optional[str] = None  # 可选
+    email: Optional[EmailStr] = None  # 可选
+
+    @validator('phone_number')
+    def phone_validator(cls, v):
+        import re
+        if not re.match(r'^1[3-9]\d{9}$', v):
+            raise ValueError('请输入正确的11位中国大陆手机号')
+        return v
+
+    @validator('sms_code')
+    def code_validator(cls, v):
+        if not v.isdigit() or len(v) != 6:
+            raise ValueError('请输入6位数字验证码')
+        return v
+
+    @validator('username')
+    def username_validator(cls, v):
+        if v is None:
+            return v  # 允许为空
+        if len(v) < 3 or len(v) > 50:
+            raise ValueError('用户名长度必须在 3-50 个字符之间')
+        if not v.replace('_', '').isalnum():
+            raise ValueError('用户名只能包含字母、数字和下划线')
+        return v
+
+
+class PhoneLoginRequest(BaseModel):
+    """手机号或用户名登录请求"""
+    identifier: str  # 手机号或用户名
+    password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """重置密码请求"""
+    phone_number: str
+    sms_code: str
+    new_password: str
+
+    @validator('phone_number')
+    def phone_validator(cls, v):
+        import re
+        if not re.match(r'^1[3-9]\d{9}$', v):
+            raise ValueError('请输入正确的11位中国大陆手机号')
+        return v
+
+
+class ChangePhoneRequest(BaseModel):
+    """修改手机号请求"""
+    new_phone_number: str
+    sms_code: str
+
+    @validator('new_phone_number')
+    def phone_validator(cls, v):
+        import re
+        if not re.match(r'^1[3-9]\d{9}$', v):
+            raise ValueError('请输入正确的11位中国大陆手机号')
+        return v
+
+
+class ChangePasswordRequest(BaseModel):
+    """修改密码请求（已登录用户）"""
+    old_password: str
+    new_password: str
+
+
+class UpdateEmailRequest(BaseModel):
+    """更新邮箱请求"""
+    new_email: EmailStr
 
 
 # ==================== API Endpoints ====================
@@ -244,15 +343,15 @@ async def get_current_user_info(
     """
     获取当前用户信息
     """
-    # 获取配额信息
+    # 获取积分信息
     usage = db.query(UserUsage).filter(UserUsage.user_id == current_user.user_id).first()
 
     if not usage:
-        # 如果没有配额记录，创建一个
+        # 如果没有积分记录，创建一个（默认300积分）
         usage = UserUsage(
             user_id=current_user.user_id,
-            total_quota=1,
-            used_count=0
+            total_credits=300,
+            used_credits=0
         )
         db.add(usage)
         db.commit()
@@ -265,8 +364,8 @@ async def get_current_user_info(
         is_active=current_user.is_active,
         created_at=current_user.created_at,
         last_login=current_user.last_login,
-        remaining_quota=usage.remaining_quota,
-        total_quota=usage.total_quota
+        remaining_credits=usage.remaining_credits,
+        total_credits=usage.total_credits
     )
 
 
@@ -332,4 +431,423 @@ async def logout(
     return {
         "message": "登出成功",
         "detail": "请在客户端删除 access_token 和 refresh_token"
+    }
+
+
+# ==================== SMS 认证端点 ====================
+
+@router.post("/send-sms-code")
+async def send_sms_code(
+    request: SendSMSRequest,
+    http_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    发送短信验证码
+
+    支持类型:
+    - register: 注册验证码
+    - reset_password: 密码重置验证码
+    - change_phone: 修改手机号验证码（需登录）
+    """
+    # 获取客户端 IP
+    ip_address = http_request.client.host
+
+    # 如果是修改手机号，无需检查手机号是否已注册
+    if request.code_type != 'change_phone':
+        # 检查手机号是否已注册
+        existing_user = db.query(User).filter(User.phone_number == request.phone_number).first()
+
+        if request.code_type == 'register' and existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该手机号已被注册"
+            )
+
+        if request.code_type == 'reset_password' and not existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="该手机号未注册"
+            )
+
+    # 发送验证码
+    sms_service = get_sms_service()
+    success, message = await sms_service.send_verification_code(
+        db=db,
+        phone=request.phone_number,
+        code_type=request.code_type,
+        ip_address=ip_address
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=message
+        )
+
+    return {
+        "message": message,
+        "phone_number": request.phone_number,
+        "expires_in_minutes": 5
+    }
+
+
+@router.post("/register-phone", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def register_with_phone(
+    request: PhoneRegisterRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    使用手机号注册
+
+    只需要短信验证码（已移除邀请码要求）
+    """
+    # 1. 验证短信验证码
+    sms_service = get_sms_service()
+    is_valid, message, _ = sms_service.verify_code(
+        db=db,
+        phone=request.phone_number,
+        code=request.sms_code,
+        code_type='register'
+    )
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+
+    # 3. 检查手机号是否已存在
+    existing_phone = db.query(User).filter(User.phone_number == request.phone_number).first()
+    if existing_phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该手机号已被注册"
+        )
+
+    # 4. 生成用户名（如果未提供）
+    username = request.username
+    if not username:
+        username = f"user_{secrets.token_hex(6)}"
+
+        # 确保生成的用户名不重复
+        while db.query(User).filter(User.username == username).first():
+            username = f"user_{secrets.token_hex(6)}"
+    else:
+        # 检查用户名是否已存在
+        existing_username = db.query(User).filter(User.username == username).first()
+        if existing_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="用户名已存在"
+            )
+
+    # 4. 检查邮箱（如果提供）
+    if request.email:
+        existing_email = db.query(User).filter(User.email == request.email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="邮箱已被注册"
+            )
+
+    # 5. 验证密码强度
+    is_valid, error_msg = validate_password_strength(request.password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+
+    # 6. 创建用户
+    try:
+        hashed_pw = hash_password(request.password)
+
+        new_user = User(
+            phone_number=request.phone_number,
+            username=username,
+            email=request.email,
+            hashed_password=hashed_pw,
+            is_active=True,
+            is_verified=True,
+            is_admin=False
+        )
+
+        db.add(new_user)
+        db.flush()
+
+        # 7. 创建积分记录（默认300积分）
+        usage = UserUsage(
+            user_id=new_user.user_id,
+            total_credits=300,
+            used_credits=0
+        )
+        db.add(usage)
+
+        db.commit()
+
+        # 8. 生成令牌
+        access_token = create_access_token(data={"sub": new_user.user_id})
+        refresh_token = create_refresh_token(data={"sub": new_user.user_id})
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_id=new_user.user_id,
+            username=new_user.username,
+            is_admin=new_user.is_admin
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"注册失败: {str(e)}"
+        )
+
+
+@router.post("/login-phone", response_model=TokenResponse)
+async def login_with_phone_or_username(
+    request: PhoneLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    使用手机号或用户名登录
+
+    identifier 可以是:
+    - 手机号 (11位数字)
+    - 用户名
+    """
+    # 判断是手机号还是用户名
+    import re
+    is_phone = bool(re.match(r'^1[3-9]\d{9}$', request.identifier))
+
+    # 查找用户
+    if is_phone:
+        user = db.query(User).filter(User.phone_number == request.identifier).first()
+    else:
+        user = db.query(User).filter(User.username == request.identifier).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="手机号/用户名或密码错误"
+        )
+
+    # 验证密码
+    if not verify_password(request.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="手机号/用户名或密码错误"
+        )
+
+    # 检查激活状态
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被停用"
+        )
+
+    # 更新最后登录时间
+    user.last_login = datetime.utcnow()
+    db.commit()
+
+    # 生成令牌
+    access_token = create_access_token(data={"sub": user.user_id})
+    refresh_token = create_refresh_token(data={"sub": user.user_id})
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user_id=user.user_id,
+        username=user.username,
+        is_admin=user.is_admin
+    )
+
+
+@router.post("/reset-password")
+async def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    通过短信验证码重置密码
+    """
+    # 1. 验证短信验证码
+    sms_service = get_sms_service()
+    is_valid, message, _ = sms_service.verify_code(
+        db=db,
+        phone=request.phone_number,
+        code=request.sms_code,
+        code_type='reset_password'
+    )
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+
+    # 2. 查找用户
+    user = db.query(User).filter(User.phone_number == request.phone_number).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="该手机号未注册"
+        )
+
+    # 3. 验证新密码强度
+    is_valid, error_msg = validate_password_strength(request.new_password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+
+    # 4. 更新密码
+    user.hashed_password = hash_password(request.new_password)
+    db.commit()
+
+    return {
+        "message": "密码重置成功",
+        "phone_number": request.phone_number
+    }
+
+
+@router.post("/change-phone")
+async def change_phone_number(
+    request: ChangePhoneRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    修改绑定的手机号
+    需要新手机号的短信验证码
+    """
+    # 1. 验证短信验证码
+    sms_service = get_sms_service()
+    is_valid, message, _ = sms_service.verify_code(
+        db=db,
+        phone=request.new_phone_number,
+        code=request.sms_code,
+        code_type='change_phone'
+    )
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+
+    # 2. 检查新手机号是否已被使用
+    existing_user = db.query(User).filter(
+        User.phone_number == request.new_phone_number,
+        User.user_id != current_user.user_id
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该手机号已被其他用户使用"
+        )
+
+    # 3. 记录修改历史
+    old_phone = current_user.phone_number
+    change_record = {
+        "old": old_phone,
+        "new": request.new_phone_number,
+        "changed_at": datetime.utcnow().isoformat()
+    }
+
+    if current_user.phone_change_history:
+        history = current_user.phone_change_history
+        if isinstance(history, list):
+            history.append(change_record)
+        else:
+            history = [change_record]
+        current_user.phone_change_history = history
+    else:
+        current_user.phone_change_history = [change_record]
+
+    # 4. 更新手机号
+    current_user.phone_number = request.new_phone_number
+    db.commit()
+
+    return {
+        "message": "手机号修改成功",
+        "old_phone": old_phone,
+        "new_phone": request.new_phone_number
+    }
+
+
+@router.post("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    修改密码（已登录用户）
+    需要验证旧密码
+    """
+    # 1. 验证旧密码
+    if not verify_password(request.old_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前密码错误"
+        )
+
+    # 2. 验证新密码与旧密码不同
+    if verify_password(request.new_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新密码不能与当前密码相同"
+        )
+
+    # 3. 验证新密码强度
+    is_valid, error_msg = validate_password_strength(request.new_password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+
+    # 4. 更新密码
+    current_user.hashed_password = hash_password(request.new_password)
+    db.commit()
+
+    return {
+        "message": "密码修改成功",
+        "username": current_user.username
+    }
+
+
+@router.post("/update-email")
+async def update_email(
+    request: UpdateEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    更新邮箱地址（已登录用户）
+    """
+    # 1. 检查邮箱是否已被其他用户使用
+    existing_user = db.query(User).filter(
+        User.email == request.new_email,
+        User.user_id != current_user.user_id
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该邮箱已被其他用户使用"
+        )
+
+    # 2. 更新邮箱
+    current_user.email = request.new_email
+    db.commit()
+
+    return {
+        "message": "邮箱更新成功",
+        "new_email": request.new_email
     }

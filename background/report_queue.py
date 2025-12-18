@@ -29,7 +29,8 @@ class ReportQueue:
         user_id: str,
         session_id: str,
         json_file_path: str,
-        product_name: str
+        product_name: str,
+        credits_deducted: int = 0
     ) -> str:
         """
         将报告生成任务加入队列
@@ -40,6 +41,7 @@ class ReportQueue:
             session_id: 会话 ID
             json_file_path: JSON 数据文件路径
             product_name: 产品名称
+            credits_deducted: 已扣除的积分数量（用于失败时退还）
 
         Returns:
             str: 报告 ID
@@ -50,7 +52,8 @@ class ReportQueue:
             "user_id": user_id,
             "session_id": session_id,
             "json_file_path": json_file_path,
-            "product_name": product_name
+            "product_name": product_name,
+            "credits_deducted": credits_deducted
         })
 
         # 初始化状态
@@ -107,8 +110,10 @@ class ReportQueue:
                     error_msg = str(e)
                     await self._update_status(report_id, "failed", error=error_msg)
 
-                    # 失败时退还配额
-                    await self._refund_user_quota(task_data["user_id"])
+                    # 失败时退还积分
+                    credits_to_refund = task_data.get("credits_deducted", 0)
+                    if credits_to_refund > 0:
+                        await self._refund_user_credits(task_data["user_id"], credits_to_refund)
 
                     print(f"❌ 报告生成失败: {report_id} - {error_msg}")
 
@@ -196,6 +201,16 @@ class ReportQueue:
                     report.completed_at = datetime.utcnow()
                     db.commit()
 
+                    # 发送通知（异步）
+                    asyncio.create_task(
+                        self._send_report_notifications(
+                            report_id=report_id,
+                            user_id=task_data["user_id"],
+                            product_name=product_name,
+                            report_path=report_path
+                        )
+                    )
+
             print(f"✅ 报告已保存到: {report_path}")
 
         except ImportError as e:
@@ -236,19 +251,94 @@ class ReportQueue:
                     report.completed_at = datetime.utcnow()
                 db.commit()
 
-    async def _refund_user_quota(self, user_id: str):
+    async def _send_report_notifications(
+        self,
+        report_id: str,
+        user_id: str,
+        product_name: str,
+        report_path: str
+    ):
         """
-        退还用户配额（报告生成失败时调用）
+        发送报告完成通知（短信 + 邮件）
+
+        Args:
+            report_id: 报告 ID
+            user_id: 用户 ID
+            product_name: 产品名称
+            report_path: 报告文件路径
+        """
+        try:
+            # 导入服务
+            from services.sms_service import get_sms_service
+            from services.email_service import get_email_service
+            from database.models import User
+
+            # 获取用户信息
+            with get_db_context() as db:
+                user = db.query(User).filter(User.user_id == user_id).first()
+                if not user:
+                    print(f"⚠️ 用户不存在，跳过通知: {user_id}")
+                    return
+
+                username = user.username or "用户"
+                phone = user.phone_number
+                email = user.email
+
+            # 构建报告访问URL
+            report_filename = os.path.basename(report_path)
+            report_url = f"http://127.0.0.1:8001/reports/{report_filename}"
+
+            # 1. 发送短信通知
+            if phone:
+                sms_service = get_sms_service()
+                success, message = sms_service.send_report_ready_notification(
+                    phone=phone,
+                    product_name=product_name
+                )
+                if success:
+                    print(f"✅ 短信通知已发送: {phone}")
+                else:
+                    print(f"⚠️ 短信通知发送失败: {message}")
+            else:
+                print(f"⚠️ 用户未绑定手机号，跳过短信通知: {username}")
+
+            # 2. 发送邮件通知
+            if email:
+                email_service = get_email_service()
+                if email_service.is_configured():
+                    success, message = email_service.send_report_ready_notification(
+                        to_email=email,
+                        username=username,
+                        product_name=product_name,
+                        report_url=report_url
+                    )
+                    if success:
+                        print(f"✅ 邮件通知已发送: {email}")
+                    else:
+                        print(f"⚠️ 邮件通知发送失败: {message}")
+                else:
+                    print("⚠️ 邮件服务未配置，跳过邮件通知")
+            else:
+                print(f"⚠️ 用户未设置邮箱，跳过邮件通知: {username}")
+
+        except Exception as e:
+            print(f"❌ 发送通知时发生错误: {e}")
+            # 不抛出异常，避免影响报告生成流程
+
+    async def _refund_user_credits(self, user_id: str, credits_amount: int):
+        """
+        退还用户积分（报告生成失败时调用）
 
         Args:
             user_id: 用户 ID
+            credits_amount: 要退还的积分数量
         """
         with get_db_context() as db:
             usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
-            if usage and usage.used_count > 0:
-                usage.used_count -= 1
+            if usage and usage.used_credits >= credits_amount:
+                usage.used_credits -= credits_amount
                 db.commit()
-                print(f"♻️ 用户 {user_id} 配额已退还: {usage.used_count}/{usage.total_quota}")
+                print(f"♻️ 用户 {user_id} 积分已退还: {credits_amount} 积分, 剩余: {usage.remaining_credits}/{usage.total_credits}")
 
     def get_task_status(self, report_id: str) -> Optional[dict]:
         """

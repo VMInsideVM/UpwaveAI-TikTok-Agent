@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api/reports", tags=["报告"])
 class GenerateReportRequest(BaseModel):
     """生成报告请求"""
     session_id: str
+    target_influencer_count: Optional[int] = None  # ⭐ 新增：允许用户指定达人数量（覆盖会话中的值）
 
 
 class ReportListItem(BaseModel):
@@ -95,25 +96,21 @@ async def generate_report(
             detail="无权访问此会话"
         )
 
-    # 2. 检查配额
-    usage = db.query(UserUsage).filter(UserUsage.user_id == current_user.user_id).first()
+    # 2. 检查积分（需要先读取JSON文件获取达人数量）
 
-    if not usage:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="用户配额记录不存在"
-        )
-
-    if usage.remaining_quota <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"使用次数已用完（已使用 {usage.used_count}/{usage.total_quota}），请联系管理员增加配额"
-        )
-
-    # 3. 从会话元数据提取 JSON 文件路径
+    # 3. 从会话元数据提取 JSON 文件路径和用户请求的达人数量
     meta_data = session.meta_data or {}
     json_file_path = meta_data.get("json_file_path")
     product_name = meta_data.get("product_name", "未命名产品")
+
+    # ⭐ 优先使用用户在请求中指定的数量，否则使用会话中保存的数量
+    if request.target_influencer_count is not None:
+        target_influencer_count = request.target_influencer_count
+        print(f"💡 用户在请求中指定达人数量: {target_influencer_count} 个")
+    else:
+        target_influencer_count = meta_data.get("target_influencer_count")
+        if target_influencer_count:
+            print(f"💡 使用会话中保存的达人数量: {target_influencer_count} 个")
 
     if not json_file_path:
         raise HTTPException(
@@ -128,7 +125,83 @@ async def generate_report(
             detail=f"数据文件不存在: {json_file_path}"
         )
 
-    # 4. 创建 Report 记录，使用会话标题作为报告标题
+    # 4. 读取JSON文件获取实际可用的达人数量
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        influencer_ids = data.get("data_row_keys", [])
+        available_count = len(influencer_ids)
+
+        if available_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="数据文件中没有达人数据"
+            )
+
+        print(f"📊 JSON文件中可用的达人数量: {available_count} 个")
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="数据文件格式错误"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"读取数据文件失败: {str(e)}"
+        )
+
+    # 5. 根据用户请求的达人数量计算所需积分
+    CREDITS_PER_INFLUENCER = 30
+
+    # ⭐ 优先使用用户请求的数量，如果没有则使用可用的全部数量
+    if target_influencer_count is not None and target_influencer_count > 0:
+        # 验证用户请求的数量不超过可用数量
+        if target_influencer_count > available_count:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"请求的达人数量（{target_influencer_count}）超过可用数量（{available_count}），请调整数量"
+            )
+
+        influencer_count = target_influencer_count
+        print(f"💰 使用用户请求的达人数量计算积分: {influencer_count} 个")
+    else:
+        # 回退方案：使用JSON文件中的全部数量
+        influencer_count = available_count
+        print(f"💰 使用JSON文件中的全部达人数量计算积分: {influencer_count} 个")
+
+    # 计算所需积分
+    required_credits = influencer_count * CREDITS_PER_INFLUENCER
+
+    # 5. 检查用户积分是否足够
+    usage = db.query(UserUsage).filter(UserUsage.user_id == current_user.user_id).first()
+
+    if not usage:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="用户积分记录不存在"
+        )
+
+    if usage.remaining_credits < required_credits:
+        # 计算用户当前积分能生成多少个达人的报告
+        affordable_count = usage.remaining_credits // CREDITS_PER_INFLUENCER
+
+        error_detail = f"积分不足：需要 {required_credits} 积分（{influencer_count} 个达人 × 30），当前剩余 {usage.remaining_credits} 积分"
+
+        # 如果用户有一定积分，提示可以减少达人数量
+        if affordable_count > 0 and affordable_count < influencer_count:
+            error_detail += f"\n\n💡 建议：您当前积分可以生成 {affordable_count} 个达人的报告。您可以：\n"
+            error_detail += f"   1. 调整达人数量为 {affordable_count} 个（需要 {affordable_count * CREDITS_PER_INFLUENCER} 积分）\n"
+            error_detail += f"   2. 充值积分后继续生成 {influencer_count} 个达人的报告"
+        else:
+            error_detail += "\n\n💡 请充值积分后继续"
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail
+        )
+
+    # 6. 创建 Report 记录，使用会话标题作为报告标题
     # 如果会话标题是"新对话"，则使用产品名称
     if session.title and session.title != "新对话":
         report_title = session.title
@@ -140,32 +213,39 @@ async def generate_report(
         session_id=session_id,
         title=report_title,
         report_path="",  # 将在生成完成后更新
-        status="queued"
+        status="queued",
+        meta_data={
+            "influencer_count": influencer_count,
+            "credits_deducted": required_credits
+        }
     )
 
     db.add(new_report)
     db.commit()
     db.refresh(new_report)
 
-    # 5. 立即扣除配额（失败时会自动退还）
-    usage.used_count += 1
+    # 7. 立即扣除积分（失败时会自动退还）
+    usage.used_credits += required_credits
     db.commit()
-    print(f"✅ 用户 {current_user.user_id} 配额已预扣: {usage.used_count}/{usage.total_quota}")
+    print(f"✅ 用户 {current_user.user_id} 积分已预扣: {required_credits} 积分 ({influencer_count} 个达人), 剩余: {usage.remaining_credits}/{usage.total_credits}")
 
-    # 6. 加入后台队列
+    # 8. 加入后台队列
     await report_queue.enqueue_report(
         report_id=new_report.report_id,
         user_id=current_user.user_id,
         session_id=session_id,
         json_file_path=json_file_path,
-        product_name=product_name
+        product_name=product_name,
+        credits_deducted=required_credits  # 传递扣除的积分数量，用于失败时退还
     )
 
     return {
         "report_id": new_report.report_id,
-        "message": "报告生成任务已加入队列",
+        "message": f"报告生成任务已加入队列（{influencer_count} 个达人，消耗 {required_credits} 积分）",
         "status": "queued",
-        "remaining_quota": usage.remaining_quota  # 已扣除后的剩余
+        "influencer_count": influencer_count,
+        "credits_deducted": required_credits,
+        "remaining_credits": usage.remaining_credits  # 已扣除后的剩余
     }
 
 

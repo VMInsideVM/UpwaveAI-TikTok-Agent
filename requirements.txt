@@ -29,3 +29,7 @@ pydantic[email]>=2.0.0
 
 # 工具库
 python-dateutil>=2.8.2
+
+# 阿里云短信服务
+alibabacloud-dysmsapi20170525>=2.0.24
+alibabacloud-tea-openapi>=0.3.7

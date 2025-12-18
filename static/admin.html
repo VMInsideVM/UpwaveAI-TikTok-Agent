@@ -422,7 +422,6 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('overview')">📊 概览</button>
             <button class="tab" onclick="switchTab('users')">👥 用户管理</button>
-            <button class="tab" onclick="switchTab('invitations')">🎫 邀请码</button>
             <button class="tab" onclick="switchTab('reports')">📄 报告管理</button>
             <button class="tab" onclick="switchTab('tasks')">⚙️ 任务队列</button>
         </div>
@@ -436,9 +435,9 @@
                     <div class="stat-value" id="totalUsers">-</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon">🎫</div>
-                    <div class="stat-label">未使用邀请码</div>
-                    <div class="stat-value" id="unusedCodes">-</div>
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-label">活跃用户数</div>
+                    <div class="stat-value" id="activeUsers">-</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon">📄</div>
@@ -475,17 +474,6 @@
             </div>
         </div>
 
-        <!-- 邀请码标签页 -->
-        <div id="invitations-tab" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title">邀请码管理</h2>
-                    <button class="btn btn-primary btn-sm" onclick="showGenerateCodesModal()">➕ 生成邀请码</button>
-                </div>
-                <div id="invitationsTable">加载中...</div>
-            </div>
-        </div>
-
         <!-- 报告管理标签页 -->
         <div id="reports-tab" class="tab-content">
             <div class="card">
@@ -509,56 +497,31 @@
         </div>
     </div>
 
-    <!-- 修改用户配额模态框 -->
-    <div id="quotaModal" class="modal">
+    <!-- 修改用户积分模态框 -->
+    <div id="creditsModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">修改用户配额</h3>
-                <button class="modal-close" onclick="closeQuotaModal()">×</button>
+                <h3 class="modal-title">修改用户积分</h3>
+                <button class="modal-close" onclick="closeCreditsModal()">×</button>
             </div>
-            <div id="quotaAlert" class="alert"></div>
-            <form id="quotaForm" onsubmit="updateQuota(event)">
+            <div id="creditsAlert" class="alert"></div>
+            <form id="creditsForm" onsubmit="updateCredits(event)">
                 <div class="form-group">
                     <label class="form-label">用户名</label>
-                    <input type="text" id="quotaUsername" class="form-input" readonly>
+                    <input type="text" id="creditsUsername" class="form-input" readonly>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">当前配额</label>
-                    <input type="text" id="quotaCurrent" class="form-input" readonly>
+                    <label class="form-label">当前积分</label>
+                    <input type="text" id="creditsCurrent" class="form-input" readonly>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">新配额</label>
-                    <input type="number" id="quotaNew" class="form-input" min="0" required>
+                    <label class="form-label">新积分</label>
+                    <input type="number" id="creditsNew" class="form-input" min="0" required>
                 </div>
-                <input type="hidden" id="quotaUserId">
+                <input type="hidden" id="creditsUserId">
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit" class="btn btn-primary" style="flex: 1;">确定</button>
-                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeQuotaModal()">取消</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- 生成邀请码模态框 -->
-    <div id="generateCodesModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">生成邀请码</h3>
-                <button class="modal-close" onclick="closeGenerateCodesModal()">×</button>
-            </div>
-            <div id="generateCodesAlert" class="alert"></div>
-            <form id="generateCodesForm" onsubmit="generateCodes(event)">
-                <div class="form-group">
-                    <label class="form-label">生成数量（1-100）</label>
-                    <input type="number" id="codesCount" class="form-input" min="1" max="100" value="5" required>
-                </div>
-                <div id="generatedCodesResult" style="display: none; margin-top: 20px;">
-                    <p><strong>生成成功！邀请码如下：</strong></p>
-                    <div id="generatedCodesList"></div>
-                </div>
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">生成</button>
-                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeGenerateCodesModal()">关闭</button>
+                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeCreditsModal()">取消</button>
                 </div>
             </form>
         </div>
@@ -616,9 +579,6 @@
                 case 'users':
                     loadUsers();
                     break;
-                case 'invitations':
-                    loadInvitations();
-                    break;
                 case 'reports':
                     loadReports();
                     break;
@@ -653,19 +613,17 @@
         // 加载概览
         async function loadOverview() {
             try {
-                const [healthRes, usersRes, codesRes] = await Promise.all([
+                const [healthRes, usersRes] = await Promise.all([
                     apiRequest('/api/health'),
-                    apiRequest('/api/admin/users'),
-                    apiRequest('/api/admin/invitation-codes')
+                    apiRequest('/api/admin/users')
                 ]);
 
                 const health = await healthRes.json();
                 const users = await usersRes.json();
-                const codes = await codesRes.json();
 
                 // 更新统计数据
                 document.getElementById('totalUsers').textContent = users.length;
-                document.getElementById('unusedCodes').textContent = codes.filter(c => !c.is_used).length;
+                document.getElementById('activeUsers').textContent = users.filter(u => u.is_active).length;
 
                 // 更新系统状态
                 document.getElementById('apiStatus').textContent = health.status === 'healthy' ? '正常' : '异常';
@@ -707,9 +665,10 @@
                         <thead>
                             <tr>
                                 <th>用户名</th>
+                                <th>手机号</th>
                                 <th>邮箱</th>
                                 <th>角色</th>
-                                <th>配额</th>
+                                <th>总积分</th>
                                 <th>已使用</th>
                                 <th>剩余</th>
                                 <th>注册时间</th>
@@ -719,15 +678,20 @@
                         <tbody>
                             ${users.map(user => `
                                 <tr>
-                                    <td>${user.username}</td>
-                                    <td>${user.email}</td>
+                                    <td>${user.username || '-'}</td>
+                                    <td>${user.phone_number || '-'}</td>
+                                    <td>${user.email || '-'}</td>
                                     <td><span class="badge badge-${user.is_admin ? 'admin' : 'user'}">${user.is_admin ? '管理员' : '普通用户'}</span></td>
-                                    <td>${user.total_quota}</td>
-                                    <td>${user.used_count}</td>
-                                    <td>${user.remaining_quota}</td>
+                                    <td>${user.total_credits}</td>
+                                    <td>${user.used_credits}</td>
+                                    <td>${user.remaining_credits}</td>
                                     <td>${new Date(user.created_at).toLocaleString('zh-CN')}</td>
                                     <td>
-                                        ${!user.is_admin ? `<button class="btn btn-primary btn-sm" onclick='showQuotaModal(${JSON.stringify(user)})'>修改配额</button>` : '-'}
+                                        ${!user.is_admin ? `
+                                            <button class="btn btn-primary btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})' style="margin-right: 5px;">修改积分</button>
+                                            <button class="btn btn-sm" style="background: ${user.is_active ? '#ef4444' : '#10b981'}; color: white; margin-right: 5px;" onclick='toggleUserActive("${user.user_id}", "${user.username}")'>${user.is_active ? '停用' : '激活'}</button>
+                                            <button class="btn btn-sm" style="background: #dc2626; color: white;" onclick='deleteUser("${user.user_id}", "${user.username}")'>删除</button>
+                                        ` : '-'}
                                     </td>
                                 </tr>
                             `).join('')}
@@ -742,48 +706,6 @@
             }
         }
 
-        // 加载邀请码列表
-        async function loadInvitations() {
-            try {
-                const response = await apiRequest('/api/admin/invitation-codes');
-                const codes = await response.json();
-
-                if (codes.length === 0) {
-                    document.getElementById('invitationsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎫</div><p>暂无邀请码</p></div>';
-                    return;
-                }
-
-                const html = `
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>邀请码</th>
-                                <th>状态</th>
-                                <th>使用者</th>
-                                <th>创建时间</th>
-                                <th>使用时间</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${codes.map(code => `
-                                <tr>
-                                    <td><code class="code-block">${code.code}</code></td>
-                                    <td><span class="badge badge-${code.is_used ? 'warning' : 'success'}">${code.is_used ? '已使用' : '未使用'}</span></td>
-                                    <td>${code.used_by_username || '-'}</td>
-                                    <td>${new Date(code.created_at).toLocaleString('zh-CN')}</td>
-                                    <td>${code.used_at ? new Date(code.used_at).toLocaleString('zh-CN') : '-'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-
-                document.getElementById('invitationsTable').innerHTML = html;
-            } catch (error) {
-                console.error('Failed to load invitations:', error);
-                document.getElementById('invitationsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
-            }
-        }
 
         // 加载报告列表
         async function loadReports() {
@@ -857,95 +779,95 @@
             }
         }
 
-        // 显示配额修改模态框
-        function showQuotaModal(user) {
-            document.getElementById('quotaUserId').value = user.user_id;
-            document.getElementById('quotaUsername').value = user.username;
-            document.getElementById('quotaCurrent').value = `${user.used_count} / ${user.total_quota}`;
-            document.getElementById('quotaNew').value = user.total_quota;
-            document.getElementById('quotaModal').classList.add('show');
+        // 显示积分修改模态框
+        function showCreditsModal(user) {
+            document.getElementById('creditsUserId').value = user.user_id;
+            document.getElementById('creditsUsername').value = user.username;
+            document.getElementById('creditsCurrent').value = `${user.used_credits} / ${user.total_credits}`;
+            document.getElementById('creditsNew').value = user.total_credits;
+            document.getElementById('creditsModal').classList.add('show');
         }
 
-        function closeQuotaModal() {
-            document.getElementById('quotaModal').classList.remove('show');
-            document.getElementById('quotaAlert').classList.remove('show');
+        function closeCreditsModal() {
+            document.getElementById('creditsModal').classList.remove('show');
+            document.getElementById('creditsAlert').classList.remove('show');
         }
 
-        // 更新配额
-        async function updateQuota(event) {
+        // 更新积分
+        async function updateCredits(event) {
             event.preventDefault();
 
-            const userId = document.getElementById('quotaUserId').value;
-            const newQuota = parseInt(document.getElementById('quotaNew').value);
+            const userId = document.getElementById('creditsUserId').value;
+            const newCredits = parseInt(document.getElementById('creditsNew').value);
 
             try {
-                const response = await apiRequest(`/api/admin/users/${userId}/quota`, {
+                const response = await apiRequest(`/api/admin/users/${userId}/credits`, {
                     method: 'PUT',
-                    body: JSON.stringify({ new_quota: newQuota })
+                    body: JSON.stringify({ new_credits: newCredits })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    showModalAlert('quotaAlert', '配额更新成功！', 'success');
+                    showModalAlert('creditsAlert', '积分更新成功！', 'success');
                     setTimeout(() => {
-                        closeQuotaModal();
+                        closeCreditsModal();
                         refreshUsers();
                     }, 1500);
                 } else {
-                    showModalAlert('quotaAlert', data.detail || '更新失败', 'error');
+                    showModalAlert('creditsAlert', data.detail || '更新失败', 'error');
                 }
             } catch (error) {
-                console.error('Failed to update quota:', error);
-                showModalAlert('quotaAlert', '更新失败: ' + error.message, 'error');
+                console.error('Failed to update credits:', error);
+                showModalAlert('creditsAlert', '更新失败: ' + error.message, 'error');
             }
         }
 
-        // 显示生成邀请码模态框
-        function showGenerateCodesModal() {
-            document.getElementById('generateCodesModal').classList.add('show');
-            document.getElementById('generatedCodesResult').style.display = 'none';
-            document.getElementById('generateCodesAlert').classList.remove('show');
-        }
-
-        function closeGenerateCodesModal() {
-            document.getElementById('generateCodesModal').classList.remove('show');
-            document.getElementById('generatedCodesResult').style.display = 'none';
-        }
-
-        // 生成邀请码
-        async function generateCodes(event) {
-            event.preventDefault();
-
-            const count = parseInt(document.getElementById('codesCount').value);
+        // 停用/激活用户
+        async function toggleUserActive(userId, username) {
+            if (!confirm(`确定要${username}的账户吗？`)) return;
 
             try {
-                const response = await apiRequest('/api/admin/invitation-codes', {
-                    method: 'POST',
-                    body: JSON.stringify({ count })
+                const response = await apiRequest(`/api/admin/users/${userId}/toggle-active`, {
+                    method: 'POST'
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    const codesList = data.codes.map(code =>
-                        `<div class="code-block">${code}</div>`
-                    ).join('');
-
-                    document.getElementById('generatedCodesList').innerHTML = codesList;
-                    document.getElementById('generatedCodesResult').style.display = 'block';
-                    showModalAlert('generateCodesAlert', `成功生成 ${count} 个邀请码！`, 'success');
-
-                    // 刷新邀请码列表
-                    if (currentTab === 'invitations') {
-                        loadInvitations();
-                    }
+                    alert(data.message);
+                    loadUsers();
+                    loadOverview();
                 } else {
-                    showModalAlert('generateCodesAlert', data.detail || '生成失败', 'error');
+                    alert(data.detail || '操作失败');
                 }
             } catch (error) {
-                console.error('Failed to generate codes:', error);
-                showModalAlert('generateCodesAlert', '生成失败: ' + error.message, 'error');
+                console.error('Failed to toggle user:', error);
+                alert('操作失败: ' + error.message);
+            }
+        }
+
+        // 删除用户
+        async function deleteUser(userId, username) {
+            if (!confirm(`确定要删除用户 ${username} 吗？\n此操作将永久删除用户的所有数据，包括聊天记录和报告！`)) return;
+
+            try {
+                const response = await apiRequest(`/api/admin/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(data.message);
+                    loadUsers();
+                    loadOverview();
+                } else {
+                    alert(data.detail || '删除失败');
+                }
+            } catch (error) {
+                console.error('Failed to delete user:', error);
+                alert('删除失败: ' + error.message);
             }
         }
 

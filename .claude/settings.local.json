@@ -32,7 +32,10 @@
       "Bash(pip uninstall:*)",
       "Bash(then echo \"Database exists\")",
       "Bash(else echo \"No database file\")",
-      "Bash(\".venv/Scripts/python.exe\" -m pip install bcrypt==4.0.1)"
+      "Bash(\".venv/Scripts/python.exe\" -m pip install bcrypt==4.0.1)",
+      "Bash(ls:*)",
+      "Bash(if [ ! -d \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\" ])",
+      "Bash(then mkdir \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\")"
     ],
     "deny": [],
     "ask": []

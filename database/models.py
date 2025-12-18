@@ -15,8 +15,14 @@ class User(Base):
     __tablename__ = "users"
 
     user_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(100), unique=True, nullable=False, index=True)
+
+    # 手机号认证字段（新增）
+    phone_number = Column(String(11), unique=True, nullable=True, index=True)  # 允许 NULL（向后兼容）
+
+    # 用户名和邮箱改为可选（向后兼容）
+    username = Column(String(50), unique=True, nullable=True, index=True)
+    email = Column(String(100), unique=True, nullable=True, index=True)
+
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=True, nullable=False)  # 默认激活，跳过邮箱验证
@@ -24,11 +30,15 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime)
 
+    # 手机号修改历史（新增）
+    phone_change_history = Column(JSON)  # 存储手机号修改记录
+
     # Relationships
     sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
     usage_info = relationship("UserUsage", back_populates="user", uselist=False, cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
     created_codes = relationship("InvitationCode", foreign_keys="InvitationCode.created_by_admin", back_populates="creator")
+    sms_verifications = relationship("SMSVerification", back_populates="user", cascade="all, delete-orphan")  # 新增关系
 
     def __repr__(self):
         return f"<User {self.username} ({self.user_id})>"
@@ -115,26 +125,75 @@ class InvitationCode(Base):
         return f"<InvitationCode {self.code} - Used: {self.is_used}>"
 
 
+class SMSVerification(Base):
+    """短信验证码表"""
+    __tablename__ = "sms_verifications"
+
+    verification_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    phone_number = Column(String(11), nullable=False, index=True)
+    code = Column(String(64), nullable=False)  # 存储哈希后的验证码（bcrypt）
+    code_type = Column(String(20), nullable=False, index=True)  # 'register', 'reset_password', 'change_phone'
+
+    # 验证状态
+    is_verified = Column(Boolean, default=False, nullable=False)
+    verified_at = Column(DateTime)
+
+    # 验证尝试次数
+    attempt_count = Column(Integer, default=0, nullable=False)
+    max_attempts = Column(Integer, default=3, nullable=False)
+
+    # IP 限流
+    ip_address = Column(String(45))  # 支持 IPv6
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)  # 5分钟后过期
+
+    # 关联用户（可选，仅在已登录情况下）
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=True)
+
+    # Relationship
+    user = relationship("User", back_populates="sms_verifications")
+
+    @property
+    def is_expired(self):
+        """验证码是否已过期"""
+        return datetime.utcnow() > self.expires_at
+
+    @property
+    def is_locked(self):
+        """是否因尝试次数过多而锁定"""
+        return self.attempt_count >= self.max_attempts
+
+    @property
+    def remaining_attempts(self):
+        """剩余尝试次数"""
+        return max(0, self.max_attempts - self.attempt_count)
+
+    def __repr__(self):
+        return f"<SMSVerification {self.phone_number} - {self.code_type} ({self.is_verified})>"
+
+
 class UserUsage(Base):
-    """用户配额表"""
+    """用户积分表"""
     __tablename__ = "user_usage"
 
     usage_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.user_id"), unique=True, nullable=False, index=True)
-    total_quota = Column(Integer, default=1, nullable=False)  # 总配额
-    used_count = Column(Integer, default=0, nullable=False)  # 已使用次数
+    total_credits = Column(Integer, default=300, nullable=False)  # 总积分（默认300积分，可查询10个达人）
+    used_credits = Column(Integer, default=0, nullable=False)  # 已使用积分
     last_reset_date = Column(DateTime)  # 仅用于记录，不自动重置（永久累计）
 
     # Relationships
     user = relationship("User", back_populates="usage_info")
 
     @property
-    def remaining_quota(self):
-        """剩余配额"""
-        return max(0, self.total_quota - self.used_count)
+    def remaining_credits(self):
+        """剩余积分"""
+        return max(0, self.total_credits - self.used_credits)
 
     def __repr__(self):
-        return f"<UserUsage {self.user_id} - {self.remaining_quota}/{self.total_quota}>"
+        return f"<UserUsage {self.user_id} - {self.remaining_credits}/{self.total_credits} credits>"
 
 
 class Report(Base):

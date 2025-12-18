@@ -226,6 +226,9 @@ class BuildURLTool(BaseTool):
     ) -> str:
         """执行 URL 构建"""
         try:
+            # 🔍 调试日志：打印接收到的达人数量参数
+            print(f"🔍 BuildURLTool 接收到的 target_influencer_count: {target_influencer_count}")
+
             # 存储参数到 agent 的 current_params
             agent = get_agent_instance()
             if agent:
@@ -246,6 +249,12 @@ class BuildURLTool(BaseTool):
                 if target_influencer_count is not None:
                     agent.target_influencer_count = target_influencer_count
                     agent.current_params['target_count'] = target_influencer_count
+                    print(f"✅ 已保存目标达人数量: {target_influencer_count} 个")
+                else:
+                    # ⚠️ 如果没有传入，使用默认值并警告
+                    print(f"⚠️ 警告：未传入 target_influencer_count 参数，将使用默认值 10")
+                    agent.target_influencer_count = 10
+                    agent.current_params['target_count'] = 10
 
             # 处理粉丝数范围
             followers = []

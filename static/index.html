@@ -978,7 +978,7 @@
                         <span id="username">--</span>
                     </button>
                     <div class="user-dropdown" id="userDropdown">
-                        <div class="dropdown-item" onclick="window.location.href='/login.html'">修改密码</div>
+                        <div class="dropdown-item" onclick="window.location.href='/settings.html'">个人设置</div>
                         <div class="dropdown-item" onclick="logout()">退出登录</div>
                     </div>
                 </div>
@@ -1037,26 +1037,25 @@
                 <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                     <p style="margin: 0; color: #856404; line-height: 1.6;">
                         <strong>📊 即将开始搜索和分析达人数据</strong><br>
-                        此操作将消耗 <strong style="color: #d9534f;">1次</strong> 报告生成次数
+                        此操作将消耗 <strong style="color: #d9534f;"><span id="creditsToDeduct">-</span> 积分</strong>（<span id="influencerCount">-</span> 个达人 × 30 积分/个）
                     </p>
                 </div>
 
                 <div style="margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="color: var(--text-color);">当前剩余次数:</span>
-                        <span id="currentQuota" style="font-weight: bold; font-size: 18px; color: var(--primary-color);">-</span>
+                        <span style="color: var(--text-color);">当前剩余积分:</span>
+                        <span id="currentCredits" style="font-weight: bold; font-size: 18px; color: var(--primary-color);">-</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--text-color);">确认后剩余:</span>
-                        <span id="afterQuota" style="font-weight: bold; font-size: 18px; color: #28a745;">-</span>
+                        <span id="afterCredits" style="font-weight: bold; font-size: 18px; color: #28a745;">-</span>
                     </div>
                 </div>
 
                 <div style="background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 13px; color: #004085;">
                     <strong>💡 温馨提示:</strong><br>
-                    • 报告生成过程约需 2-5 分钟<br>
-                    • 如果生成失败,系统将自动退还次数<br>
-                    • 生成成功后可在报告库查看
+                    • 如果生成失败,系统将自动退还积分<br>
+                    • 报告生成成功后会有邮件或短信提醒，可在报告库查看
                 </div>
 
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
@@ -1162,7 +1161,7 @@
 
                 const user = await response.json();
                 document.getElementById('username').textContent = user.username;
-                document.getElementById('quotaBadge').textContent = `剩余次数: ${user.remaining_quota}`;
+                document.getElementById('quotaBadge').textContent = `剩余积分: ${user.remaining_credits}`;
             } catch (error) {
                 console.error('Failed to load user info:', error);
             }
@@ -1838,7 +1837,7 @@
         // 打开确认生成报告弹窗
         async function openConfirmGenerateModal(data) {
             try {
-                // 获取最新的用户配额信息
+                // 获取最新的用户积分信息
                 const userResponse = await fetch(`${API_BASE_URL}/api/auth/me`, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`
@@ -1851,28 +1850,34 @@
                 }
 
                 const user = await userResponse.json();
-                const currentQuota = user.remaining_quota;
-                const afterQuota = currentQuota - 1;
+                const currentCredits = user.remaining_credits;
 
-                // 更新弹窗中的配额显示
-                document.getElementById('currentQuota').textContent = currentQuota;
-                document.getElementById('afterQuota').textContent = afterQuota;
+                // 从data中获取达人数量（如果agent提供了）
+                const influencerCount = data.influencer_count || 10; // 默认10个
+                const creditsPerInfluencer = 30;
+                const creditsToDeduct = influencerCount * creditsPerInfluencer;
+                const afterCredits = currentCredits - creditsToDeduct;
 
-                // 检查配额是否足够
+                // 更新弹窗中的积分显示
+                document.getElementById('influencerCount').textContent = influencerCount;
+                document.getElementById('creditsToDeduct').textContent = creditsToDeduct;
+                document.getElementById('currentCredits').textContent = currentCredits;
+                document.getElementById('afterCredits').textContent = afterCredits >= 0 ? afterCredits : '不足';
+
+                // 检查积分是否足够
                 const confirmBtn = document.getElementById('confirmGenerateBtn');
-                if (currentQuota <= 0) {
-                    // 配额不足，禁用确认按钮
-                    document.getElementById('currentQuota').style.color = '#d9534f';
-                    document.getElementById('afterQuota').textContent = '不足';
-                    document.getElementById('afterQuota').style.color = '#d9534f';
+                if (currentCredits < creditsToDeduct) {
+                    // 积分不足，禁用确认按钮
+                    document.getElementById('currentCredits').style.color = '#d9534f';
+                    document.getElementById('afterCredits').style.color = '#d9534f';
                     confirmBtn.disabled = true;
                     confirmBtn.style.opacity = '0.5';
                     confirmBtn.style.cursor = 'not-allowed';
-                    confirmBtn.textContent = '次数不足，无法生成';
+                    confirmBtn.textContent = `积分不足，需要 ${creditsToDeduct} 积分`;
                 } else {
-                    // 配额充足
-                    document.getElementById('currentQuota').style.color = 'var(--primary-color)';
-                    document.getElementById('afterQuota').style.color = '#28a745';
+                    // 积分充足
+                    document.getElementById('currentCredits').style.color = 'var(--primary-color)';
+                    document.getElementById('afterCredits').style.color = '#28a745';
                     confirmBtn.disabled = false;
                     confirmBtn.style.opacity = '1';
                     confirmBtn.style.cursor = 'pointer';
@@ -1887,7 +1892,7 @@
 
             } catch (error) {
                 console.error('打开确认弹窗失败:', error);
-                alert('获取配额信息失败，请稍后重试');
+                alert('获取积分信息失败，请稍后重试');
             }
         }
 
@@ -1917,12 +1922,12 @@
                 // 通过 WebSocket 发送确认消息
                 sendMessage('确认');
 
-                // ⭐ 新增：延迟2秒后刷新用户配额信息
-                // 因为配额会在后端处理"确认"消息时被扣除（在 _create_report 方法中）
+                // ⭐ 新增：延迟2秒后刷新用户积分信息
+                // 因为积分会在后端处理报告生成时被扣除
                 // 增加到2秒确保后端处理完成
                 setTimeout(async () => {
                     await loadUserInfo();
-                    console.log('🔄 配额信息已刷新');
+                    console.log('🔄 积分信息已刷新');
                 }, 2000);
 
                 // ⭐ 同时刷新报告列表，以便显示新创建的报告

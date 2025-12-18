@@ -22,20 +22,21 @@ router = APIRouter(prefix="/api/admin", tags=["管理员"])
 class UserInfo(BaseModel):
     """用户信息"""
     user_id: str
-    username: str
-    email: str
+    username: Optional[str]
+    email: Optional[str]
+    phone_number: Optional[str]
     is_active: bool
     is_admin: bool
     created_at: datetime
     last_login: Optional[datetime]
-    total_quota: int
-    used_count: int
-    remaining_quota: int
+    total_credits: int
+    used_credits: int
+    remaining_credits: int
 
 
-class UpdateQuotaRequest(BaseModel):
-    """更新配额请求"""
-    new_quota: int
+class UpdateCreditsRequest(BaseModel):
+    """更新积分请求"""
+    new_credits: int
 
 
 class GenerateCodesRequest(BaseModel):
@@ -91,8 +92,8 @@ async def list_all_users(
         usage = db.query(UserUsage).filter(UserUsage.user_id == user.user_id).first()
 
         if not usage:
-            # 创建默认配额
-            usage = UserUsage(user_id=user.user_id, total_quota=1, used_count=0)
+            # 创建默认积分（300积分）
+            usage = UserUsage(user_id=user.user_id, total_credits=300, used_credits=0)
             db.add(usage)
             db.commit()
 
@@ -100,27 +101,28 @@ async def list_all_users(
             user_id=user.user_id,
             username=user.username,
             email=user.email,
+            phone_number=user.phone_number,
             is_active=user.is_active,
             is_admin=user.is_admin,
             created_at=user.created_at,
             last_login=user.last_login,
-            total_quota=usage.total_quota,
-            used_count=usage.used_count,
-            remaining_quota=usage.remaining_quota
+            total_credits=usage.total_credits,
+            used_credits=usage.used_credits,
+            remaining_credits=usage.remaining_credits
         ))
 
     return result
 
 
-@router.put("/users/{user_id}/quota")
-async def update_user_quota(
+@router.put("/users/{user_id}/credits")
+async def update_user_credits(
     user_id: str,
-    request: UpdateQuotaRequest,
+    request: UpdateCreditsRequest,
     admin_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
-    修改用户配额
+    修改用户积分
     """
     # 检查用户是否存在
     user = db.query(User).filter(User.user_id == user_id).first()
@@ -130,23 +132,23 @@ async def update_user_quota(
             detail="用户不存在"
         )
 
-    # 获取或创建配额记录
+    # 获取或创建积分记录
     usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
 
     if not usage:
-        usage = UserUsage(user_id=user_id, total_quota=request.new_quota, used_count=0)
+        usage = UserUsage(user_id=user_id, total_credits=request.new_credits, used_credits=0)
         db.add(usage)
     else:
-        usage.total_quota = request.new_quota
+        usage.total_credits = request.new_credits
 
     db.commit()
 
     return {
-        "message": "配额更新成功",
+        "message": "积分更新成功",
         "user_id": user_id,
         "username": user.username,
-        "new_quota": request.new_quota,
-        "remaining": usage.remaining_quota
+        "new_credits": request.new_credits,
+        "remaining": usage.remaining_credits
     }
 
 
@@ -182,6 +184,43 @@ async def toggle_user_active(
         "user_id": user_id,
         "username": user.username,
         "is_active": user.is_active
+    }
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    admin_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    删除用户及其所有相关数据
+    """
+    user = db.query(User).filter(User.user_id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 不能删除管理员自己
+    if user.user_id == admin_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能删除自己的账户"
+        )
+
+    username = user.username
+
+    # 删除用户（CASCADE会自动删除关联的usage、sessions、messages、reports）
+    db.delete(user)
+    db.commit()
+
+    return {
+        "message": f"用户 {username} 已被删除",
+        "user_id": user_id,
+        "username": username
     }
 
 

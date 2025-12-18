@@ -120,6 +120,9 @@ class BackgroundTaskQueue:
                 error_message=error_msg
             )
 
+            # ⭐ 任务失败时，退还用户积分
+            self._refund_user_credits(task_info['report_id'], task_info['user_id'])
+
     def _execute_scraping_task(self, task_info: Dict):
         """
         执行完整的爬取任务流程
@@ -274,6 +277,17 @@ class BackgroundTaskQueue:
         if report_html_path:
             self._update_report_file_path(task_info['report_id'], report_html_path)
 
+        # ⭐ 更新会话元数据（保存 json_file_path 和 target_influencer_count）
+        session_id = task_info.get('session_id')
+        if session_id and json_file_path:
+            target_count = task_info.get('report_params', {}).get('target_count')
+            self._update_session_metadata(
+                session_id=session_id,
+                json_file_path=json_file_path,
+                product_name=task_info['product_name'],
+                target_influencer_count=target_count
+            )
+
     def _update_report_status(self, report_id: str, status: str, error_message: Optional[str] = None):
         """更新数据库中报告的状态"""
         try:
@@ -302,6 +316,57 @@ class BackgroundTaskQueue:
 
         except Exception as e:
             print(f"❌ 更新报告文件路径失败: {e}")
+
+    def _update_session_metadata(
+        self,
+        session_id: str,
+        json_file_path: str,
+        product_name: str,
+        target_influencer_count: Optional[int] = None
+    ):
+        """
+        更新会话元数据，保存 JSON 文件路径和用户请求的达人数量
+
+        Args:
+            session_id: 会话 ID
+            json_file_path: JSON 数据文件路径
+            product_name: 商品名称
+            target_influencer_count: 用户请求的达人数量
+        """
+        try:
+            with get_db_context() as db:
+                from database.models import ChatSession
+
+                session = db.query(ChatSession).filter(
+                    ChatSession.session_id == session_id
+                ).first()
+
+                if not session:
+                    print(f"⚠️ 会话不存在: {session_id}")
+                    return
+
+                # 获取现有元数据或创建新的
+                meta_data = session.meta_data or {}
+
+                # 更新元数据
+                meta_data['json_file_path'] = json_file_path
+                meta_data['product_name'] = product_name
+
+                # ⭐ 保存用户请求的达人数量（用于积分计算）
+                if target_influencer_count is not None:
+                    meta_data['target_influencer_count'] = target_influencer_count
+                    print(f"💾 保存目标达人数量到会话: {target_influencer_count} 个")
+
+                # 更新会话
+                session.meta_data = meta_data
+                db.commit()
+
+                print(f"✅ 会话元数据已更新: {session_id}")
+
+        except Exception as e:
+            print(f"❌ 更新会话元数据失败: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _update_report_progress(self, report_id: str, progress: int):
         """更新报告生成进度（兼容旧接口）"""
@@ -472,16 +537,19 @@ class BackgroundTaskQueue:
 
         # 如果没有提供 report_id，创建新报告
         if not report_id:
-            report_id = self._create_report(user_id, product_name, session_id)
+            # ⭐ 从 report_params 提取 target_count 作为 target_influencer_count
+            target_count = report_params.get('target_count', 10) if report_params else 10
+            report_id = self._create_report(user_id, product_name, session_id, target_influencer_count=target_count)
 
         task_info = {
             'task_id': task_id,
             'report_id': report_id,
             'user_id': user_id,
+            'session_id': session_id,          # ⭐ 保存会话 ID
             'product_name': product_name,
             'urls': urls,
             'max_pages': max_pages,
-            'report_params': report_params,    # ⭐ 存储报告参数
+            'report_params': report_params,    # ⭐ 存储报告参数（包含 target_count）
             'status': 'queued',
             'created_at': datetime.now().isoformat(),
             'started_at': None,
@@ -501,8 +569,8 @@ class BackgroundTaskQueue:
 
         return task_id
 
-    def _create_report(self, user_id: str, product_name: str, session_id: str = None) -> str:
-        """在数据库中创建新报告记录（并扣除用户配额）"""
+    def _create_report(self, user_id: str, product_name: str, session_id: str = None, target_influencer_count: int = None) -> str:
+        """在数据库中创建新报告记录（并扣除用户积分）"""
         try:
             with get_db_context() as db:
                 # 如果没有提供 session_id，使用默认值或从数据库获取用户最近的 session
@@ -531,17 +599,42 @@ class BackgroundTaskQueue:
                 else:
                     report_title = f"{product_name} - 达人推荐报告"
 
-                # ⭐ 新增：检查并扣除用户配额
+                # ⭐ 获取用户请求的达人数量（用于积分计算）
+                # 优先使用传入的参数，否则从会话元数据读取，最后使用默认值
+                if target_influencer_count is None:
+                    meta_data = session.meta_data or {}
+                    target_influencer_count = meta_data.get("target_influencer_count", 10)
+
+                print(f"💰 使用目标达人数量计算积分: {target_influencer_count} 个")
+
+                # ⭐ 计算所需积分（30积分/达人）
+                CREDITS_PER_INFLUENCER = 30
+                required_credits = target_influencer_count * CREDITS_PER_INFLUENCER
+
+                # ⭐ 检查并扣除用户积分
                 from database.models import UserUsage
                 usage = db.query(UserUsage).filter(
                     UserUsage.user_id == user_id
                 ).first()
 
                 if not usage:
-                    raise ValueError(f"找不到用户 {user_id} 的配额信息")
+                    raise ValueError(f"找不到用户 {user_id} 的积分信息")
 
-                if usage.remaining_quota <= 0:
-                    raise ValueError(f"用户配额不足，剩余: {usage.remaining_quota}")
+                if usage.remaining_credits < required_credits:
+                    # 计算用户当前积分能生成多少个达人的报告
+                    affordable_count = usage.remaining_credits // CREDITS_PER_INFLUENCER
+
+                    error_msg = f"积分不足：需要 {required_credits} 积分（{target_influencer_count} 个达人 × 30），当前剩余 {usage.remaining_credits} 积分"
+
+                    # 如果用户有一定积分，提示可以减少达人数量
+                    if affordable_count > 0 and affordable_count < target_influencer_count:
+                        error_msg += f"\n\n💡 建议：您当前积分可以生成 {affordable_count} 个达人的报告。您可以：\n"
+                        error_msg += f"   1. 调整达人数量为 {affordable_count} 个（需要 {affordable_count * CREDITS_PER_INFLUENCER} 积分）\n"
+                        error_msg += f"   2. 充值积分后继续生成 {target_influencer_count} 个达人的报告"
+                    else:
+                        error_msg += "\n\n💡 请充值积分后继续"
+
+                    raise ValueError(error_msg)
 
                 # 创建报告，使用会话标题
                 report = Report(
@@ -550,16 +643,21 @@ class BackgroundTaskQueue:
                     title=report_title,
                     report_path="",  # 初始为空，后续更新
                     status='queued',
-                    meta_data={'product_name': product_name, 'type': 'influencer_search'}
+                    meta_data={
+                        'product_name': product_name,
+                        'type': 'influencer_search',
+                        'target_influencer_count': target_influencer_count,  # ⭐ 保存目标数量
+                        'credits_deducted': required_credits  # ⭐ 保存扣除的积分
+                    }
                 )
                 db.add(report)
 
-                # ⭐ 扣除配额（失败时会自动回滚）
-                usage.used_count += 1
+                # ⭐ 扣除积分（失败时会自动回滚）
+                usage.used_credits += required_credits
                 db.commit()
                 db.refresh(report)
 
-                print(f"✅ 用户 {user_id} 配额已扣除: {usage.used_count}/{usage.total_quota} (剩余: {usage.remaining_quota})")
+                print(f"✅ 用户 {user_id} 积分已扣除: {required_credits} 积分 ({target_influencer_count} 个达人), 剩余: {usage.remaining_credits}/{usage.total_credits}")
 
                 return report.report_id
 
@@ -568,6 +666,53 @@ class BackgroundTaskQueue:
             import traceback
             traceback.print_exc()
             raise
+
+    def _refund_user_credits(self, report_id: str, user_id: str):
+        """
+        任务失败时，退还用户积分
+
+        Args:
+            report_id: 报告 ID
+            user_id: 用户 ID
+        """
+        try:
+            with get_db_context() as db:
+                from database.models import UserUsage
+
+                # 从报告的 meta_data 中获取扣除的积分数量
+                report = db.query(Report).filter(Report.report_id == report_id).first()
+                if not report:
+                    print(f"⚠️ 报告不存在，无法退还积分: {report_id}")
+                    return
+
+                meta_data = report.meta_data or {}
+                credits_deducted = meta_data.get('credits_deducted', 0)
+
+                if credits_deducted <= 0:
+                    print(f"⚠️ 报告未扣除积分，无需退还: {report_id}")
+                    return
+
+                # 退还积分
+                usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
+                if not usage:
+                    print(f"⚠️ 用户积分记录不存在，无法退还: {user_id}")
+                    return
+
+                if usage.used_credits >= credits_deducted:
+                    usage.used_credits -= credits_deducted
+                    db.commit()
+                    print(f"♻️ 用户 {user_id} 积分已退还: {credits_deducted} 积分, 剩余: {usage.remaining_credits}/{usage.total_credits}")
+                else:
+                    # 异常情况：已用积分小于要退还的数量，直接归零
+                    print(f"⚠️ 异常：已用积分 ({usage.used_credits}) 小于要退还的积分 ({credits_deducted})，归零处理")
+                    usage.used_credits = 0
+                    db.commit()
+                    print(f"♻️ 用户 {user_id} 积分已归零退还, 剩余: {usage.remaining_credits}/{usage.total_credits}")
+
+        except Exception as e:
+            print(f"❌ 退还积分失败: {e}")
+            import traceback
+            traceback.print_exc()
 
     def get_task_status(self, task_id: str) -> Optional[Dict]:
         """获取任务状态"""

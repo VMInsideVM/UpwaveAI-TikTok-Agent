@@ -17,7 +17,7 @@ from datetime import datetime
 from session_manager_db import session_manager  # 使用数据库版本
 from agent import TikTokInfluencerAgent
 from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_call
-from response_validator import get_validator  # 导入响应验证器
+from response_validator import get_validator  # 导入工具调用追踪器
 
 # 导入认证相关
 from database.connection import get_db
@@ -96,7 +96,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
         session_id: 会话 ID（可选）
     """
     try:
-        # 获取响应验证器实例
+        # 获取工具调用追踪器实例
         validator = get_validator(debug=True)  # 启用调试模式
 
         # 发送开始处理的消息
@@ -197,70 +197,7 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             except asyncio.CancelledError:
                 pass
 
-        # ⭐ 响应验证和自动重试机制
-        MAX_RETRIES = 2  # 最多重试 2 次
-        retry_count = 0
-
-        while retry_count <= MAX_RETRIES:
-            # 清理响应内容（隐藏品牌相关字样）
-            if response:
-                response = clean_response(response)
-
-                # ⭐ 验证响应是否正确展示了参数
-                is_valid, retry_prompt = validator.validate_response(response)
-
-                if is_valid:
-                    # 验证通过，跳出循环
-                    break
-                else:
-                    # 验证失败，需要重试
-                    retry_count += 1
-                    print(f"⚠️ 响应验证失败（第 {retry_count}/{MAX_RETRIES} 次），触发自动重试")
-
-                    if retry_count <= MAX_RETRIES:
-                        # 发送重试状态消息
-                        await websocket.send_json({
-                            "type": "status",
-                            "content": f"检测到格式问题，正在重新生成回复...（{retry_count}/{MAX_RETRIES}）",
-                            "timestamp": datetime.now().isoformat()
-                        })
-
-                        # 使用重试提示重新调用 agent
-                        try:
-                            # 启动心跳任务
-                            heartbeat_task = asyncio.create_task(send_heartbeat())
-
-                            # 启动处理状态报告任务
-                            processing_task = asyncio.create_task(report_processing())
-
-                            try:
-                                # 使用重试提示重新生成
-                                response = await loop.run_in_executor(
-                                    None,
-                                    lambda: agent.run_with_image(retry_prompt, None) if image_data else agent.run(retry_prompt)
-                                )
-                            finally:
-                                # 取消任务
-                                processing_task.cancel()
-                                heartbeat_task.cancel()
-                                try:
-                                    await processing_task
-                                    await heartbeat_task
-                                except asyncio.CancelledError:
-                                    pass
-                        except Exception as retry_error:
-                            print(f"❌ 重试失败: {retry_error}")
-                            # 如果重试失败，使用原始响应
-                            break
-                    else:
-                        # 达到最大重试次数，使用当前响应
-                        print(f"❌ 已达到最大重试次数 ({MAX_RETRIES})，使用当前响应")
-                        break
-            else:
-                # 没有响应，跳出循环
-                break
-
-        # 继续原有的响应处理逻辑
+        # 清理响应内容（隐藏品牌相关字样）
         if response:
             response = clean_response(response)
 
@@ -410,6 +347,26 @@ async def register_page():
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="<h1>404 - 注册页面不存在</h1>", status_code=404)
+
+
+@app.get("/reset-password.html", response_class=HTMLResponse)
+async def reset_password_page():
+    """返回密码重置页面"""
+    try:
+        with open("static/reset-password.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>404 - 密码重置页面不存在</h1>", status_code=404)
+
+
+@app.get("/settings.html", response_class=HTMLResponse)
+async def settings_page():
+    """返回个人设置页面"""
+    try:
+        with open("static/settings.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>404 - 设置页面不存在</h1>", status_code=404)
 
 
 @app.get("/admin.html", response_class=HTMLResponse)
