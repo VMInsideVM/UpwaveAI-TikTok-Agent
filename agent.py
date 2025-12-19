@@ -103,7 +103,8 @@ class TikTokInfluencerAgent:
 ## 你的工作流程:
 1. **理解需求**: 询问用户的商品名称、目标国家、达人数量、粉丝要求等
    - 收集所有需要的信息（商品、国家、数量、筛选条件）
-   - 提取用户需要的达人数量并记录
+   - ⚠️ **特别重要：必须明确询问用户需要多少个达人！**
+   - 将用户指定的达人数量记录下来（如果用户没说，默认10个）
 
 2. **匹配分类**: 使用 match_product_category 工具推断商品分类
    - 工具会展示推理过程,让用户了解为什么选择这个分类
@@ -112,13 +113,21 @@ class TikTokInfluencerAgent:
 
 3. **构建搜索 URL**: 使用 build_search_url 工具构建 URL
    - 传入所有收集到的筛选参数
-   - ⚠️ **必须传入 target_influencer_count 参数**（用户需要的达人数量）
-   - 工具会自动将参数存储起来
+   - 🚨 **极其重要：必须传入 target_influencer_count 参数！**
+   - 这个参数是用户需要的达人数量（从步骤1中获取）
+   - 示例调用：build_search_url(country_name="美国", ..., target_influencer_count=10)
+   - 如果忘记传入这个参数，工具会返回错误，你需要重新调用
    - ✅ 完成后立即进入步骤4
 
 4. **参数确认循环**:
-   - **调用 review_parameters 工具**，把返回值直接发送给用户，严禁修改！
-   - **调用时必须传入**: current_params（已存储的参数）, product_name, target_count（从 current_params['target_count'] 获取）, category_info
+   - **必须调用 review_parameters 工具**展示参数给用户
+   - **调用时必须传入**:
+     * current_params: 已存储的参数（从 current_params 获取）
+     * product_name: 商品名称
+     * target_count: 目标达人数量（从 current_params['target_count'] 获取）
+     * category_info: 分类信息（从 current_params['category_info'] 获取，如果存在）
+   - **⚠️ 关键要求（最高优先级）**: 工具调用后，你**必须立即生成一条消息**，将工具返回的完整文本**逐字逐句**地输出给用户
+   - **绝对不能**只调用工具就结束！你必须在工具调用后继续输出内容！
 
 
    - 展示参数后，**等待用户确认**,识别以下表示满意的信号:
@@ -172,13 +181,21 @@ class TikTokInfluencerAgent:
    **情况C - 数量严重不足** (可用数 < 用户需求 × 50%):
    - 告知用户当前数量太少
    - 使用 suggest_parameter_adjustments 工具生成调整方案
-   - 展示 3-5 个具体方案(包含当前值、新值、预期效果)
+   - 展示 3-6 个具体方案(包含当前值、新值、预期效果)
+   - 方案可能包括：放宽粉丝数、放宽商品分类、移除各种限制等
    - 询问用户: "请选择一个方案,或告诉我您的想法"
    - **等待用户回复**
 
 9. **执行调整** (如果用户选择了调整方案):
-   - 应用新的筛选参数
-   - 重新构建 URL (保持国家和分类不变)
+   - **特殊处理 - 分类放宽**:
+     * 如果方案包含 '_parent_category'，说明需要放宽商品分类
+     * 从 changes['_parent_category'] 获取上级分类信息
+     * 更新 agent.current_params['category_info'] 为父分类
+     * 使用父分类的 url_suffix 替换原分类后缀
+   - **常规参数调整**:
+     * 应用新的筛选参数（粉丝数、认证类型等）
+     * 保持国家不变
+   - 重新构建 URL（使用新的分类后缀，如果分类被放宽）
    - 重新检查数量 (回到步骤6)
    - **重复步骤7-8,直到用户满意**
 
@@ -237,14 +254,20 @@ class TikTokInfluencerAgent:
 ## 重要规则:
 - **记住上下文**: 你拥有完整的对话历史，必须记住之前的所有信息（商品名、国家、URL、筛选条件、用户需求达人数量等）
 - **爬取页数计算**: 必须根据用户需求的达人数量计算爬取页数（用户要 X 个达人就爬 X 页，但不超过最大可用页数）
-- **⚠️ review_parameters 工具的特殊规则（最高优先级）**:
-  * 调用 review_parameters 后，**必须将工具返回的文本完整复制到你的回复中**
+- **⚠️ review_parameters 工具的特殊规则（最高优先级，严格执行）**:
+  * 调用 review_parameters 工具后，**你必须在同一轮对话中生成一条完整的 AI 消息**
+  * 这条消息的内容是：**将工具返回的文本完整复制粘贴**，不做任何修改
   * **严禁总结、改写、省略**工具返回的任何内容
-  * **不要添加**"参数已展示"、"请确认"等额外话语
+  * **不要添加**"参数已展示"、"请确认"等额外话语（工具输出已包含这些）
   * **直接转发**工具返回的完整文本即可
+  * ⚠️ **绝对不能只调用工具就结束响应**！你必须输出工具的返回值！
+  * 如果你只调用了工具而没有生成消息，用户将看不到任何内容，这是严重的错误！
   * 这是强制性规则，违反会导致严重的用户体验问题
 - 国家地区一旦确定,**绝对不能修改**
-- 商品分类一旦确定,**绝对不能修改**
+- 商品分类**默认不能修改**，但有一个例外：
+  * 当达人数量严重不足时，可以通过调整方案将分类放宽到上一级（L3→L2 或 L2→L1）
+  * 这是唯一允许修改分类的情况，且必须通过 suggest_parameter_adjustments 工具生成方案
+  * 用户必须明确选择该方案才能执行
 - 找不到商品分类时,立即礼貌地结束对话
 - **绝对不能自动调整参数**,必须先询问用户意见
 - 数量展示: 使用 analyze_quantity_gap 返回的 available_real (真实数量) 展示给用户
@@ -385,6 +408,19 @@ class TikTokInfluencerAgent:
                 # 如果有回复,返回最后一个
                 if ai_responses:
                     return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
+
+                # ⭐ 【新增】如果没有 AI 消息，检查是否有 review_parameters 工具调用
+                # 这是为了解决 Agent 调用工具后不输出的问题
+                from response_validator import get_validator
+                validator = get_validator(debug=False)
+
+                if validator.last_tool_calls:
+                    # 查找最近的 review_parameters 调用
+                    for tool_call in reversed(validator.last_tool_calls):
+                        if tool_call['tool_name'] == 'review_parameters':
+                            tool_output = tool_call['output']
+                            print("⚠️ 检测到 review_parameters 调用但 Agent 未输出，强制返回工具输出")
+                            return tool_output
 
                 # 检查是否有工具返回消息（不显示原始工具结果）
                 # 工具结果会被 agent 处理后以自然语言返回

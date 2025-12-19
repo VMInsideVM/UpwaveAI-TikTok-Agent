@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS user_usage;
 CREATE TABLE user_usage (
     usage_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL UNIQUE,
-    total_credits INTEGER NOT NULL DEFAULT 300,  -- 总积分（从 total_quota 改名）
+    total_credits INTEGER NOT NULL DEFAULT 300,  -- 总积分（从 total_quota 改名，每个达人100积分）
     used_credits INTEGER NOT NULL DEFAULT 0,     -- 已使用积分（从 used_count 改名）
     last_reset_date TIMESTAMP,                   -- 保留字段
     FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
@@ -23,7 +23,7 @@ CREATE TABLE user_usage (
 CREATE INDEX IF NOT EXISTS idx_user_usage_user_id ON user_usage(user_id);
 
 -- 2. 迁移数据（将旧的配额数据转换为积分）
--- 策略：1次配额 = 300积分（可查询10个达人）
+-- 策略：1次配额 = 300积分（可查询3个达人，每个达人100积分）
 INSERT INTO user_usage (usage_id, user_id, total_credits, used_credits, last_reset_date)
 SELECT
     usage_id,

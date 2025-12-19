@@ -3,7 +3,86 @@
 当达人数量不足时，生成结构化的调整建议
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
+import json
+import os
+
+
+def get_parent_category_url(category_info: Dict) -> Optional[Dict]:
+    """
+    获取上一级分类的 URL 后缀信息
+
+    Args:
+        category_info: 当前分类信息
+            {
+                'level': 'l2' 或 'l3',
+                'category_name': '盘',
+                'main_category': '厨房用品',
+                'url_suffix': '&category_id=600064',
+                ...
+            }
+
+    Returns:
+        上一级分类信息（如果存在）:
+            {
+                'level': 'l1' 或 'l2',
+                'category_name': '厨房用品' 或 '餐具',
+                'url_suffix': '&category_id=11' 或 '&category_id=859272'
+            }
+        如果不存在上一级（已经是 L1）或出错，返回 None
+    """
+    try:
+        current_level = category_info.get('level', '').lower()
+        main_category = category_info.get('main_category', '')
+
+        # 如果已经是 L1 或缺少必要信息，无法放宽
+        if current_level not in ['l2', 'l3'] or not main_category:
+            return None
+
+        # 读取分类文件
+        category_file = f"categories/{main_category}.json"
+        if not os.path.exists(category_file):
+            return None
+
+        with open(category_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # 获取 L1 分类信息
+        l1_data = data.get(main_category, {})
+        l1_id = l1_data.get('id')
+
+        if current_level == 'l3':
+            # L3 → L2: 需要找到当前 L3 所属的 L2 分类
+            current_category = category_info.get('category_name', '')
+            l2_children = l1_data.get('children', {})
+
+            for l2_name, l2_info in l2_children.items():
+                if isinstance(l2_info, dict) and 'children' in l2_info:
+                    l3_children = l2_info.get('children', {})
+                    # 检查当前分类是否在这个 L2 的 L3 子分类中
+                    if current_category in l3_children:
+                        l2_id = l2_info.get('id')
+                        return {
+                            'level': 'l2',
+                            'category_name': l2_name,
+                            'url_suffix': f"&category_id={l2_id}",
+                            'main_category': main_category
+                        }
+
+        elif current_level == 'l2':
+            # L2 → L1: 直接返回 L1 信息
+            return {
+                'level': 'l1',
+                'category_name': main_category,
+                'url_suffix': f"&category_id={l1_id}",
+                'main_category': main_category
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"⚠️ 获取上级分类失败: {e}")
+        return None
 
 
 def analyze_quantity_gap(max_pages: int, user_needs: int) -> Dict:
@@ -62,12 +141,13 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
     """
     生成调整建议
 
-    按优先级生成3-5个调整方案：
+    按优先级生成3-6个调整方案：
     1. 放宽粉丝数范围
-    2. 移除新增粉丝数限制
-    3. 移除联盟达人限制
-    4. 移除认证类型限制
-    5. 移除账号类型限制
+    2. 放宽商品分类（如果当前是 L2/L3 分类）
+    3. 移除新增粉丝数限制
+    4. 移除联盟达人限制
+    5. 移除认证类型限制
+    6. 移除账号类型限制
 
     Args:
         current_params: 当前筛选参数字典
@@ -77,6 +157,7 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
                 'new_followers_min': 10000,
                 'affiliate_check': True,
                 'auth_type': 'verified',
+                'category_info': {...},  # 包含分类层级信息
                 ...
             }
         target_count: 用户需要的数量
@@ -116,13 +197,44 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
             'reason': '粉丝数是主要限制因素，放宽范围可显著增加候选达人'
         })
 
-    # 优先级2: 移除新增粉丝限制
+    # 优先级2: 放宽商品分类（如果当前是 L2/L3 分类）
+    category_info = current_params.get('category_info')
+    if category_info:
+        parent_category = get_parent_category_url(category_info)
+
+        if parent_category:
+            current_level = category_info.get('level', '').upper()
+            current_category = category_info.get('category_name', '未知')
+            parent_level = parent_category.get('level', '').upper()
+            parent_name = parent_category.get('category_name', '未知')
+
+            # 根据层级确定预期增加幅度
+            if current_level == 'L3':
+                expected_increase = '预计增加 40-60%'
+                reason = f'将分类从三级"{current_category}"放宽到二级"{parent_name}"，可包含更多相关达人'
+            else:  # L2
+                expected_increase = '预计增加 60-100%'
+                reason = f'将分类从二级"{current_category}"放宽到一级"{parent_name}"，显著扩大候选范围'
+
+            suggestions.append({
+                'priority': 2,
+                'name': '放宽商品分类范围',
+                'changes': {
+                    '_parent_category': parent_category  # 存储完整的父分类信息
+                },
+                'current': f'{current_level} 分类: {current_category}',
+                'new': f'{parent_level} 分类: {parent_name}',
+                'expected_increase': expected_increase,
+                'reason': reason
+            })
+
+    # 优先级3: 移除新增粉丝限制
     if current_params.get('new_followers_min') or current_params.get('new_followers_max'):
         nf_min = current_params.get('new_followers_min', 0)
         nf_max = current_params.get('new_followers_max', 0)
 
         suggestions.append({
-            'priority': 2,
+            'priority': 3,
             'name': '移除新增粉丝数限制',
             'changes': {
                 'new_followers_min': None,
@@ -134,10 +246,10 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
             'reason': '新增粉丝数要求过于严格，移除可包含更多稳定型达人'
         })
 
-    # 优先级3: 移除联盟达人限制
+    # 优先级4: 移除联盟达人限制
     if current_params.get('affiliate_check'):
         suggestions.append({
-            'priority': 3,
+            'priority': 4,
             'name': '移除联盟达人限制',
             'changes': {
                 'affiliate_check': False
@@ -148,13 +260,13 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
             'reason': '扩大候选池，包含更多潜在合作达人'
         })
 
-    # 优先级4: 移除认证限制
+    # 优先级5: 移除认证限制
     if current_params.get('auth_type') and current_params.get('auth_type') != 'all':
         auth_type = current_params.get('auth_type')
         auth_name = '已认证' if auth_type == 'verified' else '未认证'
 
         suggestions.append({
-            'priority': 4,
+            'priority': 5,
             'name': '移除认证类型限制',
             'changes': {
                 'auth_type': 'all'
@@ -165,13 +277,13 @@ def suggest_adjustments(current_params: Dict, target_count: int, current_count: 
             'reason': '包含所有认证状态的达人'
         })
 
-    # 优先级5: 移除账号类型限制
+    # 优先级6: 移除账号类型限制
     if current_params.get('account_type') and current_params.get('account_type') != 'all':
         account_type = current_params.get('account_type')
         type_name = '个人账号' if account_type == 'personal' else '企业账号'
 
         suggestions.append({
-            'priority': 5,
+            'priority': 6,
             'name': '移除账号类型限制',
             'changes': {
                 'account_type': 'all'

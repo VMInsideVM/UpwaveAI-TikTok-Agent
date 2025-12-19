@@ -527,6 +527,58 @@
         </div>
     </div>
 
+    <!-- 编辑用户信息模态框 -->
+    <div id="editUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">编辑用户信息</h3>
+                <button class="modal-close" onclick="closeEditUserModal()">×</button>
+            </div>
+            <div id="editUserAlert" class="alert"></div>
+            <form id="editUserForm" onsubmit="updateUserInfo(event)">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" id="editUsername" class="form-input" placeholder="留空表示不修改">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">手机号</label>
+                    <input type="tel" id="editPhoneNumber" class="form-input" placeholder="留空表示不修改" pattern="[0-9]{11}">
+                    <small style="color: #6b7280;">中国大陆手机号（11位数字）</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮箱</label>
+                    <input type="email" id="editEmail" class="form-input" placeholder="留空表示不修改">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">新密码</label>
+                    <input type="password" id="editPassword" class="form-input" placeholder="留空表示不修改密码">
+                    <small style="color: #6b7280;">留空表示不修改密码</small>
+                </div>
+                <input type="hidden" id="editUserId">
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">保存</button>
+                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeEditUserModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 查看报告详情模态框 -->
+    <div id="reportDetailModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">报告详情</h3>
+                <button class="modal-close" onclick="closeReportDetailModal()">×</button>
+            </div>
+            <div id="reportDetailContent" style="max-height: 60vh; overflow-y: auto;">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE_URL = 'http://127.0.0.1:8001';
         let currentTab = 'overview';
@@ -688,7 +740,8 @@
                                     <td>${new Date(user.created_at).toLocaleString('zh-CN')}</td>
                                     <td>
                                         ${!user.is_admin ? `
-                                            <button class="btn btn-primary btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})' style="margin-right: 5px;">修改积分</button>
+                                            <button class="btn btn-primary btn-sm" onclick='showEditUserModal(${JSON.stringify(user)})' style="margin-right: 5px;">编辑信息</button>
+                                            <button class="btn btn-success btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})' style="margin-right: 5px;">修改积分</button>
                                             <button class="btn btn-sm" style="background: ${user.is_active ? '#ef4444' : '#10b981'}; color: white; margin-right: 5px;" onclick='toggleUserActive("${user.user_id}", "${user.username}")'>${user.is_active ? '停用' : '激活'}</button>
                                             <button class="btn btn-sm" style="background: #dc2626; color: white;" onclick='deleteUser("${user.user_id}", "${user.username}")'>删除</button>
                                         ` : '-'}
@@ -722,21 +775,30 @@
                     <table>
                         <thead>
                             <tr>
+                                <th>报告ID</th>
                                 <th>报告标题</th>
                                 <th>用户</th>
                                 <th>状态</th>
                                 <th>创建时间</th>
                                 <th>完成时间</th>
+                                <th>操作</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${reports.map(report => `
                                 <tr>
+                                    <td><code style="font-size: 11px; color: #6b7280;">${report.report_id.substring(0, 8)}...</code></td>
                                     <td>${report.title}</td>
                                     <td>${report.username}</td>
                                     <td><span class="badge badge-${getStatusBadgeClass(report.status)}">${getStatusText(report.status)}</span></td>
                                     <td>${new Date(report.created_at).toLocaleString('zh-CN')}</td>
                                     <td>${report.completed_at ? new Date(report.completed_at).toLocaleString('zh-CN') : '-'}</td>
+                                    <td>
+                                        <button class="btn btn-primary btn-sm" onclick='viewReportDetail("${report.report_id}")'>查看详情</button>
+                                        ${report.status === 'completed' ? `
+                                            <button class="btn btn-success btn-sm" onclick='openReport("${report.report_id}")' style="margin-left: 5px;">打开报告</button>
+                                        ` : ''}
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -913,6 +975,166 @@
         function logout() {
             localStorage.clear();
             window.location.href = '/login.html';
+        }
+
+        // ==================== 新增：编辑用户信息功能 ====================
+
+        function showEditUserModal(user) {
+            document.getElementById('editUserId').value = user.user_id;
+            document.getElementById('editUsername').value = user.username || '';
+            document.getElementById('editPhoneNumber').value = user.phone_number || '';
+            document.getElementById('editEmail').value = user.email || '';
+            document.getElementById('editPassword').value = '';
+            document.getElementById('editUserModal').classList.add('show');
+            document.getElementById('editUserAlert').classList.remove('show');
+        }
+
+        function closeEditUserModal() {
+            document.getElementById('editUserModal').classList.remove('show');
+            document.getElementById('editUserAlert').classList.remove('show');
+        }
+
+        async function updateUserInfo(event) {
+            event.preventDefault();
+
+            const userId = document.getElementById('editUserId').value;
+            const username = document.getElementById('editUsername').value.trim();
+            const phoneNumber = document.getElementById('editPhoneNumber').value.trim();
+            const email = document.getElementById('editEmail').value.trim();
+            const password = document.getElementById('editPassword').value;
+
+            // 构建请求体（只包含非空字段）
+            const requestBody = {};
+            if (username) requestBody.username = username;
+            if (phoneNumber) requestBody.phone_number = phoneNumber;
+            if (email) requestBody.email = email;
+            if (password) requestBody.password = password;
+
+            // 至少需要修改一个字段
+            if (Object.keys(requestBody).length === 0) {
+                showModalAlert('editUserAlert', '请至少修改一个字段', 'error');
+                return;
+            }
+
+            try {
+                const response = await apiRequest(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showModalAlert('editUserAlert', '用户信息更新成功！', 'success');
+                    setTimeout(() => {
+                        closeEditUserModal();
+                        refreshUsers();
+                    }, 1500);
+                } else {
+                    showModalAlert('editUserAlert', data.detail || '更新失败', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to update user info:', error);
+                showModalAlert('editUserAlert', '更新失败: ' + error.message, 'error');
+            }
+        }
+
+        // ==================== 新增：查看报告详情功能 ====================
+
+        async function viewReportDetail(reportId) {
+            document.getElementById('reportDetailModal').classList.add('show');
+            document.getElementById('reportDetailContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            `;
+
+            try {
+                const response = await apiRequest(`/api/admin/reports/${reportId}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    const html = `
+                        <div style="line-height: 1.8;">
+                            <div class="form-group">
+                                <label class="form-label">报告ID</label>
+                                <div class="code-block">${data.report_id}</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">报告标题</label>
+                                <p style="padding: 10px; background: #f9fafb; border-radius: 6px;">${data.title}</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">所属用户</label>
+                                <p style="padding: 10px; background: #f9fafb; border-radius: 6px;">
+                                    <strong>${data.username}</strong> (${data.user_email || '无邮箱'})
+                                </p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">会话ID</label>
+                                <div class="code-block">${data.session_id}</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">状态</label>
+                                <p><span class="badge badge-${getStatusBadgeClass(data.status)}">${getStatusText(data.status)}</span></p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">创建时间</label>
+                                <p style="padding: 10px; background: #f9fafb; border-radius: 6px;">${new Date(data.created_at).toLocaleString('zh-CN')}</p>
+                            </div>
+                            ${data.completed_at ? `
+                                <div class="form-group">
+                                    <label class="form-label">完成时间</label>
+                                    <p style="padding: 10px; background: #f9fafb; border-radius: 6px;">${new Date(data.completed_at).toLocaleString('zh-CN')}</p>
+                                </div>
+                            ` : ''}
+                            <div class="form-group">
+                                <label class="form-label">报告文件路径</label>
+                                <div class="code-block">${data.report_path || '暂无'}</div>
+                            </div>
+                            ${data.error_message ? `
+                                <div class="form-group">
+                                    <label class="form-label">错误信息</label>
+                                    <div class="alert alert-error show">${data.error_message}</div>
+                                </div>
+                            ` : ''}
+                            ${data.report_data ? `
+                                <div class="form-group">
+                                    <label class="form-label">报告数据（JSON）</label>
+                                    <p style="padding: 10px; background: #f9fafb; border-radius: 6px;">包含 ${data.report_data.length} 条达人数据</p>
+                                </div>
+                            ` : ''}
+                            ${data.status === 'completed' ? `
+                                <div style="margin-top: 20px;">
+                                    <button class="btn btn-success" style="width: 100%;" onclick='openReport("${data.report_id}")'>打开报告</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+
+                    document.getElementById('reportDetailContent').innerHTML = html;
+                } else {
+                    document.getElementById('reportDetailContent').innerHTML = `
+                        <div class="alert alert-error show">${data.detail || '加载失败'}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load report detail:', error);
+                document.getElementById('reportDetailContent').innerHTML = `
+                    <div class="alert alert-error show">加载失败: ${error.message}</div>
+                `;
+            }
+        }
+
+        function closeReportDetailModal() {
+            document.getElementById('reportDetailModal').classList.remove('show');
+        }
+
+        async function openReport(reportId) {
+            // 在新窗口打开报告
+            const url = `${API_BASE_URL}/api/reports/${reportId}/view?token=${accessToken}`;
+            window.open(url, '_blank');
         }
 
         // 页面加载时初始化

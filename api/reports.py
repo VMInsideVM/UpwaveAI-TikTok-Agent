@@ -152,7 +152,7 @@ async def generate_report(
         )
 
     # 5. 根据用户请求的达人数量计算所需积分
-    CREDITS_PER_INFLUENCER = 30
+    CREDITS_PER_INFLUENCER = 100
 
     # ⭐ 优先使用用户请求的数量，如果没有则使用可用的全部数量
     if target_influencer_count is not None and target_influencer_count > 0:
@@ -186,7 +186,7 @@ async def generate_report(
         # 计算用户当前积分能生成多少个达人的报告
         affordable_count = usage.remaining_credits // CREDITS_PER_INFLUENCER
 
-        error_detail = f"积分不足：需要 {required_credits} 积分（{influencer_count} 个达人 × 30），当前剩余 {usage.remaining_credits} 积分"
+        error_detail = f"积分不足：需要 {required_credits} 积分（{influencer_count} 个达人 × 100），当前剩余 {usage.remaining_credits} 积分"
 
         # 如果用户有一定积分，提示可以减少达人数量
         if affordable_count > 0 and affordable_count < influencer_count:

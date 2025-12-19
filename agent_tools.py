@@ -246,15 +246,20 @@ class BuildURLTool(BaseTool):
                 agent.current_params['new_followers_max'] = new_followers_max
 
                 # ⭐ 存储目标达人数量
-                if target_influencer_count is not None:
+                if target_influencer_count is not None and target_influencer_count > 0:
                     agent.target_influencer_count = target_influencer_count
                     agent.current_params['target_count'] = target_influencer_count
                     print(f"✅ 已保存目标达人数量: {target_influencer_count} 个")
                 else:
-                    # ⚠️ 如果没有传入，使用默认值并警告
-                    print(f"⚠️ 警告：未传入 target_influencer_count 参数，将使用默认值 10")
-                    agent.target_influencer_count = 10
-                    agent.current_params['target_count'] = 10
+                    # ⚠️ 如果没有传入，返回错误提示，要求 Agent 重新提供
+                    error_msg = (
+                        "❌ 错误：你没有传入 target_influencer_count 参数！\n\n"
+                        "请先向用户询问需要多少个达人，然后重新调用 build_search_url 工具，"
+                        "并传入 target_influencer_count 参数。\n\n"
+                        "示例：build_search_url(..., target_influencer_count=10)"
+                    )
+                    print(f"⚠️ {error_msg}")
+                    return error_msg
 
             # 处理粉丝数范围
             followers = []
@@ -667,8 +672,12 @@ class ReviewParametersTool(BaseTool):
 
     返回格式化的参数摘要，并询问用户是否满意。
 
-    ⚠️ 【强制要求】调用此工具后，你**必须**将返回的完整文本逐字逐句地转发给用户，
-    不得进行任何总结、省略、改写或添加额外内容！这是系统强制要求，违反将导致流程错误！
+    ⚠️ 【强制要求 - 最高优先级】
+    调用此工具后，你**必须立即生成一条 AI 消息**，内容是工具返回的完整文本（逐字逐句复制）。
+    绝对不能只调用工具就结束！你必须在调用工具后继续输出，将工具返回值发送给用户！
+    不得进行任何总结、省略、改写或添加额外内容！
+
+    如果你只调用工具而不生成后续消息，用户将看不到任何输出，这是严重错误！
     """
     args_schema: type[BaseModel] = ReviewParametersInput
 
@@ -681,14 +690,22 @@ class ReviewParametersTool(BaseTool):
     ) -> str:
         """执行参数审查"""
         try:
-            # 构建参数摘要
-            output = "📋 **当前筛选参数摘要**\n\n"
+            # ⭐ 如果没有传入 category_info，尝试从 current_params 中获取
+            if not category_info and 'category_info' in current_params:
+                category_info = current_params['category_info']
+
+            # ⭐ 添加特殊标记提醒 Agent 必须输出这段内容
+            output = "[🔔 请将以下内容完整展示给用户]\n\n"
+            output += "📋 **当前筛选参数摘要**\n\n"
 
             # 1. 商品信息
             output += f"🎯 **商品信息**\n"
             output += f"   • 商品名称: {product_name}\n"
             if category_info:
-                output += f"   • 商品分类: {category_info.get('category_name', '未知')}\n"
+                category_name = category_info.get('category_name', '未知')
+                # 如果分类名称不是"未知"，显示分类信息
+                if category_name != '未知':
+                    output += f"   • 商品分类: {category_name}\n"
             output += f"   • 目标数量: {target_count} 个达人\n\n"
 
             # 2. 国家/地区

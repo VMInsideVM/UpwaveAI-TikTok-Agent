@@ -607,8 +607,8 @@ class BackgroundTaskQueue:
 
                 print(f"💰 使用目标达人数量计算积分: {target_influencer_count} 个")
 
-                # ⭐ 计算所需积分（30积分/达人）
-                CREDITS_PER_INFLUENCER = 30
+                # ⭐ 计算所需积分（100积分/达人）
+                CREDITS_PER_INFLUENCER = 100
                 required_credits = target_influencer_count * CREDITS_PER_INFLUENCER
 
                 # ⭐ 检查并扣除用户积分
@@ -624,7 +624,7 @@ class BackgroundTaskQueue:
                     # 计算用户当前积分能生成多少个达人的报告
                     affordable_count = usage.remaining_credits // CREDITS_PER_INFLUENCER
 
-                    error_msg = f"积分不足：需要 {required_credits} 积分（{target_influencer_count} 个达人 × 30），当前剩余 {usage.remaining_credits} 积分"
+                    error_msg = f"积分不足：需要 {required_credits} 积分（{target_influencer_count} 个达人 × 100），当前剩余 {usage.remaining_credits} 积分"
 
                     # 如果用户有一定积分，提示可以减少达人数量
                     if affordable_count > 0 and affordable_count < target_influencer_count:

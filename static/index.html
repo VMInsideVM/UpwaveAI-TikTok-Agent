@@ -457,6 +457,12 @@
             transition: border-color 0.3s;
             background: var(--bg-color);
             color: var(--text-color);
+            resize: none;
+            overflow-y: auto;
+            max-height: 200px;
+            min-height: 44px;
+            line-height: 1.5;
+            font-family: inherit;
         }
 
         .chat-input:focus {
@@ -996,14 +1002,14 @@
 
             <div class="chat-input-area">
                 <form class="chat-input-form" id="chatForm">
-                    <input
-                        type="text"
+                    <textarea
                         class="chat-input"
                         id="chatInput"
                         placeholder="请告诉我您的需求..."
                         autocomplete="off"
+                        rows="1"
                         disabled
-                    />
+                    ></textarea>
                     <button type="submit" class="chat-send-btn" id="sendBtn" disabled>发送</button>
                 </form>
             </div>
@@ -1037,7 +1043,7 @@
                 <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                     <p style="margin: 0; color: #856404; line-height: 1.6;">
                         <strong>📊 即将开始搜索和分析达人数据</strong><br>
-                        此操作将消耗 <strong style="color: #d9534f;"><span id="creditsToDeduct">-</span> 积分</strong>（<span id="influencerCount">-</span> 个达人 × 30 积分/个）
+                        此操作将消耗 <strong style="color: #d9534f;"><span id="creditsToDeduct">-</span> 积分</strong>（<span id="influencerCount">-</span> 个达人 × 100 积分/个）
                     </p>
                 </div>
 
@@ -1162,6 +1168,50 @@
                 const user = await response.json();
                 document.getElementById('username').textContent = user.username;
                 document.getElementById('quotaBadge').textContent = `剩余积分: ${user.remaining_credits}`;
+
+                // ⭐ 检查积分是否足够（至少需要100积分才能使用）
+                const MIN_CREDITS_REQUIRED = 100;
+                const chatInput = document.getElementById('chatInput');
+                const sendBtn = document.getElementById('sendBtn');
+
+                if (user.remaining_credits < MIN_CREDITS_REQUIRED) {
+                    // 积分不足，禁用输入
+                    chatInput.disabled = true;
+                    sendBtn.disabled = true;
+                    chatInput.placeholder = `积分不足（剩余${user.remaining_credits}），至少需要${MIN_CREDITS_REQUIRED}积分才能使用`;
+                    console.warn(`⚠️ 积分不足: ${user.remaining_credits} < ${MIN_CREDITS_REQUIRED}`);
+
+                    // 在聊天区域显示警告消息
+                    const messagesDiv = document.getElementById('chatMessages');
+                    const existingWarning = document.getElementById('low-credits-warning');
+
+                    if (!existingWarning) {
+                        const warningDiv = document.createElement('div');
+                        warningDiv.id = 'low-credits-warning';
+                        warningDiv.style.cssText = 'padding: 16px; margin: 16px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; text-align: center;';
+                        warningDiv.innerHTML = `
+                            <p style="margin: 0; color: #856404; font-size: 16px;">
+                                <strong>⚠️ 积分不足</strong><br>
+                                您当前剩余 <strong>${user.remaining_credits}</strong> 积分，至少需要 <strong>${MIN_CREDITS_REQUIRED}</strong> 积分才能使用达人推荐服务。<br>
+                                <span style="font-size: 14px;">每个达人消耗100积分</span>
+                            </p>
+                        `;
+                        messagesDiv.appendChild(warningDiv);
+                    }
+                } else {
+                    // 积分充足，启用输入（如果WebSocket已连接）
+                    if (isConnected) {
+                        chatInput.disabled = false;
+                        sendBtn.disabled = false;
+                        chatInput.placeholder = '请告诉我您的需求...';
+                    }
+
+                    // 移除警告消息（如果存在）
+                    const existingWarning = document.getElementById('low-credits-warning');
+                    if (existingWarning) {
+                        existingWarning.remove();
+                    }
+                }
             } catch (error) {
                 console.error('Failed to load user info:', error);
             }
@@ -1404,7 +1454,10 @@
                 content: message
             }));
 
-            document.getElementById('chatInput').value = '';
+            const chatInput = document.getElementById('chatInput');
+            chatInput.value = '';
+            // 重置 textarea 高度
+            chatInput.style.height = 'auto';
         }
 
         // 表单提交
@@ -1412,6 +1465,23 @@
             e.preventDefault();
             const message = document.getElementById('chatInput').value;
             sendMessage(message);
+        });
+
+        // 自动调整 textarea 高度
+        const chatInput = document.getElementById('chatInput');
+        chatInput.addEventListener('input', function() {
+            // 重置高度以便正确计算
+            this.style.height = 'auto';
+            // 设置新高度（不超过最大高度）
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        });
+
+        // 支持 Enter 发送消息，Shift+Enter 换行
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('chatForm').dispatchEvent(new Event('submit'));
+            }
         });
 
         // 切换主题
@@ -1852,11 +1922,21 @@
                 const user = await userResponse.json();
                 const currentCredits = user.remaining_credits;
 
-                // 从data中获取达人数量（如果agent提供了）
-                const influencerCount = data.influencer_count || 10; // 默认10个
-                const creditsPerInfluencer = 30;
+                // ⭐ 从后端传递的 data 中获取达人数量（必须由后端提供）
+                const influencerCount = data.influencer_count;
+
+                // ⚠️ 如果后端没有提供达人数量,显示错误
+                if (!influencerCount) {
+                    console.error('❌ 后端未提供达人数量信息', data);
+                    alert('系统错误：无法获取达人数量，请重新操作');
+                    return;
+                }
+
+                const creditsPerInfluencer = 100;
                 const creditsToDeduct = influencerCount * creditsPerInfluencer;
                 const afterCredits = currentCredits - creditsToDeduct;
+
+                console.log(`📊 确认弹窗 - 达人数量: ${influencerCount}, 扣除积分: ${creditsToDeduct}`);
 
                 // 更新弹窗中的积分显示
                 document.getElementById('influencerCount').textContent = influencerCount;

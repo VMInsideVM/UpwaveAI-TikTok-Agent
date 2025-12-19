@@ -234,10 +234,32 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
             # 如果需要确认，发送确认请求
             if needs_confirmation:
                 print("🔔 检测到需要用户确认，发送confirm_generate消息")
+
+                # ⭐ 从 Agent 实例获取真实的达人数量
+                agent = session_manager.get_agent(session_id)
+                influencer_count = 10  # 默认值
+
+                print(f"🔍 调试信息:")
+                print(f"  - session_id: {session_id}")
+                print(f"  - agent: {agent}")
+                print(f"  - has target_influencer_count attr: {hasattr(agent, 'target_influencer_count') if agent else False}")
+
+                if agent:
+                    print(f"  - target_influencer_count value: {getattr(agent, 'target_influencer_count', None)}")
+
+                    if hasattr(agent, 'target_influencer_count') and agent.target_influencer_count:
+                        influencer_count = agent.target_influencer_count
+                        print(f"✅ 从 Agent 获取目标达人数: {influencer_count}")
+                    else:
+                        print(f"⚠️ Agent 的 target_influencer_count 为空或不存在，使用默认值: {influencer_count}")
+                else:
+                    print(f"⚠️ 无法获取 Agent 实例，使用默认值: {influencer_count}")
+
                 await websocket.send_json({
                     "type": "confirm_generate",
                     "data": {
-                        "session_id": session_id
+                        "session_id": session_id,
+                        "influencer_count": influencer_count  # ⭐ 传递真实的达人数量
                     },
                     "timestamp": datetime.now().isoformat()
                 })

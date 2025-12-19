@@ -122,7 +122,7 @@ def translate_tool_call(tool_name: str) -> str:
 
 def clean_response(response: str) -> str:
     """
-    清理 Agent 响应，移除品牌相关字样
+    清理 Agent 响应，移除品牌相关字样和内部标记
 
     Args:
         response: 原始响应文本
@@ -145,6 +145,10 @@ def clean_response(response: str) -> str:
     cleaned = response
     for old, new in replacements.items():
         cleaned = cleaned.replace(old, new)
+
+    # ⭐ 移除内部标记（不应显示给用户）
+    # 移除 review_parameters 工具添加的提醒标记
+    cleaned = re.sub(r'\[🔔 请将以下内容完整展示给用户\]\n*', '', cleaned)
 
     return cleaned
 
