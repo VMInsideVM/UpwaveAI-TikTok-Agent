@@ -35,7 +35,8 @@
       "Bash(\".venv/Scripts/python.exe\" -m pip install bcrypt==4.0.1)",
       "Bash(ls:*)",
       "Bash(if [ ! -d \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\" ])",
-      "Bash(then mkdir \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\")"
+      "Bash(then mkdir \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\")",
+      "Bash(Get-Content migrations002_credit_history.sql)"
     ],
     "deny": [],
     "ask": []

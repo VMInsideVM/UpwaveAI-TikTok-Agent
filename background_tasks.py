@@ -171,9 +171,9 @@ class BackgroundTaskQueue:
             raise Exception("未找到候选列表文件路径")
 
         print(f"✅ 步骤 1/3 完成: 找到 {candidate_count} 个达人候选")
-        self._update_scraping_progress(report_id, 20, eta=None)
+        # 不在这里更新进度，等获取详细信息时再开始计算
 
-        # ==================== 阶段 2: 获取达人详细信息 (scraping 20-100%) ====================
+        # ==================== 阶段 2: 获取达人详细信息 (scraping 0-100%) ====================
         print(f"📥 步骤 2/3: 获取达人详细信息...")
         stage_start_time = time.time()  # 重置阶段开始时间
 
@@ -203,14 +203,16 @@ class BackgroundTaskQueue:
                     if event["type"] == "init":
                         total = event["total"]
                         print(f"⏳ 共需处理 {total} 个达人")
+                        # 初始化时设置进度为0%
+                        self._update_scraping_progress(report_id, 0, eta=None)
 
                     elif event["type"] == "progress":
                         current = event["current"]
                         total = event["total"]
 
-                        # 映射到 scraping 20-100% 的进度范围
-                        # 阶段 2 占 scraping 的 80%，所以：20% + (current/total * 80%)
-                        scraping_progress = int(20 + (current / total * 80))
+                        # 映射到 scraping 0-100% 的进度范围
+                        # 每处理一个达人，进度增加 (100/total)%
+                        scraping_progress = int((current / total) * 100)
 
                         # 计算预计剩余时间
                         elapsed = time.time() - stage_start_time
@@ -286,6 +288,19 @@ class BackgroundTaskQueue:
                 json_file_path=json_file_path,
                 product_name=task_info['product_name'],
                 target_influencer_count=target_count
+            )
+
+        # ⭐ 发送通知（邮件 + 短信）
+        user_id = task_info.get('user_id')
+        session_id = task_info.get('session_id')
+        report_id = task_info.get('report_id')
+        if user_id and report_html_path:
+            self._send_report_notifications(
+                user_id=user_id,
+                product_name=task_info['product_name'],
+                report_path=report_html_path,
+                report_id=report_id,
+                session_id=session_id
             )
 
     def _update_report_status(self, report_id: str, status: str, error_message: Optional[str] = None):
@@ -698,21 +713,132 @@ class BackgroundTaskQueue:
                     print(f"⚠️ 用户积分记录不存在，无法退还: {user_id}")
                     return
 
+                before_credits = usage.remaining_credits  # 退还前的剩余积分
+
                 if usage.used_credits >= credits_deducted:
                     usage.used_credits -= credits_deducted
-                    db.commit()
-                    print(f"♻️ 用户 {user_id} 积分已退还: {credits_deducted} 积分, 剩余: {usage.remaining_credits}/{usage.total_credits}")
                 else:
                     # 异常情况：已用积分小于要退还的数量，直接归零
                     print(f"⚠️ 异常：已用积分 ({usage.used_credits}) 小于要退还的积分 ({credits_deducted})，归零处理")
                     usage.used_credits = 0
-                    db.commit()
-                    print(f"♻️ 用户 {user_id} 积分已归零退还, 剩余: {usage.remaining_credits}/{usage.total_credits}")
+
+                after_credits = usage.remaining_credits  # 退还后的剩余积分
+
+                # ⭐ 创建积分变动历史记录
+                from database.models import CreditHistory
+                credit_history = CreditHistory(
+                    user_id=user_id,
+                    change_type='refund',
+                    amount=credits_deducted,  # 正数表示退还
+                    before_credits=before_credits,
+                    after_credits=after_credits,
+                    reason=f"报告生成失败，退还积分",
+                    related_report_id=report_id,
+                    meta_data={
+                        "credits_deducted": credits_deducted
+                    }
+                )
+                db.add(credit_history)
+
+                db.commit()
+                print(f"♻️ 用户 {user_id} 积分已退还: {credits_deducted} 积分, 剩余: {usage.remaining_credits}/{usage.total_credits}")
 
         except Exception as e:
             print(f"❌ 退还积分失败: {e}")
             import traceback
             traceback.print_exc()
+
+    def _send_report_notifications(
+        self,
+        user_id: str,
+        product_name: str,
+        report_path: str,
+        report_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ):
+        """
+        发送报告完成通知（短信 + 邮件）
+
+        Args:
+            user_id: 用户 ID
+            product_name: 产品名称
+            report_path: 报告文件路径
+            report_id: 报告 ID（可选）
+            session_id: 会话 ID（可选）
+        """
+        try:
+            # 导入服务
+            from services.sms_service import get_sms_service
+            from services.email_service import get_email_service
+            from database.models import User, Report
+            import os
+
+            # 获取用户信息和报告完成时间
+            completed_at = None
+            with get_db_context() as db:
+                user = db.query(User).filter(User.user_id == user_id).first()
+                if not user:
+                    print(f"⚠️ 用户不存在，跳过通知: {user_id}")
+                    return
+
+                username = user.username or "用户"
+                phone = user.phone_number
+                email = user.email
+
+                # 获取报告的完成时间
+                if report_id:
+                    report = db.query(Report).filter(Report.report_id == report_id).first()
+                    if report and report.completed_at:
+                        completed_at = report.completed_at
+
+            # ⭐ 构建报告访问URL（使用会话ID和报告ID）
+            if session_id and report_id:
+                # 指向聊天界面的报告详情
+                report_url = f"http://127.0.0.1:8001/?session={session_id}#report-{report_id}"
+            else:
+                # 后备方案：直接链接HTML文件
+                report_filename = os.path.basename(report_path)
+                report_url = f"http://127.0.0.1:8001/reports/{report_filename}"
+
+            # 1. 发送短信通知
+            if phone:
+                sms_service = get_sms_service()
+                success, message = sms_service.send_report_ready_notification(
+                    phone=phone,
+                    product_name=product_name
+                )
+                if success:
+                    print(f"✅ 短信通知已发送: {phone}")
+                else:
+                    print(f"⚠️ 短信通知发送失败: {message}")
+            else:
+                print(f"⚠️ 用户未绑定手机号，跳过短信通知: {username}")
+
+            # 2. 发送邮件通知
+            if email:
+                email_service = get_email_service()
+                if email_service.is_configured():
+                    success, message = email_service.send_report_ready_notification(
+                        to_email=email,
+                        username=username,
+                        product_name=product_name,
+                        report_url=report_url,
+                        completed_at=completed_at
+                    )
+                    if success:
+                        print(f"✅ 邮件通知已发送: {email}")
+                    else:
+                        print(f"⚠️ 邮件通知发送失败: {message}")
+                else:
+                    print("⚠️ 邮件服务未配置，跳过邮件通知")
+            else:
+                print(f"⚠️ 用户未设置邮箱，跳过邮件通知: {username}")
+
+        except Exception as e:
+            print(f"❌ 发送通知时发生错误: {e}")
+            import traceback
+            traceback.print_exc()
+            # 不抛出异常，避免影响报告生成流程
 
     def get_task_status(self, task_id: str) -> Optional[Dict]:
         """获取任务状态"""

@@ -196,6 +196,29 @@ class UserUsage(Base):
         return f"<UserUsage {self.user_id} - {self.remaining_credits}/{self.total_credits} credits>"
 
 
+class CreditHistory(Base):
+    """积分变动历史表"""
+    __tablename__ = "credit_history"
+
+    history_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
+    change_type = Column(String(20), nullable=False, index=True)  # 'add', 'deduct', 'refund'
+    amount = Column(Integer, nullable=False)  # 变动数量（正数为增加，负数为扣除）
+    before_credits = Column(Integer, nullable=False)  # 变动前积分
+    after_credits = Column(Integer, nullable=False)  # 变动后积分
+    reason = Column(String(200))  # 变动原因
+    related_report_id = Column(String(36), ForeignKey("reports.report_id"))  # 关联的报告ID（如果有）
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    meta_data = Column(JSON)  # 其他元数据
+
+    # Relationships
+    user = relationship("User")
+    report = relationship("Report")
+
+    def __repr__(self):
+        return f"<CreditHistory {self.user_id} {self.change_type} {self.amount} credits>"
+
+
 class Report(Base):
     """报告表"""
     __tablename__ = "reports"

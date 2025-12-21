@@ -10,7 +10,7 @@ from datetime import datetime
 import secrets
 
 from database.connection import get_db
-from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode
+from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode, CreditHistory
 from auth.dependencies import get_current_admin_user
 from background.report_queue import report_queue
 
@@ -32,6 +32,8 @@ class UserInfo(BaseModel):
     total_credits: int
     used_credits: int
     remaining_credits: int
+    total_sessions: int = 0  # ⭐ 新增：总聊天数
+    total_tokens: int = 0  # ⭐ 新增：总token数（估算）
 
 
 class UpdateCreditsRequest(BaseModel):
@@ -105,6 +107,15 @@ async def list_all_users(
             db.add(usage)
             db.commit()
 
+        # ⭐ 统计总聊天数
+        total_sessions = db.query(ChatSession).filter(
+            ChatSession.user_id == user.user_id
+        ).count()
+
+        # ⭐ 统计总token数（基于已使用积分估算）
+        # 假设: 100积分 ≈ 1个达人查询 ≈ 约1000 tokens
+        total_tokens = usage.used_credits * 10  # 粗略估算
+
         result.append(UserInfo(
             user_id=user.user_id,
             username=user.username,
@@ -116,7 +127,9 @@ async def list_all_users(
             last_login=user.last_login,
             total_credits=usage.total_credits,
             used_credits=usage.used_credits,
-            remaining_credits=usage.remaining_credits
+            remaining_credits=usage.remaining_credits,
+            total_sessions=total_sessions,
+            total_tokens=total_tokens
         ))
 
     return result
@@ -143,11 +156,32 @@ async def update_user_credits(
     # 获取或创建积分记录
     usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
 
+    # 记录变动前的积分
     if not usage:
+        before_total = 0
         usage = UserUsage(user_id=user_id, total_credits=request.new_credits, used_credits=0)
         db.add(usage)
     else:
+        before_total = usage.total_credits
         usage.total_credits = request.new_credits
+
+    # ⭐ 创建积分变动历史记录
+    change_amount = request.new_credits - before_total
+    change_type = 'add' if change_amount > 0 else 'deduct' if change_amount < 0 else 'adjust'
+
+    credit_history = CreditHistory(
+        user_id=user_id,
+        change_type=change_type,
+        amount=change_amount,
+        before_credits=before_total,
+        after_credits=request.new_credits,
+        reason=f"管理员调整积分: {admin_user.username or admin_user.user_id}",
+        meta_data={
+            "admin_id": admin_user.user_id,
+            "admin_username": admin_user.username
+        }
+    )
+    db.add(credit_history)
 
     db.commit()
 
@@ -156,7 +190,8 @@ async def update_user_credits(
         "user_id": user_id,
         "username": user.username,
         "new_credits": request.new_credits,
-        "remaining": usage.remaining_credits
+        "remaining": usage.remaining_credits,
+        "change_amount": change_amount
     }
 
 

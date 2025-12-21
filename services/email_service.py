@@ -9,6 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.utils import formataddr
 from typing import Optional
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -117,7 +118,8 @@ class EmailService:
         to_email: str,
         username: str,
         product_name: str,
-        report_url: str
+        report_url: str,
+        completed_at: Optional[datetime] = None
     ) -> tuple[bool, str]:
         """
         发送报告完成通知邮件
@@ -127,10 +129,20 @@ class EmailService:
             username: 用户名
             product_name: 产品名称
             report_url: 报告链接
+            completed_at: 报告完成时间（可选，默认使用当前时间）
 
         Returns:
             tuple[bool, str]: (是否成功, 消息)
         """
+        # 格式化完成时间
+        if completed_at is None:
+            completed_at = datetime.utcnow()
+
+        # 转换为中国时区显示（UTC+8）
+        from datetime import timedelta
+        china_time = completed_at + timedelta(hours=8)
+        formatted_time = china_time.strftime('%Y年%m月%d日 %H:%M:%S')
+
         subject = f"您的达人推荐报告已生成完成 - {product_name}"
 
         html_content = f"""
@@ -207,7 +219,7 @@ class EmailService:
 
             <div class="report-info">
                 <p><strong>产品名称:</strong> {product_name}</p>
-                <p><strong>生成时间:</strong> 刚刚</p>
+                <p><strong>生成时间:</strong> {formatted_time}</p>
             </div>
 
             <p>点击下方按钮查看详细报告：</p>
@@ -230,7 +242,7 @@ class EmailService:
 您好！您请求的达人推荐报告已经生成完成。
 
 产品名称: {product_name}
-生成时间: 刚刚
+生成时间: {formatted_time}
 
 查看报告: {report_url}
 

@@ -20,8 +20,8 @@ from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_c
 from response_validator import get_validator  # 导入工具调用追踪器
 
 # 导入认证相关
-from database.connection import get_db
-from database.models import User
+from database.connection import get_db, get_db_context
+from database.models import User, ChatSession, Report
 from auth.dependencies import get_current_user, get_optional_user
 from fastapi import Depends, Query
 from sqlalchemy.orm import Session as DBSession
@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session as DBSession
 from api.auth import router as auth_router
 from api.reports import router as reports_router
 from api.admin import router as admin_router
+from api.admin_extensions import router as admin_ext_router
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -55,6 +56,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(reports_router)
 app.include_router(admin_router)
+app.include_router(admin_ext_router)  # 注册管理员扩展路由
 
 # 挂载静态文件目录（用于提供前端页面）
 try:
@@ -526,7 +528,23 @@ async def update_session(
             print(f"❌ 标题为空")
             raise HTTPException(status_code=400, detail="标题不能为空")
 
+        title = title.strip()  # 去除首尾空格
         print(f"   新标题: {title}")
+
+        # ⭐ 检查标题是否与该用户的其他会话重复
+        with get_db_context() as db:
+            duplicate_session = db.query(ChatSession).filter(
+                ChatSession.user_id == current_user.user_id,
+                ChatSession.session_id != session_id,
+                ChatSession.title == title
+            ).first()
+
+            if duplicate_session:
+                print(f"❌ 标题重复: 已存在相同标题的会话 {duplicate_session.session_id}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="该标题已存在，请使用不同的标题"
+                )
 
         # 更新会话标题
         success = session_manager.update_session_title(session_id, title)
@@ -535,11 +553,25 @@ async def update_session(
             print(f"❌ 会话 {session_id} 不存在")
             raise HTTPException(status_code=404, detail="会话不存在")
 
+        # ⭐ 同步更新该会话关联的所有报告标题
+        updated_count = 0
+        with get_db_context() as db:
+            updated_count = db.query(Report).filter(
+                Report.session_id == session_id
+            ).update({Report.title: title})
+            db.commit()
+
+            if updated_count > 0:
+                print(f"✅ 同步更新了 {updated_count} 个关联报告的标题")
+            else:
+                print(f"ℹ️ 该会话没有关联报告")
+
         print(f"✅ 会话 {session_id} 重命名成功")
         return JSONResponse({
             "message": "会话已更新",
             "session_id": session_id,
-            "title": title
+            "title": title,
+            "updated_reports": updated_count
         })
 
     except HTTPException:
@@ -674,11 +706,14 @@ async def get_user_reports(
 
                 reports_data.append({
                     "report_id": report.report_id,
+                    "session_id": report.session_id,  # ⭐ 新增：返回 session_id
                     "title": report.title,
                     "status": report.status,
                     "report_type": report_type,  # ⭐ 从 meta_data 中提取
                     "file_path": report.report_path,  # ⭐ 修复：使用正确的字段名
                     "error_message": report.error_message,
+                    "scraping_progress": report.scraping_progress,  # ⭐ 新增：爬取进度
+                    "report_progress": report.report_progress,      # ⭐ 新增：报告生成进度
                     "created_at": report.created_at.isoformat() if report.created_at else None,
                     "completed_at": report.completed_at.isoformat() if report.completed_at else None
                 })

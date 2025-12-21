@@ -12,7 +12,7 @@ import os
 import json
 
 from database.connection import get_db
-from database.models import Report, User, UserUsage, ChatSession
+from database.models import Report, User, UserUsage, ChatSession, CreditHistory
 from auth.dependencies import get_current_user, get_current_admin_user, get_user_from_token_param
 from background.report_queue import report_queue
 
@@ -225,7 +225,26 @@ async def generate_report(
     db.refresh(new_report)
 
     # 7. 立即扣除积分（失败时会自动退还）
+    before_credits = usage.total_credits - usage.used_credits + required_credits  # 扣除前的剩余积分
     usage.used_credits += required_credits
+    after_credits = usage.remaining_credits  # 扣除后的剩余积分
+
+    # ⭐ 创建积分变动历史记录
+    credit_history = CreditHistory(
+        user_id=current_user.user_id,
+        change_type='deduct',
+        amount=-required_credits,  # 负数表示扣除
+        before_credits=before_credits,
+        after_credits=after_credits,
+        reason=f"生成报告消耗积分（{influencer_count} 个达人）",
+        related_report_id=new_report.report_id,
+        meta_data={
+            "influencer_count": influencer_count,
+            "session_id": session_id
+        }
+    )
+    db.add(credit_history)
+
     db.commit()
     print(f"✅ 用户 {current_user.user_id} 积分已预扣: {required_credits} 积分 ({influencer_count} 个达人), 剩余: {usage.remaining_credits}/{usage.total_credits}")
 

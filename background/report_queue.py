@@ -271,9 +271,11 @@ class ReportQueue:
             # 导入服务
             from services.sms_service import get_sms_service
             from services.email_service import get_email_service
-            from database.models import User
+            from database.models import User, Report
 
-            # 获取用户信息
+            # 获取用户信息和报告完成时间
+            completed_at = None
+            session_id = None
             with get_db_context() as db:
                 user = db.query(User).filter(User.user_id == user_id).first()
                 if not user:
@@ -284,9 +286,22 @@ class ReportQueue:
                 phone = user.phone_number
                 email = user.email
 
-            # 构建报告访问URL
-            report_filename = os.path.basename(report_path)
-            report_url = f"http://127.0.0.1:8001/reports/{report_filename}"
+                # 获取报告的完成时间和会话ID
+                if report_id:
+                    report = db.query(Report).filter(Report.report_id == report_id).first()
+                    if report:
+                        if report.completed_at:
+                            completed_at = report.completed_at
+                        session_id = report.session_id
+
+            # ⭐ 构建报告访问URL（使用会话ID和报告ID）
+            if session_id and report_id:
+                # 指向聊天界面的报告详情
+                report_url = f"http://127.0.0.1:8001/?session={session_id}#report-{report_id}"
+            else:
+                # 后备方案：直接链接HTML文件
+                report_filename = os.path.basename(report_path)
+                report_url = f"http://127.0.0.1:8001/reports/{report_filename}"
 
             # 1. 发送短信通知
             if phone:
@@ -310,7 +325,8 @@ class ReportQueue:
                         to_email=email,
                         username=username,
                         product_name=product_name,
-                        report_url=report_url
+                        report_url=report_url,
+                        completed_at=completed_at
                     )
                     if success:
                         print(f"✅ 邮件通知已发送: {email}")

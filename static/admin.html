@@ -324,6 +324,8 @@
         .modal-title {
             font-size: 20px;
             font-weight: 600;
+            display: flex;
+            align-items: center;
         }
 
         .modal-close {
@@ -400,6 +402,90 @@
         .empty-state-icon {
             font-size: 64px;
             margin-bottom: 16px;
+        }
+
+        /* ==================== 新增：可排序表头样式 ==================== */
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 24px;
+        }
+
+        th.sortable:hover {
+            background: #f3f4f6;
+        }
+
+        th.sortable::after {
+            content: '⇅';
+            position: absolute;
+            right: 8px;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        th.sortable.sort-asc::after {
+            content: '▲';
+            color: #667eea;
+        }
+
+        th.sortable.sort-desc::after {
+            content: '▼';
+            color: #667eea;
+        }
+
+        /* ==================== 新增：可点击的用户名和会话标题 ==================== */
+        .clickable-username {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: 600;
+        }
+
+        .clickable-username:hover {
+            color: #5568d3;
+        }
+
+        .clickable-title {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .clickable-title:hover {
+            color: #5568d3;
+        }
+
+        /* ==================== 新增：大模态框样式 ==================== */
+        .modal-content-large {
+            max-width: 1000px !important;
+        }
+
+        .modal-content-xlarge {
+            max-width: 1200px !important;
+        }
+
+        /* ==================== 新增：历史记录表格样式 ==================== */
+        .history-table {
+            margin-top: 20px;
+        }
+
+        .history-table th {
+            font-size: 14px;
+        }
+
+        .history-table td {
+            font-size: 14px;
+        }
+
+        .credit-change-positive {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .credit-change-negative {
+            color: #ef4444;
+            font-weight: 600;
         }
     </style>
 </head>
@@ -579,10 +665,63 @@
         </div>
     </div>
 
+    <!-- ==================== 新增：积分历史模态框 ==================== -->
+    <div id="creditHistoryModal" class="modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h3 class="modal-title">积分变动历史</h3>
+                <button class="modal-close" onclick="closeCreditHistoryModal()">×</button>
+            </div>
+            <div id="creditHistoryContent" style="max-height: 70vh; overflow-y: auto;">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 新增：用户会话列表模态框 ==================== -->
+    <div id="userSessionsModal" class="modal">
+        <div class="modal-content modal-content-large">
+            <div class="modal-header">
+                <h3 class="modal-title">用户聊天列表</h3>
+                <button class="modal-close" onclick="closeUserSessionsModal()">×</button>
+            </div>
+            <div id="userSessionsContent" style="max-height: 70vh; overflow-y: auto;">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 新增：会话消息详情模态框 ==================== -->
+    <div id="sessionMessagesModal" class="modal">
+        <div class="modal-content modal-content-xlarge">
+            <div class="modal-header">
+                <h3 class="modal-title">聊天详情</h3>
+                <button class="modal-close" onclick="closeSessionMessagesModal()">×</button>
+            </div>
+            <div id="sessionMessagesContent" style="max-height: 70vh; overflow-y: auto;">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE_URL = 'http://127.0.0.1:8001';
         let currentTab = 'overview';
         let accessToken = localStorage.getItem('access_token');
+
+        // ==================== 新增：表格排序状态 ====================
+        let usersData = [];
+        let currentSortColumn = null;
+        let currentSortOrder = 'asc';
 
         // 检查管理员权限
         function checkAdminAuth() {
@@ -710,53 +849,108 @@
         async function loadUsers() {
             try {
                 const response = await apiRequest('/api/admin/users');
-                const users = await response.json();
+                usersData = await response.json();
 
-                const html = `
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>用户名</th>
-                                <th>手机号</th>
-                                <th>邮箱</th>
-                                <th>角色</th>
-                                <th>总积分</th>
-                                <th>已使用</th>
-                                <th>剩余</th>
-                                <th>注册时间</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${users.map(user => `
-                                <tr>
-                                    <td>${user.username || '-'}</td>
-                                    <td>${user.phone_number || '-'}</td>
-                                    <td>${user.email || '-'}</td>
-                                    <td><span class="badge badge-${user.is_admin ? 'admin' : 'user'}">${user.is_admin ? '管理员' : '普通用户'}</span></td>
-                                    <td>${user.total_credits}</td>
-                                    <td>${user.used_credits}</td>
-                                    <td>${user.remaining_credits}</td>
-                                    <td>${new Date(user.created_at).toLocaleString('zh-CN')}</td>
-                                    <td>
-                                        ${!user.is_admin ? `
-                                            <button class="btn btn-primary btn-sm" onclick='showEditUserModal(${JSON.stringify(user)})' style="margin-right: 5px;">编辑信息</button>
-                                            <button class="btn btn-success btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})' style="margin-right: 5px;">修改积分</button>
-                                            <button class="btn btn-sm" style="background: ${user.is_active ? '#ef4444' : '#10b981'}; color: white; margin-right: 5px;" onclick='toggleUserActive("${user.user_id}", "${user.username}")'>${user.is_active ? '停用' : '激活'}</button>
-                                            <button class="btn btn-sm" style="background: #dc2626; color: white;" onclick='deleteUser("${user.user_id}", "${user.username}")'>删除</button>
-                                        ` : '-'}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-
-                document.getElementById('usersTable').innerHTML = html;
+                renderUsersTable();
             } catch (error) {
                 console.error('Failed to load users:', error);
                 document.getElementById('usersTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
             }
+        }
+
+        // ==================== 新增：渲染用户表格（支持排序） ====================
+        function renderUsersTable() {
+            const html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>手机号</th>
+                            <th>邮箱</th>
+                            <th>角色</th>
+                            <th class="sortable" onclick="sortUsers('total_credits')">总积分</th>
+                            <th class="sortable" onclick="sortUsers('used_credits')">已使用</th>
+                            <th class="sortable" onclick="sortUsers('remaining_credits')">剩余</th>
+                            <th class="sortable" onclick="sortUsers('total_sessions')">总聊天数</th>
+                            <th class="sortable" onclick="sortUsers('total_tokens')">总Token数</th>
+                            <th>注册时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${usersData.map(user => `
+                            <tr>
+                                <td><span class="clickable-username" onclick='showUserSessions("${user.user_id}", "${user.username || user.phone_number || user.email}")'>${user.username || '-'}</span></td>
+                                <td>${user.phone_number || '-'}</td>
+                                <td>${user.email || '-'}</td>
+                                <td><span class="badge badge-${user.is_admin ? 'admin' : 'user'}">${user.is_admin ? '管理员' : '普通用户'}</span></td>
+                                <td>${user.total_credits}</td>
+                                <td>${user.used_credits}</td>
+                                <td>${user.remaining_credits}</td>
+                                <td>${user.total_sessions || 0}</td>
+                                <td>${user.total_tokens || 0}</td>
+                                <td>${new Date(user.created_at).toLocaleString('zh-CN')}</td>
+                                <td style="min-width: 480px;">
+                                    ${!user.is_admin ? `
+                                        <button class="btn btn-primary btn-sm" onclick='showEditUserModal(${JSON.stringify(user)})' style="margin-right: 5px;">编辑信息</button>
+                                        <button class="btn btn-success btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})' style="margin-right: 5px;">修改积分</button>
+                                        <button class="btn btn-sm" style="background: #10b981; color: white; margin-right: 5px;" onclick='showCreditHistory("${user.user_id}", "${user.username || user.phone_number || user.email}")'>积分历史</button>
+                                        <button class="btn btn-sm" style="background: ${user.is_active ? '#ef4444' : '#10b981'}; color: white; margin-right: 5px;" onclick='toggleUserActive("${user.user_id}", "${user.username}")'>${user.is_active ? '停用' : '激活'}</button>
+                                        <button class="btn btn-sm" style="background: #dc2626; color: white;" onclick='deleteUser("${user.user_id}", "${user.username}")'>删除</button>
+                                    ` : '-'}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            document.getElementById('usersTable').innerHTML = html;
+
+            // 更新排序指示器
+            if (currentSortColumn) {
+                const th = Array.from(document.querySelectorAll('th.sortable')).find(
+                    el => el.textContent.includes(getSortColumnName(currentSortColumn))
+                );
+                if (th) {
+                    th.classList.add(currentSortOrder === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            }
+        }
+
+        // ==================== 新增：排序用户数据 ====================
+        function sortUsers(column) {
+            if (currentSortColumn === column) {
+                currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = column;
+                currentSortOrder = 'asc';
+            }
+
+            usersData.sort((a, b) => {
+                let aVal = a[column] || 0;
+                let bVal = b[column] || 0;
+
+                if (currentSortOrder === 'asc') {
+                    return aVal - bVal;
+                } else {
+                    return bVal - aVal;
+                }
+            });
+
+            renderUsersTable();
+        }
+
+        // ==================== 新增：获取排序列名 ====================
+        function getSortColumnName(column) {
+            const map = {
+                'total_credits': '总积分',
+                'used_credits': '已使用',
+                'remaining_credits': '剩余',
+                'total_sessions': '总聊天数',
+                'total_tokens': '总Token数'
+            };
+            return map[column] || column;
         }
 
 
@@ -1135,6 +1329,270 @@
             // 在新窗口打开报告
             const url = `${API_BASE_URL}/api/reports/${reportId}/view?token=${accessToken}`;
             window.open(url, '_blank');
+        }
+
+        // ==================== 新增：积分历史功能 ====================
+
+        async function showCreditHistory(userId, username) {
+            document.getElementById('creditHistoryModal').classList.add('show');
+            document.querySelector('#creditHistoryModal .modal-title').textContent = `积分变动历史 - ${username}`;
+            document.getElementById('creditHistoryContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            `;
+
+            try {
+                const response = await apiRequest(`/api/admin/users/${userId}/credit-history?limit=100`);
+                const histories = await response.json();
+
+                if (response.ok) {
+                    if (histories.length === 0) {
+                        document.getElementById('creditHistoryContent').innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📊</div>
+                                <p>暂无积分变动记录</p>
+                            </div>
+                        `;
+                    } else {
+                        const html = `
+                            <table class="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>类型</th>
+                                        <th>变动积分</th>
+                                        <th>变动前</th>
+                                        <th>变动后</th>
+                                        <th>原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${histories.map(h => `
+                                        <tr>
+                                            <td>${new Date(h.created_at).toLocaleString('zh-CN')}</td>
+                                            <td><span class="badge badge-${h.change_type === 'add' ? 'success' : h.change_type === 'deduct' ? 'warning' : 'info'}">${getChangeTypeText(h.change_type)}</span></td>
+                                            <td class="${h.amount > 0 ? 'credit-change-positive' : 'credit-change-negative'}">${h.amount > 0 ? '+' : ''}${h.amount}</td>
+                                            <td>${h.before_credits}</td>
+                                            <td>${h.after_credits}</td>
+                                            <td>${h.reason || '-'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        `;
+                        document.getElementById('creditHistoryContent').innerHTML = html;
+                    }
+                } else {
+                    document.getElementById('creditHistoryContent').innerHTML = `
+                        <div class="alert alert-error show">加载失败: ${histories.detail || '未知错误'}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load credit history:', error);
+                document.getElementById('creditHistoryContent').innerHTML = `
+                    <div class="alert alert-error show">加载失败: ${error.message}</div>
+                `;
+            }
+        }
+
+        function closeCreditHistoryModal() {
+            document.getElementById('creditHistoryModal').classList.remove('show');
+        }
+
+        function getChangeTypeText(type) {
+            const map = {
+                'add': '充值',
+                'deduct': '扣除',
+                'refund': '退还',
+                'adjust': '调整'
+            };
+            return map[type] || type;
+        }
+
+        // ==================== 新增：用户会话列表功能 ====================
+
+        let currentUserId = null;  // 保存当前查看的用户ID
+        let currentUsername = null;  // 保存当前查看的用户名
+        let showDeletedSessions = false;  // 是否显示已删除的会话
+
+        async function showUserSessions(userId, username) {
+            currentUserId = userId;
+            currentUsername = username;
+            showDeletedSessions = false;
+
+            document.getElementById('userSessionsModal').classList.add('show');
+            await loadUserSessions();
+        }
+
+        async function loadUserSessions() {
+            document.querySelector('#userSessionsModal .modal-title').textContent = `聊天列表 - ${currentUsername}`;
+            document.getElementById('userSessionsContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            `;
+
+            try {
+                const response = await apiRequest(`/api/admin/users/${currentUserId}/sessions`);
+                const sessions = await response.json();
+
+                if (response.ok) {
+                    // 过滤出有消息的会话（消息数 > 0）
+                    const activeSessions = sessions.filter(s => s.message_count > 0);
+                    const deletedSessions = sessions.filter(s => s.message_count === 0);
+
+                    const displaySessions = showDeletedSessions ? deletedSessions : activeSessions;
+
+                    if (displaySessions.length === 0) {
+                        document.getElementById('userSessionsContent').innerHTML = `
+                            <div>
+                                <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+                                    <button class="btn ${!showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(false)" style="${showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">现存会话 (${activeSessions.length})</button>
+                                    <button class="btn ${showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(true)" style="${!showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">已删除 (${deletedSessions.length})</button>
+                                </div>
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">💬</div>
+                                    <p>${showDeletedSessions ? '该用户暂无已删除的会话' : '该用户暂无聊天记录'}</p>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        const html = `
+                            <div>
+                                <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+                                    <button class="btn ${!showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(false)" style="${showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">现存会话 (${activeSessions.length})</button>
+                                    <button class="btn ${showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(true)" style="${!showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">已删除 (${deletedSessions.length})</button>
+                                </div>
+                                <table class="history-table">
+                                    <thead>
+                                        <tr>
+                                            <th>聊天标题</th>
+                                            <th>创建时间</th>
+                                            <th>消息数</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${displaySessions.map(s => `
+                                            <tr>
+                                                <td><span class="clickable-title" onclick='showSessionMessages("${s.session_id}", "${escapeQuotes(s.title)}")'>${s.title}</span></td>
+                                                <td>${new Date(s.created_at).toLocaleString('zh-CN')}</td>
+                                                <td>${s.message_count}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                        document.getElementById('userSessionsContent').innerHTML = html;
+                    }
+                } else {
+                    document.getElementById('userSessionsContent').innerHTML = `
+                        <div class="alert alert-error show">加载失败: ${sessions.detail || '未知错误'}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load user sessions:', error);
+                document.getElementById('userSessionsContent').innerHTML = `
+                    <div class="alert alert-error show">加载失败: ${error.message}</div>
+                `;
+            }
+        }
+
+        async function toggleSessionView(showDeleted) {
+            showDeletedSessions = showDeleted;
+            await loadUserSessions();
+        }
+
+        function closeUserSessionsModal() {
+            document.getElementById('userSessionsModal').classList.remove('show');
+            // 重置display样式，避免下次打开时出现问题
+            document.getElementById('userSessionsModal').style.display = '';
+        }
+
+        // ==================== 新增：会话消息详情功能 ====================
+
+        async function showSessionMessages(sessionId, title) {
+            // 不关闭用户会话列表模态框，而是隐藏它
+            document.getElementById('userSessionsModal').style.display = 'none';
+
+            document.getElementById('sessionMessagesModal').classList.add('show');
+            document.querySelector('#sessionMessagesModal .modal-title').innerHTML = `
+                <button class="btn btn-sm" style="background: #667eea; color: white; margin-right: 10px;" onclick="returnToSessionsList()">← 返回</button>
+                聊天详情 - ${title}
+            `;
+            document.getElementById('sessionMessagesContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            `;
+
+            try {
+                const response = await apiRequest(`/api/admin/sessions/${sessionId}/messages`);
+                const messages = await response.json();
+
+                if (response.ok) {
+                    if (messages.length === 0) {
+                        document.getElementById('sessionMessagesContent').innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-state-icon">💭</div>
+                                <p>该会话暂无消息</p>
+                            </div>
+                        `;
+                    } else {
+                        const html = `
+                            <div style="padding: 10px;">
+                                ${messages.map(m => `
+                                    <div style="margin-bottom: 24px; padding: 16px; background: ${m.role === 'user' ? '#f3f4f6' : '#e0e7ff'}; border-radius: 8px; border-left: 4px solid ${m.role === 'user' ? '#667eea' : '#10b981'};">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                            <strong style="color: ${m.role === 'user' ? '#667eea' : '#10b981'};">${m.role === 'user' ? '👤 用户' : '🤖 助手'}</strong>
+                                            <span style="font-size: 12px; color: #6b7280;">${new Date(m.created_at).toLocaleString('zh-CN')}</span>
+                                        </div>
+                                        <div style="white-space: pre-wrap; word-break: break-word; line-height: 1.6; color: #111827;">${escapeHtml(m.content)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                        document.getElementById('sessionMessagesContent').innerHTML = html;
+                    }
+                } else {
+                    document.getElementById('sessionMessagesContent').innerHTML = `
+                        <div class="alert alert-error show">加载失败: ${messages.detail || '未知错误'}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load session messages:', error);
+                document.getElementById('sessionMessagesContent').innerHTML = `
+                    <div class="alert alert-error show">加载失败: ${error.message}</div>
+                `;
+            }
+        }
+
+        function closeSessionMessagesModal() {
+            document.getElementById('sessionMessagesModal').classList.remove('show');
+            // 恢复会话列表模态框显示
+            document.getElementById('userSessionsModal').style.display = 'flex';
+        }
+
+        function returnToSessionsList() {
+            // 关闭消息详情模态框
+            document.getElementById('sessionMessagesModal').classList.remove('show');
+            // 显示会话列表模态框
+            document.getElementById('userSessionsModal').style.display = 'flex';
+        }
+
+        // ==================== 工具函数：HTML转义 ====================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeQuotes(text) {
+            return text.replace(/'/g, "\\'").replace(/"/g, "&quot;");
         }
 
         // 页面加载时初始化
