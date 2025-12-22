@@ -1026,8 +1026,6 @@
             <div class="sidebar-actions">
                 <button class="sidebar-btn btn-reports" onclick="openReportsModal()">📊 报告库</button>
                 <button class="sidebar-btn btn-new-chat" onclick="createNewChat()">+ 新对话</button>
-                <button class="sidebar-btn btn-new-chat" onclick="showAppealModal()" style="background: #f3f4f6;">📢
-                    申诉</button>
             </div>
         </div>
 
@@ -1047,6 +1045,10 @@
             <div class="top-bar-title">🤖 TikTok 达人推荐助手</div>
             <div class="top-bar-actions">
                 <div class="quota-badge" id="quotaBadge">剩余次数: --</div>
+                <button class="text-btn" onclick="showAppealModal()" title="发起申诉"
+                    style="background:none; border:none; color: #6b7280; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 4px;">
+                    📢 <span>申诉</span>
+                </button>
                 <button class="theme-toggle" onclick="toggleTheme()" title="切换主题">🌙</button>
                 <div class="user-menu">
                     <button class="user-btn" onclick="toggleUserMenu()">
@@ -2014,6 +2016,19 @@
 
             try {
                 console.log('🆕 开始创建新聊天...');
+
+                // ⭐ 0. 检查是否已经是新会话 (非历史会话且没有活跃对话)
+                // 避免重复创建空会话
+                if (!isHistorySession && !hasActiveConversation) {
+                    console.log('⚠️ 当前已经是新会话，无需创建');
+                    // 仅重置UI状态以防万一
+                    document.getElementById('chatMessages').innerHTML = '';
+                    updateInputState();
+                    // 确保侧边栏高亮正确
+                    loadChatHistory();
+                    return;
+                }
+
                 console.log('📌 当前会话 ID:', sessionId);
 
                 // 1. 先断开旧的 WebSocket 连接

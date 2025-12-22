@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta  # Add timedelta import
 import secrets
 
 from database.connection import get_db
 from database.connection import get_db
-from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode, CreditHistory, Appeal
+from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode, CreditHistory, Appeal, TokenUsage
 from auth.dependencies import get_current_admin_user
 from background.report_queue import report_queue
 
@@ -34,7 +34,8 @@ class UserInfo(BaseModel):
     used_credits: int
     remaining_credits: int
     total_sessions: int = 0  # ⭐ 新增：总聊天数
-    total_tokens: int = 0  # ⭐ 新增：总token数（估算）
+    total_tokens: int = 0  # ⭐ 新增：总token数
+    tokens_24h: int = 0  # ⭐ 新增：24小时Token消耗
 
 
 class UpdateCreditsRequest(BaseModel):
@@ -120,6 +121,10 @@ async def list_all_users(
     users = db.query(User).offset(skip).limit(limit).all()
 
     result = []
+    
+    # 计算24小时前的时间戳
+    time_24h_ago = datetime.utcnow() - timedelta(hours=24)
+    
     for user in users:
         usage = db.query(UserUsage).filter(UserUsage.user_id == user.user_id).first()
 
@@ -134,9 +139,16 @@ async def list_all_users(
             ChatSession.user_id == user.user_id
         ).distinct().count()
 
-        # ⭐ 统计总token数（基于已使用积分估算）
-        # 假设: 100积分 ≈ 1个达人查询 ≈ 约1000 tokens
-        total_tokens = usage.used_credits * 10  # 粗略估算
+        # ⭐ 获取真实 Token 数据
+        # 1. 总 Token (可以直接从 UserUsage 取，如果 migrate 正确的话)
+        total_tokens = usage.total_tokens_used if hasattr(usage, 'total_tokens_used') else 0
+        
+        # 2. 24小时 Token 消耗 (实时聚合)
+        from sqlalchemy import func
+        tokens_24h = db.query(func.sum(TokenUsage.total_tokens)).filter(
+            TokenUsage.user_id == user.user_id,
+            TokenUsage.created_at >= time_24h_ago
+        ).scalar() or 0
 
         result.append(UserInfo(
             user_id=user.user_id,
@@ -151,7 +163,8 @@ async def list_all_users(
             used_credits=usage.used_credits,
             remaining_credits=usage.remaining_credits,
             total_sessions=total_sessions,
-            total_tokens=total_tokens
+            total_tokens=total_tokens,
+            tokens_24h=int(tokens_24h)
         ))
 
     return result
@@ -407,6 +420,7 @@ async def list_all_reports(
             "status": report.status,
             "user_id": report.user_id,
             "username": user.username if user else "Unknown",
+            "session_id": report.session_id,  # ⭐ 新增：关联会话ID
             "created_at": report.created_at.isoformat(),
             "completed_at": report.completed_at.isoformat() if report.completed_at else None,
             "error_message": report.error_message

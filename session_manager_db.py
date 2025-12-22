@@ -21,6 +21,7 @@ class SessionManagerDB:
     def create_session(self, user_id: str, title: str = "新对话") -> str:
         """
         创建新会话
+        如果用户最新的会话是空的（没有消息），则复用该会话
 
         Args:
             user_id: 用户 ID
@@ -30,6 +31,25 @@ class SessionManagerDB:
             str: 会话 ID
         """
         with get_db_context() as db:
+            # 1. 检查最新的会话是否为空
+            latest_session = db.query(ChatSession).filter(
+                ChatSession.user_id == user_id
+            ).order_by(ChatSession.created_at.desc()).first()
+
+            if latest_session:
+                # 检查消息数量
+                message_count = db.query(Message).filter(
+                    Message.session_id == latest_session.session_id
+                ).count()
+
+                if message_count == 0:
+                    print(f"♻️ 复用已存在的空会话: {latest_session.session_id}")
+                    # 更新 update_at 以便它浮动到最上面
+                    latest_session.updated_at = datetime.utcnow()
+                    db.commit()
+                    return latest_session.session_id
+
+            # 2. 如果没有空会话，创建新的
             session = ChatSession(
                 user_id=user_id,
                 title=title
@@ -185,10 +205,19 @@ class SessionManagerDB:
         Returns:
             List[dict]: 会话列表
         """
+        from sqlalchemy import exists, and_
+        
         with get_db_context() as db:
-            sessions = db.query(ChatSession).filter(
+            query = db.query(ChatSession).filter(
                 ChatSession.user_id == user_id
-            ).order_by(
+            )
+
+            # 如果不包含空会话，在 SQL 层面过滤
+            if not include_empty:
+                stmt = exists().where(Message.session_id == ChatSession.session_id)
+                query = query.filter(stmt)
+
+            sessions = query.order_by(
                 ChatSession.updated_at.desc()
             ).offset(offset).limit(limit).all()
 
@@ -198,10 +227,6 @@ class SessionManagerDB:
                 message_count = db.query(Message).filter(
                     Message.session_id == session.session_id
                 ).count()
-
-                # 如果不包含空会话且会话没有消息，跳过
-                if not include_empty and message_count == 0:
-                    continue
 
                 # 获取最后一条消息
                 last_message = db.query(Message).filter(

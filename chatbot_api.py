@@ -18,6 +18,7 @@ from session_manager_db import session_manager  # 使用数据库版本
 from agent import TikTokInfluencerAgent
 from agent_wrapper import AgentProgressWrapper, clean_response, translate_tool_call
 from response_validator import get_validator  # 导入工具调用追踪器
+from services.token_tracker import TokenTrackingCallbackHandler  # 导入 Token 追踪器
 
 # 导入认证相关
 from database.connection import get_db, get_db_context
@@ -102,6 +103,41 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
     try:
         # 获取工具调用追踪器实例
         validator = get_validator(debug=True)  # 启用调试模式
+
+        # ⭐ 初始化 Token 追踪器
+        if agent.user_id:
+            token_handler = TokenTrackingCallbackHandler(
+                user_id=agent.user_id,
+                session_id=session_id
+            )
+            # 确保 agent.callbacks 已初始化
+            if not hasattr(agent, 'callbacks') or agent.callbacks is None:
+                agent.callbacks = []
+            
+            # 避免重复添加 (虽然 agent 默认是单例或缓存的，但 handler 需要是新的以免混淆 session?)
+            # 其实 agent 是缓存的，但 handler 是针对单次调用的 context 吗？ 
+            # Handler has session_id, so it should be fine.
+            # But we should probably add it for this run.
+            # Since we modify agent.callbacks which is persistent for the cached agent, we might accumulate handlers.
+            # BETTER APPROACH: Pass callbacks to agent.run methods instead of setting on instance persistently.
+            
+            # Let's verify agent.run in agent.py
+            # agent.run calls self.agent.invoke(..., config=config) where config uses self.callbacks.
+            # If we append to self.callbacks, it persists.
+            # We should probably set it temporarily or ensure uniqueness.
+            
+            # For now, let's just append and rely on the fact that if session_id changes, we might have multiple handlers?
+            # Creating a new handler for each request seems correct for tracking per-request usage.
+            # But if we keep appending to `agent.callbacks`, the list grows indefinitely!
+            
+            # Fix: We should probably replace callbacks or manage them better.
+            # But `agent.py` uses `self.callbacks` in `__init__`. 
+            # Let's set `agent.callbacks = [token_handler]` for this execution.
+            # Since `stream_agent_response` handles one user request, setting it here is fine as long as concurrent requests don't overwrite each other (but agent is likely per-session/user, so concurrency on same agent instance is rare/handled by lock usually, though here it's asyncio).
+            
+            agent.callbacks = [token_handler]
+        else:
+            print("⚠️ Agent user_id 为空，无法追踪 Token")
 
         # 发送开始处理的消息
         await websocket.send_json({

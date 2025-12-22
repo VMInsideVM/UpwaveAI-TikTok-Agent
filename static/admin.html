@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理员后台 - TikTok 达人推荐系统</title>
+    <title>管理员后台 - TikTok 达人推荐 system</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -176,17 +177,16 @@
             border-collapse: collapse;
         }
 
-        th {
-            background: #f9fafb;
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            color: #374151;
-            border-bottom: 2px solid #e5e7eb;
+        padding: 12px 8px;
+        text-align: left;
+        font-weight: 600;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
+        white-space: nowrap;
         }
 
         td {
-            padding: 12px;
+            padding: 12px 8px;
             border-bottom: 1px solid #f3f4f6;
         }
 
@@ -294,7 +294,7 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
+            z-index: 2000;
             justify-content: center;
             align-items: center;
         }
@@ -490,6 +490,62 @@
             color: #ef4444;
             font-weight: 600;
         }
+
+        /* 分页样式 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #f3f4f6;
+        }
+
+        .page-info {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .search-box {
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .search-input {
+            width: 300px;
+            padding: 8px 12px 8px 36px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+        }
+
+        /* 图表样式 */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 300px !important;
+        }
     </style>
 </head>
 
@@ -542,6 +598,34 @@
                 </div>
             </div>
 
+            <!-- 数据图表 -->
+            <div class="charts-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">新注册用户 (30天)</h2>
+                    </div>
+                    <canvas id="newUsersChart"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">总用户数趋势 (30天)</h2>
+                    </div>
+                    <canvas id="totalUsersChart"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">每日 Token 消耗 (30天)</h2>
+                    </div>
+                    <canvas id="tokenUsageChart"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">每日生成报告 (30天)</h2>
+                    </div>
+                    <canvas id="reportsChart"></canvas>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">系统信息</h2>
@@ -560,7 +644,14 @@
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">用户列表</h2>
-                    <button class="btn btn-primary btn-sm" onclick="refreshUsers()">🔄 刷新</button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" class="search-input" id="userQuery" placeholder="搜索用户名/手机号/邮箱..."
+                                oninput="handleUserSearch()">
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="refreshUsers()">🔄 刷新</button>
+                    </div>
                 </div>
                 <div id="usersTable">加载中...</div>
             </div>
@@ -571,7 +662,14 @@
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">所有报告</h2>
-                    <button class="btn btn-primary btn-sm" onclick="refreshReports()">🔄 刷新</button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" class="search-input" id="reportQuery" placeholder="搜索报告标题/用户名..."
+                                oninput="handleReportSearch()">
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="refreshReports()">🔄 刷新</button>
+                    </div>
                 </div>
                 <div id="reportsTable">加载中...</div>
             </div>
@@ -582,31 +680,36 @@
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">申诉列表</h2>
-                    <div style="display: flex; gap: 8px;">
-                        <select id="appealStatusFilter" onchange="loadAppeals()" class="form-input"
-                            style="width: auto; padding: 6px 12px;">
-                            <option value="all">全部状态</option>
-                            <option value="pending" selected>待处理</option>
-                            <option value="resolved">已处理</option>
-                            <option value="ignored">已忽略</option>
-                        </select>
-                        <button class="btn btn-primary btn-sm" onclick="loadAppeals()">🔄 刷新</button>
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" id="appealQuery" placeholder="搜索申诉标题/用户名..."
+                            oninput="handleAppealSearch()">
                     </div>
+                    <select id="appealStatusFilter" onchange="loadAppeals()" class="form-input"
+                        style="width: auto; padding: 6px 12px; margin-bottom: 16px;">
+                        <option value="all">全部状态</option>
+                        <option value="pending" selected>待处理</option>
+                        <option value="resolved">已处理</option>
+                        <option value="ignored">已忽略</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="loadAppeals()"
+                        style="height: 38px; margin-top: -16px;">🔄 刷新</button>
                 </div>
-                <div id="appealsTable">加载中...</div>
             </div>
+            <div id="appealsTable">加载中...</div>
         </div>
+    </div>
 
-        <!-- 任务队列标签页 -->
-        <div id="tasks-tab" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title">任务队列状态</h2>
-                    <button class="btn btn-primary btn-sm" onclick="refreshTasks()">🔄 刷新</button>
-                </div>
-                <div id="tasksInfo">加载中...</div>
+    <!-- 任务队列标签页 -->
+    <div id="tasks-tab" class="tab-content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">任务队列状态</h2>
+                <button class="btn btn-primary btn-sm" onclick="refreshTasks()">🔄 刷新</button>
             </div>
+            <div id="tasksInfo">加载中...</div>
         </div>
+    </div>
     </div>
 
     <!-- 修改用户积分模态框 -->
@@ -792,7 +895,34 @@
         let currentSortColumn = null;
         let currentSortOrder = 'asc';
 
-        // 检查管理员权限
+        // 会话列表相关
+        let currentUserSessions = [];
+        let currentSessionSortColumn = null;
+        let currentSessionSortOrder = 'desc'; // 默认按时间倒序
+        let totalActiveSessions = 0;
+        let totalDeletedSessions = 0;
+
+        // ==================== 分页与搜索状态 ====================
+        const PAGE_SIZE = 20;
+
+        let reportsData = [];
+        let appealsData = [];
+
+        let currentPages = {
+            users: 1,
+            reports: 1,
+            appeals: 1,
+            sessions: 1
+        };
+
+        let searchQueries = {
+            users: '',
+            reports: '',
+            appeals: '',
+            sessions: ''
+        };
+
+        // ==================== 权限检查与初始化 ====================
         function checkAdminAuth() {
             if (!accessToken) {
                 window.location.href = '/login.html';
@@ -912,9 +1042,105 @@
                     document.getElementById('queuedTasks').textContent = '-';
                 }
 
+                // 加载图表
+                loadDashboardCharts();
+
             } catch (error) {
                 console.error('Failed to load overview:', error);
             }
+        }
+
+        let dashboardCharts = {};
+
+        async function loadDashboardCharts() {
+            try {
+                const response = await apiRequest('/api/admin/statistics/charts?days=30');
+                if (!response || !response.ok) return;
+
+                const data = await response.json();
+                const { dates, new_users, total_users, token_usage, reports } = data;
+
+                // 1. 新注册用户图表
+                renderChart('newUsersChart', 'bar', '每日新用户', dates, new_users, '#667eea');
+
+                // 2. 总用户数曲线
+                renderChart('totalUsersChart', 'line', '总用户数', dates, total_users, '#10b981');
+
+                // 3. Token 消耗图表
+                renderChart('tokenUsageChart', 'line', '每日 Token 消耗', dates, token_usage, '#f59e0b');
+
+                // 4. 生成报告图表
+                renderChart('reportsChart', 'bar', '每日生成报告', dates, reports, '#8b5cf6');
+
+            } catch (error) {
+                console.error('Failed to load dashboard charts:', error);
+            }
+        }
+
+        function renderChart(canvasId, type, label, labels, data, color) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            // 如果图表已存在，销毁它以便重新加载
+            if (dashboardCharts[canvasId]) {
+                dashboardCharts[canvasId].destroy();
+            }
+
+            dashboardCharts[canvasId] = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        backgroundColor: type === 'bar' ? color : color + '20', // Bar uses solid color usually or semi-transparent
+                        borderColor: color,
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: type === 'line'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                boxWidth: 12,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: '#f3f4f6'
+                            },
+                            ticks: {
+                                precision: 0
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
         }
 
         // 加载用户列表
@@ -931,66 +1157,80 @@
         }
 
         // ==================== 新增：渲染用户表格（支持排序） ====================
+        // ==================== 渲染用户表格（支持搜索和分页） ====================
         function renderUsersTable() {
-            const html = `
-                <table>
-                    <thead>
+            // 1. 过滤
+            const filtered = usersData.filter(u => {
+                const q = searchQueries.users.toLowerCase();
+                if (!q) return true;
+                return (u.username && u.username.toLowerCase().includes(q)) ||
+                    (u.phone_number && u.phone_number.includes(q)) ||
+                    (u.email && u.email.toLowerCase().includes(q));
+            });
+
+            // 2. 分页
+            const total = filtered.length;
+            const start = (currentPages.users - 1) * PAGE_SIZE;
+            const paginated = filtered.slice(start, start + PAGE_SIZE);
+
+            const displayHtml = paginated.length === 0 ? `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <p>没有找到相关用户</p>
+                </div>
+            ` : `
+                <table style="width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                    <thead style="background: #f9fafb;">
                         <tr>
-                            <th>用户名</th>
-                            <th>手机号</th>
-                            <th>邮箱</th>
-                            <th>角色</th>
+                            <th class="sortable" onclick="sortUsers('username')">用户名</th>
+                            <th class="sortable" onclick="sortUsers('phone_number')">手机号</th>
+                            <th class="sortable" onclick="sortUsers('email')">邮箱</th>
+                            <th style="padding: 16px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">角色</th>
                             <th class="sortable" onclick="sortUsers('total_credits')">总积分</th>
                             <th class="sortable" onclick="sortUsers('used_credits')">已使用</th>
                             <th class="sortable" onclick="sortUsers('remaining_credits')">剩余</th>
-                            <th class="sortable" onclick="sortUsers('total_sessions')">总聊天数</th>
-                            <th class="sortable" onclick="sortUsers('total_tokens')">总Token数</th>
-                            <th>注册时间</th>
-                            <th>操作</th>
+                            <th class="sortable" onclick="sortUsers('total_sessions')">会话数</th>
+                            <th class="sortable" onclick="sortUsers('total_tokens')">总Token</th>
+                            <th class="sortable" onclick="sortUsers('tokens_24h')">24h Token</th>
+                            <th class="sortable" onclick="sortUsers('created_at')">注册时间</th>
+                            <th style="padding: 16px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${usersData.map(user => `
-                            <tr>
-                                <td><span class="clickable-username" onclick='showUserSessions("${user.user_id}", "${user.username || user.phone_number || user.email}")'>${user.username || '-'}</span></td>
-                                <td>${user.phone_number || '-'}</td>
-                                <td>${user.email || '-'}</td>
-                                <td><span class="badge badge-${user.is_admin ? 'admin' : 'user'}">${user.is_admin ? '管理员' : '普通用户'}</span></td>
-                                <td>${user.total_credits}</td>
-                                <td>${user.used_credits}</td>
-                                <td>${user.remaining_credits}</td>
-                                <td>${user.total_sessions || 0}</td>
-                                <td>${user.total_tokens || 0}</td>
-                                <td>${new Date(user.created_at).toLocaleString('zh-CN')}</td>
-                                <td style="min-width: 480px;">
+                        ${paginated.map((user, index) => `
+                            <tr style="background: ${index % 2 === 0 ? 'white' : '#f9fafb'};">
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;"><span class="clickable-username" onclick='showUserSessions("${user.user_id}", "${user.username || user.phone_number || user.email}")'>${user.username || '-'}</span></td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.phone_number || '-'}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.email || '-'}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;"><span class="badge badge-${user.is_admin ? 'admin' : 'user'}">${user.is_admin ? '管理员' : '普通用户'}</span></td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.total_credits}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.used_credits}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.remaining_credits}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.total_sessions || 0}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.total_tokens || 0}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${user.tokens_24h || 0}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6;">${new Date(user.created_at).toLocaleString('zh-CN')}</td>
+                                <td style="padding: 14px 16px; border-bottom: 1px solid #f3f4f6; width: 280px;">
                                     ${!user.is_admin ? `
-                                        <button class="btn btn-primary btn-sm" onclick='showEditUserModal(${JSON.stringify(user)})' style="margin-right: 5px;">编辑信息</button>
-                                        <button class="btn btn-success btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})' style="margin-right: 5px;">修改积分</button>
-                                        <button class="btn btn-sm" style="background: #10b981; color: white; margin-right: 5px;" onclick='showCreditHistory("${user.user_id}", "${user.username || user.phone_number || user.email}")'>积分历史</button>
-                                        <button class="btn btn-sm" style="background: ${user.is_active ? '#ef4444' : '#10b981'}; color: white; margin-right: 5px;" onclick='toggleUserActive("${user.user_id}", "${user.username}")'>${user.is_active ? '停用' : '激活'}</button>
-                                        <button class="btn btn-sm" style="background: #dc2626; color: white;" onclick='deleteUser("${user.user_id}", "${user.username}")'>删除</button>
+                                        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                            <button class="btn btn-primary btn-sm" onclick='showEditUserModal(${JSON.stringify(user)})'>编辑</button>
+                                            <button class="btn btn-success btn-sm" onclick='showCreditsModal(${JSON.stringify(user)})'>积分</button>
+                                            <button class="btn btn-sm" style="background: #10b981; color: white;" onclick='showCreditHistory("${user.user_id}", "${user.username || user.phone_number || user.email}")'>历史</button>
+                                            <button class="btn btn-sm" style="background: ${user.is_active ? '#ef4444' : '#10b981'}; color: white;" onclick='toggleUserActive("${user.user_id}", "${user.username}")'>${user.is_active ? '停用' : '激活'}</button>
+                                        </div>
                                     ` : '-'}
                                 </td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
+                ${renderPagination(total, 'users')}
             `;
 
-            document.getElementById('usersTable').innerHTML = html;
-
-            // 更新排序指示器
-            if (currentSortColumn) {
-                const th = Array.from(document.querySelectorAll('th.sortable')).find(
-                    el => el.textContent.includes(getSortColumnName(currentSortColumn))
-                );
-                if (th) {
-                    th.classList.add(currentSortOrder === 'asc' ? 'sort-asc' : 'sort-desc');
-                }
-            }
+            document.getElementById('usersTable').innerHTML = displayHtml;
         }
 
-        // ==================== 新增：排序用户数据 ====================
+        // ==================== 排序功能 ====================
         function sortUsers(column) {
             if (currentSortColumn === column) {
                 currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
@@ -1003,79 +1243,106 @@
                 let aVal = a[column] || 0;
                 let bVal = b[column] || 0;
 
+                // 字符串转换
+                if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+                if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
                 if (currentSortOrder === 'asc') {
-                    return aVal - bVal;
+                    return aVal > bVal ? 1 : -1;
                 } else {
-                    return bVal - aVal;
+                    return aVal < bVal ? 1 : -1;
                 }
             });
 
             renderUsersTable();
         }
 
-        // ==================== 新增：获取排序列名 ====================
         function getSortColumnName(column) {
             const map = {
+                'username': '用户名',
+                'phone_number': '手机号',
+                'email': '邮箱',
                 'total_credits': '总积分',
                 'used_credits': '已使用',
                 'remaining_credits': '剩余',
-                'total_sessions': '总聊天数',
-                'total_tokens': '总Token数'
+                'total_sessions': '会话数',
+                'total_tokens': '总Token',
+                'tokens_24h': '24h Token',
+                'created_at': '注册时间'
             };
             return map[column] || column;
         }
 
-
-        // 加载报告列表
+        // ==================== 报告管理 ====================
         async function loadReports() {
             try {
                 const response = await apiRequest('/api/admin/reports');
-                const reports = await response.json();
-
-                if (reports.length === 0) {
-                    document.getElementById('reportsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📄</div><p>暂无报告</p></div>';
-                    return;
-                }
-
-                const html = `
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>报告ID</th>
-                                <th>报告标题</th>
-                                <th>用户</th>
-                                <th>状态</th>
-                                <th>创建时间</th>
-                                <th>完成时间</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${reports.map(report => `
-                                <tr>
-                                    <td><code style="font-size: 11px; color: #6b7280;">${report.report_id.substring(0, 8)}...</code></td>
-                                    <td>${report.title}</td>
-                                    <td>${report.username}</td>
-                                    <td><span class="badge badge-${getStatusBadgeClass(report.status)}">${getStatusText(report.status)}</span></td>
-                                    <td>${new Date(report.created_at).toLocaleString('zh-CN')}</td>
-                                    <td>${report.completed_at ? new Date(report.completed_at).toLocaleString('zh-CN') : '-'}</td>
-                                    <td>
-                                        <button class="btn btn-primary btn-sm" onclick='viewReportDetail("${report.report_id}")'>查看详情</button>
-                                        ${report.status === 'completed' ? `
-                                            <button class="btn btn-success btn-sm" onclick='openReport("${report.report_id}")' style="margin-left: 5px;">打开报告</button>
-                                        ` : ''}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-
-                document.getElementById('reportsTable').innerHTML = html;
+                reportsData = await response.json();
+                currentPages.reports = 1;
+                renderReportsTable();
             } catch (error) {
                 console.error('Failed to load reports:', error);
                 document.getElementById('reportsTable').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
             }
+        }
+
+        function renderReportsTable() {
+            const filtered = reportsData.filter(r => {
+                const q = searchQueries.reports.toLowerCase();
+                if (!q) return true;
+                return (r.title && r.title.toLowerCase().includes(q)) ||
+                    (r.username && r.username.toLowerCase().includes(q));
+            });
+
+            const total = filtered.length;
+            const start = (currentPages.reports - 1) * PAGE_SIZE;
+            const paginated = filtered.slice(start, start + PAGE_SIZE);
+
+            const displayHtml = paginated.length === 0 ? `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <p>没有找到相关报告</p>
+                </div>
+            ` : `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>报告ID</th>
+                            <th>报告标题</th>
+                            <th>用户</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>完成时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${paginated.map(report => `
+                            <tr>
+                                <td><code style="font-size: 11px; color: #6b7280;">${report.report_id.substring(0, 8)}...</code></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${report.title}</td>
+                                <td>${report.username}</td>
+                                <td><span class="badge badge-${getStatusBadgeClass(report.status)}">${getStatusText(report.status)}</span></td>
+                                <td>${new Date(report.created_at).toLocaleString('zh-CN')}</td>
+                                <td>${report.completed_at ? new Date(report.completed_at).toLocaleString('zh-CN') : '-'}</td>
+                                <td>
+                                    <div style="display: flex; gap: 4px;">
+                                        <button class="btn btn-primary btn-sm" onclick='viewReportDetail("${report.report_id}")'>详情</button>
+                                        ${report.status === 'completed' ? `
+                                            <button class="btn btn-success btn-sm" onclick='openReport("${report.report_id}")'>打开</button>
+                                        ` : ''}
+                                        ${report.session_id ? `
+                                            <button class="btn btn-sm" onclick='showSessionMessages("${report.session_id}", "${report.title.replace(/'/g, "\\'")}")' style="background: #8b5cf6; color: white;" title="查看会话">💬</button>
+                                        ` : ''}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                ${renderPagination(total, 'reports')}
+            `;
+            document.getElementById('reportsTable').innerHTML = displayHtml;
         }
 
         // 加载任务队列
@@ -1516,50 +1783,16 @@
                     const activeSessions = sessions.filter(s => s.message_count > 0);
                     const deletedSessions = sessions.filter(s => s.message_count === 0);
 
-                    const displaySessions = showDeletedSessions ? deletedSessions : activeSessions;
+                    // 更新全局计数
+                    totalActiveSessions = activeSessions.length;
+                    totalDeletedSessions = deletedSessions.length;
 
-                    if (displaySessions.length === 0) {
-                        document.getElementById('userSessionsContent').innerHTML = `
-                            <div>
-                                <div style="margin-bottom: 20px; display: flex; gap: 10px;">
-                                    <button class="btn ${!showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(false)" style="${showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">现存会话 (${activeSessions.length})</button>
-                                    <button class="btn ${showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(true)" style="${!showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">已删除 (${deletedSessions.length})</button>
-                                </div>
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">💬</div>
-                                    <p>${showDeletedSessions ? '该用户暂无已删除的会话' : '该用户暂无聊天记录'}</p>
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        const html = `
-                            <div>
-                                <div style="margin-bottom: 20px; display: flex; gap: 10px;">
-                                    <button class="btn ${!showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(false)" style="${showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">现存会话 (${activeSessions.length})</button>
-                                    <button class="btn ${showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(true)" style="${!showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">已删除 (${deletedSessions.length})</button>
-                                </div>
-                                <table class="history-table">
-                                    <thead>
-                                        <tr>
-                                            <th>聊天标题</th>
-                                            <th>创建时间</th>
-                                            <th>消息数</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${displaySessions.map(s => `
-                                            <tr>
-                                                <td><span class="clickable-title" onclick='showSessionMessages("${s.session_id}", "${escapeQuotes(s.title)}")'>${s.title}</span></td>
-                                                <td>${new Date(s.created_at).toLocaleString('zh-CN')}</td>
-                                                <td>${s.message_count}</td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        `;
-                        document.getElementById('userSessionsContent').innerHTML = html;
-                    }
+                    // 存储当前显示的会话列表到全局变量
+                    currentUserSessions = showDeletedSessions ? deletedSessions : activeSessions;
+
+                    // 默认按创建时间倒序
+                    sortUserSessions('created_at', false); // false表示不重新渲染，因为后面紧接着渲染
+                    renderUserSessionsTable();
                 } else {
                     document.getElementById('userSessionsContent').innerHTML = `
                         <div class="alert alert-error show">加载失败: ${sessions.detail || '未知错误'}</div>
@@ -1583,6 +1816,113 @@
             // 重置display样式，避免下次打开时出现问题
             document.getElementById('userSessionsModal').style.display = '';
         }
+
+        function renderUserSessionsTable() {
+            // 1. 过滤
+            const filtered = currentUserSessions.filter(s => {
+                const q = searchQueries.sessions.toLowerCase();
+                if (!q) return true;
+                return (s.title && s.title.toLowerCase().includes(q));
+            });
+
+            // 2. 分页
+            const total = filtered.length;
+            const start = (currentPages.sessions - 1) * PAGE_SIZE;
+            const paginated = filtered.slice(start, start + PAGE_SIZE);
+
+            let contentHtml = '';
+
+            if (paginated.length === 0) {
+                contentHtml = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">💬</div>
+                        <p>${searchQueries.sessions ? '没有找到相关会话' : (showDeletedSessions ? '该用户暂无已删除的会话' : '该用户暂无聊天记录')}</p>
+                    </div>
+                `;
+            } else {
+                contentHtml = `
+                    <table class="history-table" style="width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                        <thead style="background: #f9fafb;">
+                            <tr>
+                                <th style="padding: 12px; border-bottom: 2px solid #e5e7eb;">聊天标题</th>
+                                <th class="sortable ${getSortClass('created_at')}" onclick="sortUserSessions('created_at')" style="padding: 12px; border-bottom: 2px solid #e5e7eb;">创建时间</th>
+                                <th class="sortable ${getSortClass('message_count')}" onclick="sortUserSessions('message_count')" style="padding: 12px; border-bottom: 2px solid #e5e7eb;">消息数</th>
+                                <th class="sortable ${getSortClass('total_tokens')}" onclick="sortUserSessions('total_tokens')" style="padding: 12px; border-bottom: 2px solid #e5e7eb;">Token消耗</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${paginated.map((s, index) => `
+                                <tr style="background: ${index % 2 === 0 ? 'white' : '#f9fafb'};">
+                                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;">
+                                        <span class="clickable-title" onclick='showSessionMessages("${s.session_id}", "${escapeQuotes(s.title)}")'>${s.title}</span>
+                                        ${s.report_id ? `
+                                            <span onclick='viewReportDetail("${s.report_id}")' style="cursor: pointer; margin-left: 8px; font-size: 1.2em;" title="查看关联报告">📄</span>
+                                        ` : ''}
+                                    </td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;">${new Date(s.created_at).toLocaleString('zh-CN')}</td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;">${s.message_count}</td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;">${s.total_tokens || 0}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    ${renderPagination(total, 'sessions')}
+                `;
+            }
+
+            const html = `
+                <div>
+                     <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn ${!showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(false)" style="${showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">现存会话 (${totalActiveSessions})</button>
+                            <button class="btn ${showDeletedSessions ? 'btn-primary' : ''} btn-sm" onclick="toggleSessionView(true)" style="${!showDeletedSessions ? 'background: #e5e7eb; color: #374151;' : ''}">已删除 (${totalDeletedSessions})</button>
+                        </div>
+                        <div class="search-box" style="margin-bottom: 0;">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" class="search-input" id="sessionQuery" value="${searchQueries.sessions}" placeholder="搜索会话标题..." oninput="handleSessionSearch()">
+                        </div>
+                    </div>
+                    ${contentHtml}
+                </div>
+            `;
+            document.getElementById('userSessionsContent').innerHTML = html;
+        }
+
+        function getSortClass(column) {
+            if (currentSessionSortColumn !== column) return '';
+            return currentSessionSortOrder === 'asc' ? 'sort-asc' : 'sort-desc';
+        }
+
+        function sortUserSessions(column, render = true) {
+            if (currentSessionSortColumn === column) {
+                currentSessionSortOrder = currentSessionSortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSessionSortColumn = column;
+                currentSessionSortOrder = 'desc'; // 默认倒序，如：最新时间、最大消耗
+            }
+
+            currentUserSessions.sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+
+                // 特殊处理日期字符串
+                if (column === 'created_at') {
+                    aVal = new Date(aVal).getTime();
+                    bVal = new Date(bVal).getTime();
+                }
+
+                if (currentSessionSortOrder === 'asc') {
+                    return aVal > bVal ? 1 : -1;
+                } else {
+                    return aVal < bVal ? 1 : -1;
+                }
+            });
+
+            if (render) {
+                renderUserSessionsTable();
+            }
+        }
+
 
         // ==================== 新增：会话消息详情功能 ====================
 
@@ -1671,6 +2011,7 @@
         window.addEventListener('DOMContentLoaded', init);
         // ==================== 申诉管理 ====================
 
+        // ==================== 申诉管理 ====================
         async function loadAppeals() {
             const tableContainer = document.getElementById('appealsTable');
             const statusFilter = document.getElementById('appealStatusFilter').value;
@@ -1681,63 +2022,78 @@
                 const response = await apiRequest(`/api/admin/appeals?status_filter=${statusFilter}`);
 
                 if (response && response.ok) {
-                    const appeals = await response.json();
-
-                    if (appeals.length === 0) {
-                        tableContainer.innerHTML = '<div class="empty-state">暂无申诉记录</div>';
-                        return;
-                    }
-
-                    let html = `
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>用户</th>
-                                    <th>标题</th>
-                                    <th>状态</th>
-                                    <th>时间</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                    `;
-
-                    appeals.forEach(appeal => {
-                        let statusBadge = '';
-                        switch (appeal.status) {
-                            case 'pending': statusBadge = '<span class="badge badge-warning">待处理</span>'; break;
-                            case 'resolved': statusBadge = '<span class="badge badge-success">已处理</span>'; break;
-                            case 'ignored': statusBadge = '<span class="badge" style="background: #9ca3af; color: white;">已忽略</span>'; break;
-                        }
-
-                        html += `
-                            <tr>
-                                <td>
-                                    <div>${appeal.username}</div>
-                                    <div style="font-size: 12px; color: #6b7280;">ID: ${appeal.user_id.substring(0, 8)}...</div>
-                                </td>
-                                <td>
-                                    <div style="font-weight: 500;">${appeal.title}</div>
-                                    <div style="font-size: 12px; color: #6b7280; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${appeal.details}</div>
-                                </td>
-                                <td>${statusBadge}</td>
-                                <td>${new Date(appeal.created_at).toLocaleString()}</td>
-                                <td>
-                                    <button class="btn btn-primary btn-sm" onclick='openProcessAppealModal(${JSON.stringify(appeal)})'>
-                                        ${appeal.status === 'pending' ? '处理' : '查看'}
-                                    </button>
-                                </td>
-                            </tr>
-                        `;
-                    });
-
-                    html += `</tbody></table>`;
-                    tableContainer.innerHTML = html;
+                    appealsData = await response.json();
+                    currentPages.appeals = 1;
+                    renderAppealsTable();
                 }
             } catch (error) {
                 console.error('加载申诉失败:', error);
                 tableContainer.innerHTML = '<div class="alert alert-error show">加载失败</div>';
             }
+        }
+
+        function renderAppealsTable() {
+            const filtered = appealsData.filter(a => {
+                const q = searchQueries.appeals.toLowerCase();
+                if (!q) return true;
+                return (a.title && a.title.toLowerCase().includes(q)) ||
+                    (a.username && a.username.toLowerCase().includes(q));
+            });
+
+            const total = filtered.length;
+            const start = (currentPages.appeals - 1) * PAGE_SIZE;
+            const paginated = filtered.slice(start, start + PAGE_SIZE);
+
+            if (paginated.length === 0) {
+                document.getElementById('appealsTable').innerHTML = '<div class="empty-state">没有找到相关申诉</div>';
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>用户</th>
+                            <th>标题</th>
+                            <th>状态</th>
+                            <th>时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            paginated.forEach(appeal => {
+                let statusBadge = '';
+                switch (appeal.status) {
+                    case 'pending': statusBadge = '<span class="badge badge-warning">待处理</span>'; break;
+                    case 'resolved': statusBadge = '<span class="badge badge-success">已处理</span>'; break;
+                    case 'ignored': statusBadge = '<span class="badge" style="background: #9ca3af; color: white;">已忽略</span>'; break;
+                }
+
+                html += `
+                    <tr>
+                        <td>
+                            <div>${appeal.username}</div>
+                            <div style="font-size: 12px; color: #6b7280;">ID: ${appeal.user_id.substring(0, 8)}...</div>
+                        </td>
+                        <td>
+                            <div style="font-weight: 500;">${appeal.title}</div>
+                            <div style="font-size: 12px; color: #6b7280; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${appeal.details}</div>
+                        </td>
+                        <td>${statusBadge}</td>
+                        <td>${new Date(appeal.created_at).toLocaleString()}</td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" onclick='openProcessAppealModal(${JSON.stringify(appeal)})'>
+                                ${appeal.status === 'pending' ? '处理' : '查看'}
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table>${renderPagination(total, 'appeals')}`;
+            document.getElementById('appealsTable').innerHTML = html;
         }
 
         function openProcessAppealModal(appeal) {
@@ -1789,6 +2145,64 @@
                 console.error('处理申诉失败:', error);
                 alert('处理失败: ' + error.message);
             }
+        }
+
+        // ==================== 分页与搜索辅助函数 ====================
+
+        function renderPagination(totalItems, type) {
+            const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+            if (totalPages <= 1) return '';
+
+            const currentPage = currentPages[type];
+            let html = `<div class="pagination">`;
+
+            // 上一页
+            html += `<button class="btn btn-sm" style="background: ${currentPage === 1 ? '#e5e7eb' : '#667eea'}; color: ${currentPage === 1 ? '#9ca3af' : 'white'};" 
+                    ${currentPage === 1 ? 'disabled' : `onclick="changePage('${type}', ${currentPage - 1})"`}>上一页</button>`;
+
+            // 页面信息
+            html += `<span class="page-info">第 ${currentPage} / ${totalPages} 页 (共 ${totalItems} 条)</span>`;
+
+            // 下一页
+            html += `<button class="btn btn-sm" style="background: ${currentPage === totalPages ? '#e5e7eb' : '#667eea'}; color: ${currentPage === totalPages ? '#9ca3af' : 'white'};" 
+                    ${currentPage === totalPages ? 'disabled' : `onclick="changePage('${type}', ${currentPage + 1})"`}>下一页</button>`;
+
+            html += `</div>`;
+            return html;
+        }
+
+        function changePage(type, newPage) {
+            currentPages[type] = newPage;
+            switch (type) {
+                case 'users': renderUsersTable(); break;
+                case 'reports': renderReportsTable(); break;
+                case 'appeals': renderAppealsTable(); break;
+                case 'sessions': renderUserSessionsTable(); break;
+            }
+        }
+
+        function handleUserSearch() {
+            searchQueries.users = document.getElementById('userQuery').value;
+            currentPages.users = 1;
+            renderUsersTable();
+        }
+
+        function handleReportSearch() {
+            searchQueries.reports = document.getElementById('reportQuery').value;
+            currentPages.reports = 1;
+            renderReportsTable();
+        }
+
+        function handleAppealSearch() {
+            searchQueries.appeals = document.getElementById('appealQuery').value;
+            currentPages.appeals = 1;
+            renderAppealsTable();
+        }
+
+        function handleSessionSearch() {
+            searchQueries.sessions = document.getElementById('sessionQuery').value;
+            currentPages.sessions = 1;
+            renderUserSessionsTable();
         }
     </script>
 </body>

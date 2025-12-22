@@ -25,16 +25,18 @@ load_dotenv()
 class TikTokInfluencerAgent:
     """TikTok 达人推荐智能 Agent"""
 
-    def __init__(self, user_id: Optional[str] = None, session_id: Optional[str] = None):
+    def __init__(self, user_id: Optional[str] = None, session_id: Optional[str] = None, callbacks: Optional[list] = None):
         """
         初始化 Agent
 
         Args:
             user_id: 用户 ID，用于后台任务队列
             session_id: 会话 ID，用于创建报告记录
+            callbacks: LangChain 回调列表
         """
         self.user_id = user_id  # 存储用户 ID
         self.session_id = session_id  # 存储会话 ID
+        self.callbacks = callbacks  # ⭐ 存储回调
         self.llm = self._init_llm()
         self.tools = get_all_tools()
 
@@ -384,9 +386,14 @@ class TikTokInfluencerAgent:
 
             # LangChain 1.0 的 agent 返回的是 CompiledStateGraph
             # 需要调用 invoke 方法，传入完整的对话历史
+            # ⭐ 支持传入 callbacks
+            config = {}
+            if hasattr(self, 'callbacks') and self.callbacks:
+                config['callbacks'] = self.callbacks
+
             result = self.agent.invoke({
                 "messages": self.chat_history
-            })
+            }, config=config)
 
             # 提取 AI 的回复
             if "messages" in result and len(result["messages"]) > 0:
