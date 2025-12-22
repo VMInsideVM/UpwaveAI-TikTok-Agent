@@ -249,3 +249,28 @@ class Report(Base):
 
     def __repr__(self):
         return f"<Report {self.report_id} - {self.title} ({self.status})>"
+
+
+class Appeal(Base):
+    """用户申诉表"""
+    __tablename__ = "appeals"
+
+    appeal_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("sessions.session_id"), nullable=True)  # 可选关联会话
+    title = Column(String(200), nullable=False)
+    details = Column(Text, nullable=False)
+    status = Column(String(20), default="pending", nullable=False, index=True)  # pending, resolved, ignored
+    admin_comment = Column(Text)  # 管理员回复/备注
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime)
+    resolved_by = Column(String(36), ForeignKey("users.user_id"), nullable=True)  # 处理管理员ID
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="appeals")
+    session = relationship("ChatSession")
+    admin = relationship("User", foreign_keys=[resolved_by])
+
+    def __repr__(self):
+        return f"<Appeal {self.appeal_id} - {self.title} ({self.status})>"

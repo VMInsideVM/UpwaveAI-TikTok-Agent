@@ -75,6 +75,7 @@ class UserInfoResponse(BaseModel):
     last_login: Optional[datetime]
     remaining_credits: int
     total_credits: int
+    phone_number: Optional[str] = None
 
 
 # ==================== SMS 认证相关模型 ====================
@@ -365,7 +366,8 @@ async def get_current_user_info(
         created_at=current_user.created_at,
         last_login=current_user.last_login,
         remaining_credits=usage.remaining_credits,
-        total_credits=usage.total_credits
+        total_credits=usage.total_credits,
+        phone_number=current_user.phone_number
     )
 
 

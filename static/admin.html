@@ -513,6 +513,7 @@
             <button class="tab active" onclick="switchTab('overview')">📊 概览</button>
             <button class="tab" onclick="switchTab('users')">👥 用户管理</button>
             <button class="tab" onclick="switchTab('reports')">📄 报告管理</button>
+            <button class="tab" onclick="switchTab('appeals')">📢 申诉管理</button>
             <button class="tab" onclick="switchTab('tasks')">⚙️ 任务队列</button>
         </div>
 
@@ -573,6 +574,26 @@
                     <button class="btn btn-primary btn-sm" onclick="refreshReports()">🔄 刷新</button>
                 </div>
                 <div id="reportsTable">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 申诉管理标签页 -->
+        <div id="appeals-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">申诉列表</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="appealStatusFilter" onchange="loadAppeals()" class="form-input"
+                            style="width: auto; padding: 6px 12px;">
+                            <option value="all">全部状态</option>
+                            <option value="pending" selected>待处理</option>
+                            <option value="resolved">已处理</option>
+                            <option value="ignored">已忽略</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="loadAppeals()">🔄 刷新</button>
+                    </div>
+                </div>
+                <div id="appealsTable">加载中...</div>
             </div>
         </div>
 
@@ -720,6 +741,47 @@
         </div>
     </div>
 
+    <!-- ==================== 新增：申诉处理模态框 ==================== -->
+    <div id="processAppealModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">处理申诉</h3>
+                <button class="modal-close" onclick="closeProcessAppealModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="processAppealId">
+                <div style="margin-bottom: 16px; background: #f9fafb; padding: 12px; border-radius: 8px;">
+                    <div style="font-weight: 600; margin-bottom: 4px;" id="appealDetailTitle">标题</div>
+                    <div style="color: #6b7280; font-size: 13px; margin-bottom: 8px;">
+                        用户: <span id="appealDetailUser"></span> |
+                        时间: <span id="appealDetailTime"></span>
+                    </div>
+                    <div style="white-space: pre-wrap;" id="appealDetailContent">内容</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">处理结果</label>
+                    <select id="processAppealStatus" class="form-input">
+                        <option value="resolved">已解决</option>
+                        <option value="ignored">忽略/驳回</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">回复/备注</label>
+                    <textarea id="processAppealComment" class="form-input" style="min-height: 100px;"
+                        placeholder="请输入回复内容或备注..."></textarea>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn btn-primary" onclick="submitAppealProcess()" style="flex: 1;">提交处理</button>
+                    <button class="btn" onclick="closeProcessAppealModal()"
+                        style="flex: 1; background: #e5e7eb;">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE_URL = 'http://127.0.0.1:8001';
         let currentTab = 'overview';
@@ -782,6 +844,9 @@
                     break;
                 case 'tasks':
                     loadTasks();
+                    break;
+                case 'appeals':
+                    loadAppeals();
                     break;
             }
         }
@@ -1604,6 +1669,127 @@
 
         // 页面加载时初始化
         window.addEventListener('DOMContentLoaded', init);
+        // ==================== 申诉管理 ====================
+
+        async function loadAppeals() {
+            const tableContainer = document.getElementById('appealsTable');
+            const statusFilter = document.getElementById('appealStatusFilter').value;
+
+            tableContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+
+            try {
+                const response = await apiRequest(`/api/admin/appeals?status_filter=${statusFilter}`);
+
+                if (response && response.ok) {
+                    const appeals = await response.json();
+
+                    if (appeals.length === 0) {
+                        tableContainer.innerHTML = '<div class="empty-state">暂无申诉记录</div>';
+                        return;
+                    }
+
+                    let html = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>用户</th>
+                                    <th>标题</th>
+                                    <th>状态</th>
+                                    <th>时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    appeals.forEach(appeal => {
+                        let statusBadge = '';
+                        switch (appeal.status) {
+                            case 'pending': statusBadge = '<span class="badge badge-warning">待处理</span>'; break;
+                            case 'resolved': statusBadge = '<span class="badge badge-success">已处理</span>'; break;
+                            case 'ignored': statusBadge = '<span class="badge" style="background: #9ca3af; color: white;">已忽略</span>'; break;
+                        }
+
+                        html += `
+                            <tr>
+                                <td>
+                                    <div>${appeal.username}</div>
+                                    <div style="font-size: 12px; color: #6b7280;">ID: ${appeal.user_id.substring(0, 8)}...</div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 500;">${appeal.title}</div>
+                                    <div style="font-size: 12px; color: #6b7280; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${appeal.details}</div>
+                                </td>
+                                <td>${statusBadge}</td>
+                                <td>${new Date(appeal.created_at).toLocaleString()}</td>
+                                <td>
+                                    <button class="btn btn-primary btn-sm" onclick='openProcessAppealModal(${JSON.stringify(appeal)})'>
+                                        ${appeal.status === 'pending' ? '处理' : '查看'}
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `</tbody></table>`;
+                    tableContainer.innerHTML = html;
+                }
+            } catch (error) {
+                console.error('加载申诉失败:', error);
+                tableContainer.innerHTML = '<div class="alert alert-error show">加载失败</div>';
+            }
+        }
+
+        function openProcessAppealModal(appeal) {
+            document.getElementById('processAppealId').value = appeal.appeal_id;
+            document.getElementById('appealDetailTitle').textContent = appeal.title;
+            document.getElementById('appealDetailUser').textContent = appeal.username;
+            document.getElementById('appealDetailTime').textContent = new Date(appeal.created_at).toLocaleString();
+            document.getElementById('appealDetailContent').textContent = appeal.details;
+
+            // 如果已处理，显示处理结果
+            if (appeal.status !== 'pending') {
+                document.getElementById('processAppealStatus').value = appeal.status;
+                document.getElementById('processAppealComment').value = appeal.admin_comment || '';
+            } else {
+                document.getElementById('processAppealStatus').value = 'resolved';
+                document.getElementById('processAppealComment').value = '';
+            }
+
+            document.getElementById('processAppealModal').classList.add('show');
+        }
+
+        function closeProcessAppealModal() {
+            document.getElementById('processAppealModal').classList.remove('show');
+        }
+
+        async function submitAppealProcess() {
+            const appealId = document.getElementById('processAppealId').value;
+            const status = document.getElementById('processAppealStatus').value;
+            const comment = document.getElementById('processAppealComment').value;
+
+            try {
+                const response = await apiRequest(`/api/admin/appeals/${appealId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        status: status,
+                        comment: comment
+                    })
+                });
+
+                if (response && response.ok) {
+                    alert('处理成功');
+                    closeProcessAppealModal();
+                    loadAppeals();
+                } else {
+                    const error = await response.json();
+                    alert('处理失败: ' + (error.detail || '未知错误'));
+                }
+            } catch (error) {
+                console.error('处理申诉失败:', error);
+                alert('处理失败: ' + error.message);
+            }
+        }
     </script>
 </body>
 

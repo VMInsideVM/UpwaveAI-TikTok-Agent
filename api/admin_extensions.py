@@ -137,12 +137,14 @@ async def get_user_sessions(
             Message.session_id == session.session_id
         ).scalar()
 
-        result.append(SessionInfo(
-            session_id=session.session_id,
-            title=session.title,
-            created_at=session.created_at,
-            message_count=message_count or 0
-        ))
+        # 过滤掉消息数为 0 的会话
+        if message_count and message_count > 0:
+            result.append(SessionInfo(
+                session_id=session.session_id,
+                title=session.title,
+                created_at=session.created_at,
+                message_count=message_count
+            ))
 
     return result
 

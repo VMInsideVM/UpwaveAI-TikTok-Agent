@@ -61,6 +61,8 @@
             display: flex;
             gap: 8px;
             margin-bottom: 12px;
+            flex-wrap: wrap;
+            /* 允许换行 */
         }
 
         .sidebar-btn {
@@ -1023,7 +1025,9 @@
         <div class="sidebar-header">
             <div class="sidebar-actions">
                 <button class="sidebar-btn btn-reports" onclick="openReportsModal()">📊 报告库</button>
-                <button class="sidebar-btn btn-new-chat" onclick="createNewChat()">➕ 新聊天</button>
+                <button class="sidebar-btn btn-new-chat" onclick="createNewChat()">+ 新对话</button>
+                <button class="sidebar-btn btn-new-chat" onclick="showAppealModal()" style="background: #f3f4f6;">📢
+                    申诉</button>
             </div>
         </div>
 
@@ -1072,6 +1076,52 @@
                         disabled></textarea>
                     <button type="submit" class="chat-send-btn" id="sendBtn" disabled>发送</button>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 申诉模态框 -->
+    <div id="appealModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">提交申诉</h3>
+                <button class="modal-close" onclick="closeAppealModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">标题 <span
+                            style="color: red;">*</span></label>
+                    <input type="text" id="appealTitle" class="chat-input" style="width: 100%; border-radius: 8px;"
+                        placeholder="请输入申诉标题">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">关联会话 (可选)</label>
+                    <select id="appealSession" class="chat-input"
+                        style="width: 100%; border-radius: 8px; height: 46px;">
+                        <option value="">不关联会话</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">详情描述 <span
+                            style="color: red;">*</span></label>
+                    <textarea id="appealDetails" class="chat-input"
+                        style="width: 100%; border-radius: 8px; min-height: 120px;"
+                        placeholder="请详细描述您的问题..."></textarea>
+                </div>
+                <div id="appealMessage" style="margin-bottom: 16px; color: #ef4444; display: none;"></div>
+                <div style="text-align: right; display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="sidebar-btn" onclick="closeAppealModal()"
+                        style="background: #e5e7eb; width: auto; padding: 10px 24px;">取消</button>
+                    <button class="sidebar-btn btn-reports" onclick="submitAppeal()"
+                        style="width: auto; padding: 10px 24px;">提交</button>
+                </div>
+
+                <div style="margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 16px;">
+                    <h4 style="margin-bottom: 12px;">历史申诉记录</h4>
+                    <div id="appealHistory" style="max-height: 200px; overflow-y: auto;">
+                        <div style="text-align: center; color: #9ca3af; padding: 20px;">加载中...</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1157,6 +1207,45 @@
         let isHistorySession = false;        // 当前是否为历史会话（非最新会话）
         let isWaitingForResponse = false;    // 是否在等待agent回复（用户发送消息后等待回复）
         let isDeletingSession = false;       // 是否正在删除会话（删除时跳过警告）
+
+        // 带认证的请求封装
+        async function fetchWithAuth(url, options = {}) {
+            if (!accessToken) {
+                window.location.href = '/login.html';
+                throw new Error('未登录');
+            }
+
+            const headers = {
+                'Authorization': `Bearer ${accessToken}`,
+                ...(options.headers || {})
+            };
+
+            // 自动添加 Content-Type
+            if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
+                headers['Content-Type'] = 'application/json';
+            }
+
+            const config = {
+                ...options,
+                headers
+            };
+
+            // 处理相对路径
+            if (url.startsWith('/')) {
+                url = API_BASE_URL + url;
+            }
+
+            const response = await fetch(url, config);
+
+            if (response.status === 401) {
+                // Token 过期或无效
+                localStorage.removeItem('access_token');
+                window.location.href = '/login.html';
+                throw new Error('认证过期，请重新登录');
+            }
+
+            return response;
+        }
 
         // 检查登录状态
         function checkAuth() {
@@ -2693,6 +2782,126 @@
 
         // 页面加载时初始化
         window.addEventListener('load', init);
+        // ==================== 申诉功能 ====================
+
+        async function showAppealModal() {
+            const modal = document.getElementById('appealModal');
+            modal.classList.add('show');
+
+            // 加载会话列表用于选择
+            loadSessionsForAppeal();
+            // 加载历史申诉
+            loadAppealHistory();
+        }
+
+        function closeAppealModal() {
+            document.getElementById('appealModal').classList.remove('show');
+            document.getElementById('appealTitle').value = '';
+            document.getElementById('appealDetails').value = '';
+            document.getElementById('appealSession').value = '';
+            document.getElementById('appealMessage').style.display = 'none';
+        }
+
+        async function loadSessionsForAppeal() {
+            try {
+                const response = await fetchWithAuth('/api/sessions?limit=20');
+                if (response.ok) {
+                    const data = await response.json();
+                    const select = document.getElementById('appealSession');
+                    // 保留第一个选项
+                    select.innerHTML = '<option value="">不关联会话</option>';
+
+                    data.sessions.forEach(session => {
+                        const option = document.createElement('option');
+                        option.value = session.session_id;
+                        option.textContent = session.title || '未命名会话';
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载会话列表失败:', error);
+            }
+        }
+
+        async function submitAppeal() {
+            const title = document.getElementById('appealTitle').value.trim();
+            const details = document.getElementById('appealDetails').value.trim();
+            const sessionId = document.getElementById('appealSession').value;
+            const messageEl = document.getElementById('appealMessage');
+
+            if (!title || !details) {
+                messageEl.textContent = '请填写必填项';
+                messageEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetchWithAuth('/api/appeals', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        title: title,
+                        details: details,
+                        session_id: sessionId || null
+                    })
+                });
+
+                if (response.ok) {
+                    alert('申诉提交成功！管理员将尽快处理。');
+                    closeAppealModal();
+                } else {
+                    const data = await response.json();
+                    messageEl.textContent = data.detail || '提交失败';
+                    messageEl.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('提交申诉失败:', error);
+                messageEl.textContent = '网络错误，请稍后重试';
+                messageEl.style.display = 'block';
+            }
+        }
+
+        async function loadAppealHistory() {
+            const container = document.getElementById('appealHistory');
+            try {
+                const response = await fetchWithAuth('/api/appeals');
+                if (response.ok) {
+                    const appeals = await response.json();
+                    if (appeals.length === 0) {
+                        container.innerHTML = '<div style="text-align: center; color: #9ca3af; padding: 20px;">暂无申诉记录</div>';
+                        return;
+                    }
+
+                    container.innerHTML = appeals.map(appeal => {
+                        let statusColor = '#9ca3af'; // pending
+                        let statusText = '处理中';
+                        if (appeal.status === 'resolved') {
+                            statusColor = '#10b981';
+                            statusText = '已处理';
+                        } else if (appeal.status === 'ignored') {
+                            statusColor = '#ef4444';
+                            statusText = '已驳回';
+                        }
+
+                        return `
+                            <div style="background: #f9fafb; padding: 12px; border-radius: 8px; margin-bottom: 8px; font-size: 14px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                    <span style="font-weight: 500;">${appeal.title}</span>
+                                    <span style="color: ${statusColor}; font-weight: 500;">${statusText}</span>
+                                </div>
+                                <div style="color: #6b7280; font-size: 12px; margin-bottom: 4px;">${new Date(appeal.created_at).toLocaleString()}</div>
+                                ${appeal.admin_comment ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e5e7eb; color: #4b5563;">管理员回复: ${appeal.admin_comment}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 20px;">加载失败</div>';
+                }
+            } catch (error) {
+                console.error('加载申诉历史失败:', error);
+                container.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 20px;">网络错误</div>';
+            }
+        }
+
     </script>
 </body>
 

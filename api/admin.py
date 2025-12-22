@@ -10,7 +10,8 @@ from datetime import datetime
 import secrets
 
 from database.connection import get_db
-from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode, CreditHistory
+from database.connection import get_db
+from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode, CreditHistory, Appeal
 from auth.dependencies import get_current_admin_user
 from background.report_queue import report_queue
 
@@ -83,6 +84,27 @@ class MessageInfo(BaseModel):
     created_at: datetime
 
 
+class AppealAdminInfo(BaseModel):
+    """管理员查看的申诉信息"""
+    appeal_id: str
+    user_id: str
+    username: str
+    session_id: Optional[str]
+    title: str
+    details: str
+    status: str
+    created_at: datetime
+    resolved_at: Optional[datetime]
+    resolved_by: Optional[str]
+    admin_comment: Optional[str]
+
+
+class ProcessAppealRequest(BaseModel):
+    """处理申诉请求"""
+    status: str  # resolved, ignored, pending
+    comment: Optional[str]
+
+
 # ==================== User Management ====================
 
 @router.get("/users", response_model=List[UserInfo])
@@ -107,10 +129,10 @@ async def list_all_users(
             db.add(usage)
             db.commit()
 
-        # ⭐ 统计总聊天数
-        total_sessions = db.query(ChatSession).filter(
+        # ⭐ 统计总聊天数（仅统计有消息的会话）
+        total_sessions = db.query(ChatSession).join(Message).filter(
             ChatSession.user_id == user.user_id
-        ).count()
+        ).distinct().count()
 
         # ⭐ 统计总token数（基于已使用积分估算）
         # 假设: 100积分 ≈ 1个达人查询 ≈ 约1000 tokens
@@ -612,6 +634,86 @@ async def list_invitation_codes(
     return result
 
 
+
+# ==================== Appeal Management ====================
+
+@router.get("/appeals", response_model=List[AppealAdminInfo])
+async def list_appeals(
+    skip: int = 0,
+    limit: int = 100,
+    status_filter: Optional[str] = None,
+    admin_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    列出所有申诉
+    """
+    query = db.query(Appeal)
+    
+    if status_filter and status_filter != 'all':
+        query = query.filter(Appeal.status == status_filter)
+        
+    appeals = query.order_by(
+        Appeal.created_at.desc()
+    ).offset(skip).limit(limit).all()
+
+    result = []
+    for appeal in appeals:
+        user = db.query(User).filter(User.user_id == appeal.user_id).first()
+        resolver = None
+        if appeal.resolved_by:
+            resolver = db.query(User).filter(User.user_id == appeal.resolved_by).first()
+            
+        result.append(AppealAdminInfo(
+            appeal_id=appeal.appeal_id,
+            user_id=appeal.user_id,
+            username=user.username if user else "Unknown",
+            session_id=appeal.session_id,
+            title=appeal.title,
+            details=appeal.details,
+            status=appeal.status,
+            created_at=appeal.created_at,
+            resolved_at=appeal.resolved_at,
+            resolved_by=resolver.username if resolver else None,
+            admin_comment=appeal.admin_comment
+        ))
+    
+    return result
+
+@router.put("/appeals/{appeal_id}")
+async def process_appeal(
+    appeal_id: str,
+    request: ProcessAppealRequest,
+    admin_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    处理申诉
+    """
+    appeal = db.query(Appeal).filter(Appeal.appeal_id == appeal_id).first()
+    
+    if not appeal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="申诉不存在"
+        )
+        
+    if request.status not in ["pending", "resolved", "ignored"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的状态"
+        )
+        
+    appeal.status = request.status
+    appeal.admin_comment = request.comment
+    appeal.resolved_at = datetime.utcnow()
+    appeal.resolved_by = admin_user.user_id
+    
+    db.commit()
+    
+    return {"message": "申诉已处理", "appeal_id": appeal_id, "status": appeal.status}
+
+
 # ==================== Statistics ====================
 
 @router.get("/statistics")
@@ -626,7 +728,8 @@ async def get_statistics(
     active_users = db.query(User).filter(User.is_active == True).count()
     total_reports = db.query(Report).count()
     completed_reports = db.query(Report).filter(Report.status == "completed").count()
-    total_sessions = db.query(ChatSession).count()
+    # 统计有效会话（包含消息的会话）
+    total_sessions = db.query(ChatSession).join(Message).distinct().count()
     total_messages = db.query(Message).count()
     unused_codes = db.query(InvitationCode).filter(InvitationCode.is_used == False).count()
 
