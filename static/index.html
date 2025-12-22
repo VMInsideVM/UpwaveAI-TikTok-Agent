@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -239,7 +240,8 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            min-height: 0; /* 修复 flex 子元素溢出问题 */
+            min-height: 0;
+            /* 修复 flex 子元素溢出问题 */
         }
 
         /* 顶部栏 */
@@ -342,17 +344,21 @@
             display: flex;
             flex-direction: column;
             background: var(--bg-color);
-            min-height: 0; /* 修复 flex 子元素溢出问题 */
+            min-height: 0;
+            /* 修复 flex 子元素溢出问题 */
         }
 
         .chat-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 24px 0; /* 上下padding，左右留白通过内部元素控制 */
-            min-height: 0; /* 确保可以滚动 */
+            padding: 24px 0;
+            /* 上下padding，左右留白通过内部元素控制 */
+            min-height: 0;
+            /* 确保可以滚动 */
             display: flex;
             flex-direction: column;
-            align-items: center; /* 水平居中 */
+            align-items: center;
+            /* 水平居中 */
         }
 
         .welcome-message {
@@ -360,7 +366,8 @@
             padding: 40px 20px;
             color: #6b7280;
             width: 100%;
-            max-width: 900px; /* 与消息宽度一致 */
+            max-width: 900px;
+            /* 与消息宽度一致 */
         }
 
         .welcome-message h2 {
@@ -374,8 +381,10 @@
             align-items: flex-start;
             animation: fadeIn 0.3s ease-in;
             width: 100%;
-            max-width: 900px; /* 限制最大宽度，类似ChatGPT */
-            padding: 0 24px; /* 左右padding */
+            max-width: 900px;
+            /* 限制最大宽度，类似ChatGPT */
+            padding: 0 24px;
+            /* 左右padding */
             box-sizing: border-box;
         }
 
@@ -384,6 +393,7 @@
                 opacity: 0;
                 transform: translateY(10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -766,12 +776,25 @@
             animation: bounce 1.4s ease-in-out infinite;
         }
 
-        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
 
         @keyframes bounce {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-10px); }
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0);
+            }
+
+            30% {
+                transform: translateY(-10px);
+            }
         }
 
         /* 响应式设计 */
@@ -964,6 +987,7 @@
                 opacity: 0;
                 transform: translateY(-20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -989,6 +1013,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- 侧边栏遮罩（仅移动端显示） -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
@@ -1043,14 +1068,8 @@
 
             <div class="chat-input-area">
                 <form class="chat-input-form" id="chatForm">
-                    <textarea
-                        class="chat-input"
-                        id="chatInput"
-                        placeholder="请告诉我您的需求..."
-                        autocomplete="off"
-                        rows="1"
-                        disabled
-                    ></textarea>
+                    <textarea class="chat-input" id="chatInput" placeholder="请告诉我您的需求..." autocomplete="off" rows="1"
+                        disabled></textarea>
                     <button type="submit" class="chat-send-btn" id="sendBtn" disabled>发送</button>
                 </form>
             </div>
@@ -1081,17 +1100,20 @@
                 <button class="modal-close" onclick="closeConfirmGenerateModal()">×</button>
             </div>
             <div style="padding: 24px;">
-                <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <div
+                    style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                     <p style="margin: 0; color: #856404; line-height: 1.6;">
                         <strong>📊 即将开始搜索和分析达人数据</strong><br>
-                        此操作将消耗 <strong style="color: #d9534f;"><span id="creditsToDeduct">-</span> 积分</strong>（<span id="influencerCount">-</span> 个达人 × 100 积分/个）
+                        此操作将消耗 <strong style="color: #d9534f;"><span id="creditsToDeduct">-</span> 积分</strong>（<span
+                            id="influencerCount">-</span> 个达人 × 100 积分/个）
                     </p>
                 </div>
 
                 <div style="margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                         <span style="color: var(--text-color);">当前剩余积分:</span>
-                        <span id="currentCredits" style="font-weight: bold; font-size: 18px; color: var(--primary-color);">-</span>
+                        <span id="currentCredits"
+                            style="font-weight: bold; font-size: 18px; color: var(--primary-color);">-</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--text-color);">确认后剩余:</span>
@@ -1099,17 +1121,20 @@
                     </div>
                 </div>
 
-                <div style="background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 13px; color: #004085;">
+                <div
+                    style="background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 13px; color: #004085;">
                     <strong>💡 温馨提示:</strong><br>
                     • 如果生成失败,系统将自动退还积分<br>
                     • 报告生成成功后会有邮件或短信提醒，可在报告库查看
                 </div>
 
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                    <button onclick="closeConfirmGenerateModal()" style="padding: 10px 24px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-size: 14px;">
+                    <button onclick="closeConfirmGenerateModal()"
+                        style="padding: 10px 24px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-size: 14px;">
                         取消
                     </button>
-                    <button id="confirmGenerateBtn" onclick="confirmGenerate()" style="padding: 10px 24px; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+                    <button id="confirmGenerateBtn" onclick="confirmGenerate()"
+                        style="padding: 10px 24px; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
                         确认生成
                     </button>
                 </div>
@@ -1777,7 +1802,7 @@
 
         // 自动调整 textarea 高度
         const chatInput = document.getElementById('chatInput');
-        chatInput.addEventListener('input', function() {
+        chatInput.addEventListener('input', function () {
             // 重置高度以便正确计算
             this.style.height = 'auto';
             // 设置新高度（不超过最大高度）
@@ -1785,7 +1810,7 @@
         });
 
         // 支持 Enter 发送消息，Shift+Enter 换行
-        chatInput.addEventListener('keydown', function(e) {
+        chatInput.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 document.getElementById('chatForm').dispatchEvent(new Event('submit'));
@@ -1920,6 +1945,12 @@
                 });
 
                 if (!response.ok) {
+                    // ⭐ 处理积分不足的情况（403错误）
+                    if (response.status === 403) {
+                        const errorData = await response.json();
+                        alert(`❌ ${errorData.detail || '积分不足，无法创建新对话'}`);
+                        return;
+                    }
                     throw new Error('创建会话失败');
                 }
 
@@ -2468,7 +2499,7 @@
                     // 筛选出当前会话的进行中报告
                     const currentSessionActiveReports = reports.filter(
                         r => (r.status === 'queued' || r.status === 'generating') &&
-                             r.session_id === sessionId
+                            r.session_id === sessionId
                     );
 
                     // 如果当前会话没有进行中的报告,清除等待状态
@@ -2506,40 +2537,40 @@
                 contentDiv.innerHTML = `
                     <div class="reports-grid">
                         ${reports.map(report => {
-                            const isGenerating = report.status === 'queued' || report.status === 'generating';
-                            const scrapingProgress = report.scraping_progress || 0;
-                            const reportProgress = report.report_progress || 0;
+                    const isGenerating = report.status === 'queued' || report.status === 'generating';
+                    const scrapingProgress = report.scraping_progress || 0;
+                    const reportProgress = report.report_progress || 0;
 
-                            // 格式化ETA时间（支持小时、分钟、秒）
-                            const formatETA = (seconds) => {
-                                if (!seconds || seconds <= 0) return '';
+                    // 格式化ETA时间（支持小时、分钟、秒）
+                    const formatETA = (seconds) => {
+                        if (!seconds || seconds <= 0) return '';
 
-                                const hours = Math.floor(seconds / 3600);
-                                const mins = Math.floor((seconds % 3600) / 60);
-                                const secs = seconds % 60;
+                        const hours = Math.floor(seconds / 3600);
+                        const mins = Math.floor((seconds % 3600) / 60);
+                        const secs = seconds % 60;
 
-                                if (hours > 0) {
-                                    // 有小时的情况
-                                    if (mins > 0 && secs > 0) {
-                                        return `${hours}小时${mins}分${secs}秒`;
-                                    } else if (mins > 0) {
-                                        return `${hours}小时${mins}分`;
-                                    } else if (secs > 0) {
-                                        return `${hours}小时${secs}秒`;
-                                    } else {
-                                        return `${hours}小时`;
-                                    }
-                                } else if (mins > 0) {
-                                    // 只有分钟的情况
-                                    return secs > 0 ? `${mins}分${secs}秒` : `${mins}分`;
-                                } else {
-                                    // 只有秒的情况
-                                    return `${secs}秒`;
-                                }
-                            };
+                        if (hours > 0) {
+                            // 有小时的情况
+                            if (mins > 0 && secs > 0) {
+                                return `${hours}小时${mins}分${secs}秒`;
+                            } else if (mins > 0) {
+                                return `${hours}小时${mins}分`;
+                            } else if (secs > 0) {
+                                return `${hours}小时${secs}秒`;
+                            } else {
+                                return `${hours}小时`;
+                            }
+                        } else if (mins > 0) {
+                            // 只有分钟的情况
+                            return secs > 0 ? `${mins}分${secs}秒` : `${mins}分`;
+                        } else {
+                            // 只有秒的情况
+                            return `${secs}秒`;
+                        }
+                    };
 
-                            // 生成双进度条HTML
-                            const dualProgressHTML = isGenerating ? `
+                    // 生成双进度条HTML
+                    const dualProgressHTML = isGenerating ? `
                                 <div class="dual-progress-container">
                                     <!-- 爬取进度条 -->
                                     <div class="progress-bar-wrapper">
@@ -2564,7 +2595,7 @@
                                 </div>
                             ` : '';
 
-                            return `
+                    return `
                                 <div class="report-card" onclick="openReport('${report.report_id}')">
                                     <div class="report-card-title">${report.title}</div>
                                     <div class="report-card-status status-${report.status}">
@@ -2574,7 +2605,7 @@
                                     <div class="report-card-time">${new Date(report.created_at).toLocaleString('zh-CN')}</div>
                                 </div>
                             `;
-                        }).join('')}
+                }).join('')}
                     </div>
                 `;
 
@@ -2664,4 +2695,5 @@
         window.addEventListener('load', init);
     </script>
 </body>
+
 </html>

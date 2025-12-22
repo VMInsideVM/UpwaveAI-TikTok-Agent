@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -378,7 +379,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* 代码块 */
@@ -489,6 +492,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- 顶部导航栏 -->
     <div class="navbar">
@@ -543,7 +547,8 @@
                 </div>
                 <div id="systemInfo">
                     <p><strong>API 状态:</strong> <span id="apiStatus" class="badge badge-success">正常</span></p>
-                    <p><strong>Playwright API:</strong> <span id="playwrightStatus" class="badge badge-success">正常</span></p>
+                    <p><strong>Playwright API:</strong> <span id="playwrightStatus"
+                            class="badge badge-success">正常</span></p>
                     <p><strong>活跃 Agent 数:</strong> <span id="activeAgents">0</span></p>
                 </div>
             </div>
@@ -607,7 +612,8 @@
                 <input type="hidden" id="creditsUserId">
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit" class="btn btn-primary" style="flex: 1;">确定</button>
-                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeCreditsModal()">取消</button>
+                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;"
+                        onclick="closeCreditsModal()">取消</button>
                 </div>
             </form>
         </div>
@@ -643,7 +649,8 @@
                 <input type="hidden" id="editUserId">
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit" class="btn btn-primary" style="flex: 1;">保存</button>
-                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;" onclick="closeEditUserModal()">取消</button>
+                    <button type="button" class="btn" style="flex: 1; background: #e5e7eb;"
+                        onclick="closeEditUserModal()">取消</button>
                 </div>
             </form>
         </div>
@@ -763,7 +770,7 @@
             currentTab = tabName;
 
             // 加载对应数据
-            switch(tabName) {
+            switch (tabName) {
                 case 'overview':
                     loadOverview();
                     break;
@@ -1599,4 +1606,5 @@
         window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
+
 </html>

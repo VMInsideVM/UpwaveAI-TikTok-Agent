@@ -443,6 +443,22 @@ async def create_session(
 ):
     """创建新的聊天会话（需要认证）"""
     try:
+        # ⭐ 检查用户积分是否足够（至少需要100积分）
+        MIN_CREDITS_REQUIRED = 100
+        from database.models import UserUsage
+        
+        usage = db.query(UserUsage).filter(
+            UserUsage.user_id == current_user.user_id
+        ).first()
+        
+        if usage:
+            remaining_credits = usage.total_credits - usage.used_credits
+            if remaining_credits < MIN_CREDITS_REQUIRED:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"积分不足：您当前剩余 {remaining_credits} 积分，至少需要 {MIN_CREDITS_REQUIRED} 积分才能创建新对话。每个达人消耗100积分。"
+                )
+        
         # 检查 Playwright API 是否可用
         if not check_playwright_api():
             raise HTTPException(
@@ -465,6 +481,8 @@ async def create_session(
             "message": "会话创建成功"
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"创建会话失败: {str(e)}")
 
@@ -951,6 +969,24 @@ async def websocket_endpoint(
                 image_data = message_data.get("image", None)  # 获取图片数据
 
                 if message_type == "message" and (content or image_data):
+                    # ⭐ 检查用户积分是否足够（至少需要100积分）
+                    MIN_CREDITS_REQUIRED = 100
+                    with get_db_context() as db:
+                        from database.models import UserUsage
+                        usage = db.query(UserUsage).filter(
+                            UserUsage.user_id == user_id
+                        ).first()
+                        
+                        if usage:
+                            remaining_credits = usage.total_credits - usage.used_credits
+                            if remaining_credits < MIN_CREDITS_REQUIRED:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "content": f"积分不足：您当前剩余 {remaining_credits} 积分，至少需要 {MIN_CREDITS_REQUIRED} 积分才能使用。每个达人消耗100积分。",
+                                    "timestamp": datetime.now().isoformat()
+                                })
+                                continue
+                    
                     # 保存用户消息到数据库
                     session_manager.save_message(
                         session_id=session_id,
