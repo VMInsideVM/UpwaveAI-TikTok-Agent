@@ -14,6 +14,7 @@ from database.connection import get_db
 from database.models import User, UserUsage, Report, ChatSession, Message, InvitationCode, CreditHistory, Appeal, TokenUsage
 from auth.dependencies import get_current_admin_user
 from background.report_queue import report_queue
+from sqlalchemy import or_, func, distinct, and_
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
@@ -112,45 +113,112 @@ class ProcessAppealRequest(BaseModel):
 async def list_all_users(
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = None,
+    # 筛选参数
+    min_credits: Optional[int] = None,
+    max_credits: Optional[int] = None,
+    min_sessions: Optional[int] = None,
+    max_sessions: Optional[int] = None,
+    min_tokens: Optional[int] = None,
+    max_tokens: Optional[int] = None,
+    min_tokens_24h: Optional[int] = None,
+    max_tokens_24h: Optional[int] = None,
     admin_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
-    列出所有用户（带配额信息）
+    列出所有用户（带配额信息），支持多维度筛选
     """
-    users = db.query(User).offset(skip).limit(limit).all()
+    # 1. 准备子查询：统计每个用户的有效会话数（有消息的会话）
+    # SELECT user_id, COUNT(DISTINCT session_id) FROM sessions JOIN messages ... GROUP BY user_id
+    subq_sessions = db.query(
+        ChatSession.user_id,
+        func.count(distinct(ChatSession.session_id)).label('session_count')
+    ).join(Message, ChatSession.session_id == Message.session_id)\
+     .group_by(ChatSession.user_id).subquery()
 
-    result = []
-    
-    # 计算24小时前的时间戳
+    # 2. 准备子查询：统计每个用户的24小时Token消耗
     time_24h_ago = datetime.utcnow() - timedelta(hours=24)
+    subq_tokens_24h = db.query(
+        TokenUsage.user_id,
+        func.sum(TokenUsage.total_tokens).label('tokens_24h')
+    ).filter(TokenUsage.created_at >= time_24h_ago)\
+     .group_by(TokenUsage.user_id).subquery()
+
+    # 3. 构建主查询：连接用户表、积分表和上述子查询
+    # 使用 outerjoin 确保即使没有会话或积分记录的用户也能被查出来
+    query = db.query(
+        User,
+        UserUsage,
+        func.coalesce(subq_sessions.c.session_count, 0).label('session_count'),
+        func.coalesce(subq_tokens_24h.c.tokens_24h, 0).label('tokens_24h')
+    ).outerjoin(UserUsage, User.user_id == UserUsage.user_id)\
+     .outerjoin(subq_sessions, User.user_id == subq_sessions.c.user_id)\
+     .outerjoin(subq_tokens_24h, User.user_id == subq_tokens_24h.c.user_id)
+
+    # 4. 应用筛选条件
     
-    for user in users:
-        usage = db.query(UserUsage).filter(UserUsage.user_id == user.user_id).first()
-
-        if not usage:
-            # 创建默认积分（300积分）
-            usage = UserUsage(user_id=user.user_id, total_credits=300, used_credits=0)
-            db.add(usage)
-            db.commit()
-
-        # ⭐ 统计总聊天数（仅统计有消息的会话）
-        total_sessions = db.query(ChatSession).join(Message).filter(
-            ChatSession.user_id == user.user_id
-        ).distinct().count()
-
-        # ⭐ 获取真实 Token 数据
-        # 1. 总 Token (可以直接从 UserUsage 取，如果 migrate 正确的话)
-        total_tokens = usage.total_tokens_used if hasattr(usage, 'total_tokens_used') else 0
+    # 搜索框过滤（用户名/邮箱/手机）
+    if search:
+        query = query.filter(
+            or_(
+                User.username.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search}%"),
+                User.phone_number.ilike(f"%{search}%")
+            )
+        )
+    
+    # 积分筛选
+    if min_credits is not None:
+        # 注意：这里假设 UserUsage 存在。如果没有 UserUsage (NULL)，则 remaining 为 0 (代码逻辑稍后处理)
+        # SQL中 NULL >= X 通常为 False，这符合预期
+        query = query.filter((UserUsage.total_credits - UserUsage.used_credits) >= min_credits)
+    if max_credits is not None:
+        query = query.filter((UserUsage.total_credits - UserUsage.used_credits) <= max_credits)
         
-        # 2. 24小时 Token 消耗 (实时聚合)
-        from sqlalchemy import func
-        tokens_24h = db.query(func.sum(TokenUsage.total_tokens)).filter(
-            TokenUsage.user_id == user.user_id,
-            TokenUsage.created_at >= time_24h_ago
-        ).scalar() or 0
+    # 会话数筛选
+    if min_sessions is not None:
+        query = query.filter(func.coalesce(subq_sessions.c.session_count, 0) >= min_sessions)
+    if max_sessions is not None:
+        query = query.filter(func.coalesce(subq_sessions.c.session_count, 0) <= max_sessions)
+        
+    # 总 Token 筛选
+    if min_tokens is not None:
+        query = query.filter(UserUsage.total_tokens_used >= min_tokens)
+    if max_tokens is not None:
+        query = query.filter(UserUsage.total_tokens_used <= max_tokens)
+        
+    # 24h Token 筛选
+    if min_tokens_24h is not None:
+        query = query.filter(func.coalesce(subq_tokens_24h.c.tokens_24h, 0) >= min_tokens_24h)
+    if max_tokens_24h is not None:
+        query = query.filter(func.coalesce(subq_tokens_24h.c.tokens_24h, 0) <= max_tokens_24h)
 
-        result.append(UserInfo(
+    # 5. 执行查询和分页
+    # 默认按注册时间倒序
+    query = query.order_by(User.created_at.desc())
+    results = query.offset(skip).limit(limit).all()
+
+    # 6. 构建返回结果
+    response_data = []
+    
+    for user, usage, session_count, tokens_24h in results:
+        # 处理 UserUsage 为空的情况（虽然通常应该有，但为了健壮性）
+        if not usage:
+             # 如果查出来没有 usage 记录，手动创建一个临时的对象用于展示（不存库）
+             # 实际上 list_all_users 旧逻辑会 create，但 GET 请求一般不应产生副作用。
+             # 我们展示默认值 0
+             total_credits = 300
+             used_credits = 0
+             remaining_credits = 300
+             total_tokens = 0
+        else:
+            total_credits = usage.total_credits
+            used_credits = usage.used_credits
+            remaining_credits = usage.remaining_credits
+            total_tokens = usage.total_tokens_used
+
+        response_data.append(UserInfo(
             user_id=user.user_id,
             username=user.username,
             email=user.email,
@@ -159,15 +227,15 @@ async def list_all_users(
             is_admin=user.is_admin,
             created_at=user.created_at,
             last_login=user.last_login,
-            total_credits=usage.total_credits,
-            used_credits=usage.used_credits,
-            remaining_credits=usage.remaining_credits,
-            total_sessions=total_sessions,
+            total_credits=total_credits,
+            used_credits=used_credits,
+            remaining_credits=remaining_credits,
+            total_sessions=int(session_count),
             total_tokens=total_tokens,
             tokens_24h=int(tokens_24h)
         ))
 
-    return result
+    return response_data
 
 
 @router.put("/users/{user_id}/credits")
@@ -400,27 +468,66 @@ async def delete_user(
 async def list_all_reports(
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = None,
+    # 日期筛选参数
+    created_after: Optional[datetime] = None,
+    created_before: Optional[datetime] = None,
+    completed_after: Optional[datetime] = None,
+    completed_before: Optional[datetime] = None,
     admin_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
-    列出所有报告（所有用户）
+    列出所有报告（所有用户），支持日期筛选
     """
-    reports = db.query(Report).order_by(
+    query = db.query(Report).join(User, Report.user_id == User.user_id)
+
+    if search:
+        query = query.filter(
+            or_(
+                Report.title.ilike(f"%{search}%"),
+                User.username.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search}%")
+            )
+        )
+
+    # 日期筛选
+    if created_after:
+        query = query.filter(Report.created_at >= created_after)
+    if created_before:
+        query = query.filter(Report.created_at <= created_before)
+        
+    if completed_after:
+        query = query.filter(Report.completed_at >= completed_after)
+    if completed_before:
+        query = query.filter(Report.completed_at <= completed_before)
+
+    reports = query.order_by(
         Report.created_at.desc()
     ).offset(skip).limit(limit).all()
 
     result = []
     for report in reports:
-        user = db.query(User).filter(User.user_id == report.user_id).first()
-
+        # report.user is already joined/available via User join usually, but the select was just Report (implied by db.query(Report))
+        # But wait, db.query(Report).join(User) -> selects Report columns.
+        # So we can access report.user if lazy load or access the joined User columns if we selected them.
+        # Since we use ORM relationship 'user', accessing report.user works (lazy or joined load).
+        # We did not optimize with joinedload, so it might do N+1 if we access report.user.username, 
+        # BUT we joined in query, filtering works.
+        # Let's trust ORM relationship for simplicity, or we could select both.
+        # For filtering, we used Join. For accessing username in result loop:
+        
+        # Accessing report.user will trigger a query if not loaded.
+        # Since we joined User, we might as well rely on accessing report.user relationship. 
+        # SQLAlchemy session cache might help, or simple lazy load.
+        
         result.append({
             "report_id": report.report_id,
             "title": report.title,
             "status": report.status,
             "user_id": report.user_id,
-            "username": user.username if user else "Unknown",
-            "session_id": report.session_id,  # ⭐ 新增：关联会话ID
+            "username": report.user.username if report.user else "Unknown",
+            "session_id": report.session_id,
             "created_at": report.created_at.isoformat(),
             "completed_at": report.completed_at.isoformat() if report.completed_at else None,
             "error_message": report.error_message
@@ -656,16 +763,26 @@ async def list_appeals(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[str] = None,
+    search: Optional[str] = None,
     admin_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """
     列出所有申诉
     """
-    query = db.query(Appeal)
+    query = db.query(Appeal).join(User, Appeal.user_id == User.user_id)
     
     if status_filter and status_filter != 'all':
         query = query.filter(Appeal.status == status_filter)
+        
+    if search:
+        query = query.filter(
+            or_(
+                Appeal.title.ilike(f"%{search}%"),
+                Appeal.details.ilike(f"%{search}%"),
+                User.username.ilike(f"%{search}%")
+            )
+        )
         
     appeals = query.order_by(
         Appeal.created_at.desc()
