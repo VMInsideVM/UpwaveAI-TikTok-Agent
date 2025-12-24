@@ -22,6 +22,10 @@ def main():
     print("   2. 确保 CDP 端口 9224 已开放")
     print("   3. 启动命令: chrome.exe --remote-debugging-port=9224")
     print()
+    print("🔐 启动时自动检查:")
+    print("   - 自动打开 https://www.fastmoss.com/zh/influencer/search?shop_window=1")
+    print("   - 自动检测登录状态并在需要时登录")
+    print()
 
     # 检查是否安装了依赖
     try:

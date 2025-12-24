@@ -64,8 +64,12 @@ LOGIN_CREDENTIALS = {
 _login_state = {
     "is_logged_in": False,
     "last_check_time": None,
+    "last_login_time": None,  # 最后一次成功登录的时间
     "check_lock": None  # 将在 startup_event 中初始化为 asyncio.Lock()
 }
+
+# 登录时间日志文件路径
+LOGIN_LOG_FILE = "login_time.log"
 
 # ============================================================================
 # Pydantic 模型定义
@@ -123,9 +127,53 @@ async def startup_event():
         _login_state["check_lock"] = asyncio.Lock()
         print("  ✓ 登录状态锁已初始化")
 
+        # 加载上次登录时间
+        last_login = load_login_time()
+        if last_login:
+            _login_state["last_login_time"] = last_login
+            time_since = datetime.now() - last_login
+            hours_since = time_since.total_seconds() / 3600
+            print(f"  ✓ 加载登录记录: {last_login.strftime('%Y-%m-%d %H:%M:%S')} ({hours_since:.1f} 小时前)")
+            if is_login_expired(last_login, hours=24):
+                print(f"     ⚠️ 登录已过期（超过24小时）")
+            else:
+                print(f"     ✓ 登录仍有效（剩余 {24 - hours_since:.1f} 小时）")
+        else:
+            print("  ℹ️ 未找到登录记录")
+
         _is_initialized = True
         print("✅ Playwright API 服务启动成功！(Async 模式)")
         print("📡 API 文档: http://127.0.0.1:8000/docs")
+
+        # 自动打开 FastMoss 并检测登录状态
+        print("\n🔍 正在自动打开 FastMoss 并检测登录状态...")
+        try:
+            target_url = "https://www.fastmoss.com/zh/influencer/search?shop_window=1"
+            print(f"  🌐 导航到: {target_url}")
+
+            # 导航到 FastMoss 页面
+            await _page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+            # 等待表格容器出现
+            try:
+                await _page.wait_for_selector('.ant-table-container', timeout=10000)
+                print("  ✓ 页面加载完成")
+            except:
+                print("  ⚠️ 未检测到表格容器，但继续检查登录状态...")
+
+            await asyncio.sleep(2)
+
+            # 检查登录状态（已被优化为静默冷却模式）
+            login_result = await check_and_login_async()
+
+            if login_result["is_logged_in"]:
+                print(f"  ✅ 登录状态检查完成: {login_result['message']}")
+            else:
+                print(f"  ❌ 登录失败: {login_result.get('message', '未知错误')}")
+                print("  ⚠️ 请手动登录或检查登录凭证")
+
+        except Exception as e:
+            print(f"  ⚠️ 自动登录检查失败: {e}")
+            print("  💡 服务仍可正常使用，但可能需要手动登录")
 
     except Exception as e:
         print(f"❌ Playwright 初始化失败: {e}")
@@ -170,6 +218,61 @@ def check_initialized():
             status_code=503,
             detail="Playwright 未初始化。请检查服务启动日志。"
         )
+
+# ============================================================================
+# 登录时间日志管理函数
+# ============================================================================
+
+def save_login_time(login_time: datetime):
+    """
+    保存登录时间到日志文件
+
+    Args:
+        login_time: 登录时间
+    """
+    try:
+        with open(LOGIN_LOG_FILE, 'w', encoding='utf-8') as f:
+            f.write(login_time.strftime("%Y-%m-%d %H:%M:%S"))
+        print(f"  💾 登录时间已保存: {login_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    except Exception as e:
+        print(f"  ⚠️ 保存登录时间失败: {e}")
+
+def load_login_time() -> Optional[datetime]:
+    """
+    从日志文件加载最后一次登录时间
+
+    Returns:
+        Optional[datetime]: 登录时间，如果文件不存在或格式错误则返回 None
+    """
+    try:
+        if not os.path.exists(LOGIN_LOG_FILE):
+            return None
+
+        with open(LOGIN_LOG_FILE, 'r', encoding='utf-8') as f:
+            time_str = f.read().strip()
+            login_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+            return login_time
+    except Exception as e:
+        print(f"  ⚠️ 读取登录时间失败: {e}")
+        return None
+
+def is_login_expired(login_time: datetime, hours: int = 24) -> bool:
+    """
+    检查登录时间是否已过期
+
+    Args:
+        login_time: 登录时间
+        hours: 过期小时数（默认24小时）
+
+    Returns:
+        bool: True表示已过期，False表示未过期
+    """
+    if not login_time:
+        return True
+
+    now = datetime.now()
+    time_diff = now - login_time
+    return time_diff.total_seconds() > (hours * 3600)
 
 # ============================================================================
 # 登录检查辅助函数
@@ -338,20 +441,43 @@ async def check_and_login_async(max_retries: int = 1, skip_cache: bool = False) 
 
     # 获取锁，防止并发登录
     async with _login_state["check_lock"]:
-        # 检查缓存 - 改为24小时(86400秒)
+        # 检查内存缓存
         if not skip_cache:
-            last_check = _login_state["last_check_time"]
-            if last_check and (datetime.now() - last_check).seconds < 86400:
-                # 24小时内的检查结果可复用
-                if _login_state["is_logged_in"]:
-                    print("  ✅ [登录检查] 使用缓存的登录状态（24小时内）")
+            last_login = _login_state.get("last_login_time")
+            last_check = _login_state.get("last_check_time")
+            
+            if last_login and _login_state.get("is_logged_in"):
+                # 检查登录是否过期（24小时）
+                if not is_login_expired(last_login, hours=24):
+                    time_since_check = (datetime.now() - (last_check or datetime.min)).total_seconds()
+                    
+                    # --- 核心优化：10 分钟静默冷却期 ---
+                    # 如果 10 分钟内刚检查过，且未过期，直接静默返回
+                    if time_since_check < 600:
+                        return {
+                            "is_logged_in": True,
+                            "status": "cached_silent",
+                            "message": "在静默期内，跳过检查"
+                        }
+                    
+                    time_remaining = 24 - (datetime.now() - last_login).total_seconds() / 3600
+                    print(f"  ✅ [登录检查] 使用内存缓存的登录状态（剩余 {time_remaining:.1f} 小时）")
+                    _login_state["last_check_time"] = datetime.now()
+                    
                     return {
                         "is_logged_in": True,
                         "status": "cached",
-                        "message": "使用缓存的登录状态"
+                        "message": f"使用缓存的登录状态（剩余 {time_remaining:.1f} 小时）"
                     }
 
         print("\n🔐 [登录检查] 开始检查登录状态...")
+
+        # 加载上次登录时间
+        last_login_time = load_login_time()
+        if last_login_time:
+            time_since_login = datetime.now() - last_login_time
+            hours_since_login = time_since_login.total_seconds() / 3600
+            print(f"  📅 上次登录时间: {last_login_time.strftime('%Y-%m-%d %H:%M:%S')} ({hours_since_login:.1f} 小时前)")
 
         attempt = 0
         while attempt <= max_retries:
@@ -363,20 +489,44 @@ async def check_and_login_async(max_retries: int = 1, skip_cache: bool = False) 
                 login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
                 if not login_button:
                     print("     ✓ 未找到登录按钮 → 已登录")
-                    print("  ℹ️ 检测到已登录状态,需要先退出登录再重新登录")
 
-                    # 退出登录
-                    if await _logout_async():
-                        print("  ⏳ 等待5秒后重新登录...")
-                        await asyncio.sleep(5)
-                        # 重新检查登录按钮是否出现
-                        print("  🔄 重新检查登录按钮...")
-                        login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
-                        if not login_button:
-                            raise Exception("退出登录后仍未检测到登录按钮")
+                    # 检查登录是否过期（24小时）
+                    if last_login_time and not is_login_expired(last_login_time, hours=24):
+                        # 登录未过期，直接返回已登录状态
+                        time_remaining = 24 - (datetime.now() - last_login_time).total_seconds() / 3600
+                        print(f"  ✅ 登录未过期，剩余有效时间: {time_remaining:.1f} 小时")
+                        print("  ℹ️ 保持当前登录状态，无需重新登录")
+
+                        # 更新缓存
+                        _login_state["is_logged_in"] = True
+                        _login_state["last_check_time"] = datetime.now()
+                        _login_state["last_login_time"] = last_login_time
+
+                        return {
+                            "is_logged_in": True,
+                            "status": "already_logged_in",
+                            "message": f"当前已登录（剩余 {time_remaining:.1f} 小时）"
+                        }
                     else:
-                        print("  ⚠️ 退出登录失败")
-                        raise Exception("退出登录失败")
+                        # 登录已过期或没有登录记录，需要重新登录
+                        if last_login_time:
+                            print(f"  ⚠️ 登录已过期（超过24小时），需要重新登录")
+                        else:
+                            print(f"  ⚠️ 未找到登录记录，需要重新登录")
+                        print("  ℹ️ 检测到已登录状态,先退出登录再重新登录")
+
+                        # 退出登录
+                        if await _logout_async():
+                            print("  ⏳ 等待5秒后重新登录...")
+                            await asyncio.sleep(5)
+                            # 重新检查登录按钮是否出现
+                            print("  🔄 重新检查登录按钮...")
+                            login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
+                            if not login_button:
+                                raise Exception("退出登录后仍未检测到登录按钮")
+                        else:
+                            print("  ⚠️ 退出登录失败")
+                            raise Exception("退出登录失败")
 
                 print("     ✗ 找到登录按钮 → 未登录")
                 print("  ℹ️ 开始自动登录...")
@@ -439,9 +589,16 @@ async def check_and_login_async(max_retries: int = 1, skip_cache: bool = False) 
                 if not login_button_still_exists:
                     print("     ✓ 登录按钮已消失 → 登录成功")
                     print("  ✅ 登录成功: 登录按钮已消失")
+
+                    # 保存登录时间到日志文件
+                    login_time = datetime.now()
+                    save_login_time(login_time)
+
                     # 更新缓存
                     _login_state["is_logged_in"] = True
-                    _login_state["last_check_time"] = datetime.now()
+                    _login_state["last_check_time"] = login_time
+                    _login_state["last_login_time"] = login_time
+
                     return {
                         "is_logged_in": True,
                         "status": "logged_in_success",
@@ -892,9 +1049,11 @@ async def process_influencer_list_stream_endpoint(
             api_request_time = 0.0  # 只统计实际 API 请求的总耗时
             api_request_count = 0   # 实际 API 请求的次数
 
-            # 创建 influencer 目录
-            influencer_dir = "influencer"
-            os.makedirs(influencer_dir, exist_ok=True)
+            # ⭐ 任务开始前检查一次登录状态
+            login_result = await check_and_login_async()
+            if not login_result["is_logged_in"]:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'登录失效: {login_result.get('message')}'})}\n\n"
+                return
 
             # 遍历每个达人
             for idx, influencer_id in enumerate(data_row_keys, 1):
@@ -906,7 +1065,8 @@ async def process_influencer_list_stream_endpoint(
                     # 重新爬取
                     request_start = datetime.now()  # ⭐ 记录单次请求开始时间
                     try:
-                        result = await fetch_influencer_detail_async(influencer_id)
+                        # 内部不再重复检查登录
+                        result = await fetch_influencer_detail_async(influencer_id, check_login=False)
                         if result["success"]:
                             fetched_count += 1
                             api_request_count += 1
@@ -1095,7 +1255,13 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
 
         # 创建 influencer 目录（如不存在）
         influencer_dir = "influencer"
-        os.makedirs(influencer_dir, exist_ok=True)
+        # ⭐ 任务开始前检查一次登录状态
+        login_result = await check_and_login_async()
+        if not login_result["is_logged_in"]:
+            return {
+                "success": False,
+                "message": f"登录失效，无法开始批量任务: {login_result.get('message')}"
+            }
 
         # 遍历每个 data-row-key（顺序处理）
         for idx, influencer_id in enumerate(data_row_keys, 1):
@@ -1110,7 +1276,8 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
 
             # 重新爬取
             try:
-                result = await fetch_influencer_detail_async(influencer_id)
+                # 内部不重复检查登录
+                result = await fetch_influencer_detail_async(influencer_id, check_login=False)
                 if result["success"]:
                     fetched_count += 1
                     print(f"   ✅ 成功获取并保存")
@@ -1164,24 +1331,26 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
         }
 
 
-async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
+async def fetch_influencer_detail_async(influencer_id: str, check_login: bool = True) -> Dict[str, Any]:
     """
     异步获取单个达人的详细数据
 
     Args:
         influencer_id: 达人 ID (data-row-key)
+        check_login: 是否在执行前检查登录（默认 True）
 
     Returns:
         Dict: 包含 success 和 message 的结果字典
     """
     try:
-        # 检查登录状态（使用缓存，避免频繁检查）
-        login_result = await check_and_login_async()
-        if not login_result["is_logged_in"]:
-            return {
-                "success": False,
-                "message": f"登录失败: {login_result.get('message', '未知错误')}"
-            }
+        # 如果需要，检查登录状态
+        if check_login:
+            login_result = await check_and_login_async()
+            if not login_result["is_logged_in"]:
+                return {
+                    "success": False,
+                    "message": f"登录失败: {login_result.get('message', '未知错误')}"
+                }
 
         # 构建详情页 URL
         target_url = f"https://www.fastmoss.com/zh/influencer/detail/{influencer_id}"

@@ -36,7 +36,8 @@
       "Bash(ls:*)",
       "Bash(if [ ! -d \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\" ])",
       "Bash(then mkdir \"c:\\Users\\Hank\\PycharmProjects\\fastmoss_MVP\\migrations\")",
-      "Bash(Get-Content migrations002_credit_history.sql)"
+      "Bash(Get-Content migrations002_credit_history.sql)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []
