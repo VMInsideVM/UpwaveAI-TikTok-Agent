@@ -459,35 +459,146 @@
         /* 输入区域 */
         .chat-input-area {
             padding: 20px 24px;
-            background: var(--sidebar-bg);
-            border-top: 1px solid var(--border-color);
+            background: transparent;
+            /* 去掉背景栏 */
+            /* border-top: 1px solid var(--border-color); */
+            /* 去掉上边框 */
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            /* 居中 */
+            pointer-events: none;
+            /* 让点击穿透到下面（如果需要），但 input wrapper 需要 events */
+        }
+
+        .chat-input-wrapper {
+            pointer-events: auto;
+            /* 恢复点击 */
+            width: 100%;
+            max-width: 900px;
+            /* 限制最大宽度，与消息对齐 */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .chat-input-form {
             display: flex;
             gap: 12px;
+            align-items: flex-end;
+            /* 底部对齐 */
+            background: var(--bg-color);
+            border: 2px solid var(--border-color);
+            border-radius: 24px;
+            padding: 8px 12px;
+            transition: border-color 0.3s;
+        }
+
+        .chat-input-form:focus-within {
+            border-color: var(--primary-color);
+        }
+
+        .upload-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            color: #6b7280;
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .upload-btn:hover {
+            color: var(--primary-color);
+            background: rgba(0, 0, 0, 0.05);
         }
 
         .chat-input {
             flex: 1;
-            padding: 12px 18px;
-            border: 2px solid var(--border-color);
-            border-radius: 24px;
+            padding: 8px 4px;
+            /* 减少 padding 因为在外层包裹了 */
+            border: none;
+            /* 移除原来的边框 */
+            border-radius: 0;
             font-size: 15px;
             outline: none;
-            transition: border-color 0.3s;
-            background: var(--bg-color);
+            background: transparent;
             color: var(--text-color);
             resize: none;
             overflow-y: auto;
             max-height: 200px;
-            min-height: 44px;
+            min-height: 24px;
             line-height: 1.5;
             font-family: inherit;
         }
 
         .chat-input:focus {
-            border-color: var(--primary-color);
+            border-color: transparent;
+            /* 覆盖原来的 focus 样式 */
+        }
+
+        .chat-send-btn {
+            padding: 8px;
+            /* 调整为圆形或图标按钮更合适，或者保持药丸状 */
+            min-width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            /* 圆形 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 20px;
+        }
+
+        /* 图片预览区域 */
+        .image-preview-container {
+            display: none;
+            padding: 10px;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .image-preview-container.show {
+            display: flex;
+        }
+
+        .image-preview-item {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .image-preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .image-preview-remove {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .image-preview-remove:hover {
+            background: rgba(239, 68, 68, 0.8);
         }
 
         .chat-send-btn {
@@ -1013,6 +1124,46 @@
             margin-left: 4px;
             font-size: 14px;
         }
+
+        /* 悬浮历史会话横幅 */
+        .history-float-banner {
+            position: absolute;
+            top: 80px;
+            /* 顶部栏下方 */
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99;
+            width: 90%;
+            max-width: 600px;
+            padding: 12px 16px;
+            background: rgba(254, 243, 199, 0.95);
+            /* linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) but with opacity */
+            backdrop-filter: blur(8px);
+            border: 1px solid #fbbf24;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: none;
+            /* 默认隐藏 */
+            align-items: center;
+            gap: 12px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .history-float-banner.show {
+            display: flex;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translate(-50%, -20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translate(-50%, 0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 
@@ -1072,12 +1223,56 @@
                 </div>
             </div>
 
+            <!-- 悬浮历史会话提示 -->
+            <div id="historyBanner" class="history-float-banner">
+                <span style="font-size: 24px;">📜</span>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; color: #92400e; margin-bottom: 4px;">
+                        历史会话（只读模式）
+                    </div>
+                    <div style="font-size: 13px; color: #78350f;">
+                        您正在查看历史对话记录。如需继续对话，请点击"➕ 新聊天"创建新会话。
+                    </div>
+                </div>
+                <button onclick="createNewChat()" style="
+                        padding: 8px 16px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-weight: 500;
+                        white-space: nowrap;
+                    ">
+                    创建新聊天
+                </button>
+            </div>
+
             <div class="chat-input-area">
-                <form class="chat-input-form" id="chatForm">
-                    <textarea class="chat-input" id="chatInput" placeholder="请告诉我您的需求..." autocomplete="off" rows="1"
-                        disabled></textarea>
-                    <button type="submit" class="chat-send-btn" id="sendBtn" disabled>发送</button>
-                </form>
+                <div class="chat-input-wrapper">
+                    <!-- 图片预览区 -->
+                    <div id="imagePreviewContainer" class="image-preview-container">
+                        <!-- JS 动态添加预览图 -->
+                    </div>
+
+                    <form class="chat-input-form" id="chatForm">
+                        <!-- 图片上传按钮 -->
+                        <button type="button" class="upload-btn" id="uploadBtn" title="上传图片">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                        </button>
+                        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+
+                        <textarea class="chat-input" id="chatInput" placeholder="请告诉我您的需求..." autocomplete="off"
+                            rows="1" disabled></textarea>
+                        <button type="submit" class="chat-send-btn" id="sendBtn" disabled>发送</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
@@ -1324,48 +1519,13 @@
                                     isHistorySession = true;
                                     console.log('📜 恢复的会话为历史会话，启用只读模式');
 
-                                    // 添加历史会话横幅
-                                    const banner = document.createElement('div');
-                                    banner.id = 'history-session-banner';
-                                    banner.style.cssText = `
-                                        padding: 12px 16px;
-                                        margin: 16px;
-                                        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-                                        border: 1px solid #fbbf24;
-                                        border-radius: 8px;
-                                        display: flex;
-                                        align-items: center;
-                                        gap: 12px;
-                                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                                        animation: slideIn 0.3s ease-out;
-                                    `;
-                                    banner.innerHTML = `
-                                        <span style="font-size: 24px;">📜</span>
-                                        <div style="flex: 1;">
-                                            <div style="font-weight: 600; color: #92400e; margin-bottom: 4px;">
-                                                历史会话（只读模式）
-                                            </div>
-                                            <div style="font-size: 13px; color: #78350f;">
-                                                您正在查看历史对话记录。如需继续对话，请点击"➕ 新聊天"创建新会话。
-                                            </div>
-                                        </div>
-                                        <button
-                                            onclick="createNewChat()"
-                                            style="
-                                                padding: 8px 16px;
-                                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                                color: white;
-                                                border: none;
-                                                border-radius: 6px;
-                                                cursor: pointer;
-                                                font-weight: 500;
-                                                white-space: nowrap;
-                                            "
-                                        >
-                                            创建新聊天
-                                        </button>
-                                    `;
-                                    chatMessages.insertBefore(banner, chatMessages.firstChild);
+                                    // 显示悬浮历史会话横幅
+                                    const banner = document.getElementById('historyBanner');
+                                    if (banner) banner.classList.add('show');
+                                } else {
+                                    // 是最新会话，隐藏横幅
+                                    const banner = document.getElementById('historyBanner');
+                                    if (banner) banner.classList.remove('show');
                                 }
                             }
                         } catch (error) {
@@ -1391,6 +1551,10 @@
             isHistorySession = false;
             hasActiveConversation = false;
             isWaitingForReport = false;
+
+            // 隐藏历史横幅
+            const banner = document.getElementById('historyBanner');
+            if (banner) banner.classList.remove('show');
         }
 
         // 加载用户信息
@@ -1747,7 +1911,7 @@
         }
 
         // 添加消息
-        function addMessage(content, isUser) {
+        function addMessage(content, isUser, fileData = null, fileType = 'image') {
             const messagesDiv = document.getElementById('chatMessages');
 
             const messageDiv = document.createElement('div');
@@ -1760,16 +1924,30 @@
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
 
-            const bubble = document.createElement('div');
-            bubble.className = 'message-bubble';
-            bubble.textContent = content;
+            // ⭐ 如果有图片
+            if (fileData) {
+                const imgContainer = document.createElement('div');
+                imgContainer.style.marginBottom = '8px';
 
-            const time = document.createElement('div');
-            time.className = 'message-time';
-            time.textContent = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                const img = document.createElement('img');
+                img.src = fileData;
+                img.style.maxWidth = '200px';
+                img.style.maxHeight = '200px';
+                img.style.borderRadius = '8px';
+                img.style.cursor = 'pointer';
+                img.onclick = () => window.open(fileData, '_blank'); // 点击放大
+                imgContainer.appendChild(img);
 
-            contentDiv.appendChild(bubble);
-            contentDiv.appendChild(time);
+                contentDiv.appendChild(imgContainer);
+            }
+
+            // 只有当有文本内容时才添加气泡
+            if (content) {
+                const bubble = document.createElement('div');
+                bubble.className = 'message-bubble';
+                bubble.textContent = content;
+                contentDiv.appendChild(bubble);
+            }
 
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(contentDiv);
@@ -1856,9 +2034,92 @@
             addMessage(`❌ ${message}`, false);
         }
 
+        // 文件数据缓存
+        let currentFileData = null;
+        let currentFileType = null; // 'image' or 'pdf'
+
+        // 文件选择处理
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+
+        if (uploadBtn && fileInput) {
+            uploadBtn.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    handleFile(file);
+                }
+            });
+        }
+
+        // 粘贴处理
+        const chatInputEl = document.getElementById('chatInput');
+        if (chatInputEl) {
+            chatInputEl.addEventListener('paste', (e) => {
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                for (const item of items) {
+                    if (item.type.indexOf('image') === 0 || item.type === 'application/pdf') {
+                        const file = item.getAsFile();
+                        handleFile(file);
+                        e.preventDefault();
+                        break;
+                    }
+                }
+            });
+        }
+
+        function handleFile(file) {
+            // 仅支持图片
+            if (!file.type.startsWith('image/')) {
+                showError('仅支持上传图片格式');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) { // 10MB
+                showError('图片大小不能超过 10MB');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const base64 = e.target.result;
+                currentFileData = base64;
+                currentFileType = 'image';
+                showFilePreview(base64);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function showFilePreview(base64) {
+            if (!imagePreviewContainer) return;
+
+            imagePreviewContainer.innerHTML = `
+                <div class="image-preview-item">
+                     <img src="${base64}" alt="preview">
+                    <button class="image-preview-remove" onclick="removeFilePreview()">×</button>
+                </div>
+            `;
+            imagePreviewContainer.classList.add('show');
+            // 自动聚焦输入框
+            document.getElementById('chatInput').focus();
+        }
+
+        function removeFilePreview() {
+            currentFileData = null;
+            currentFileType = null;
+            if (fileInput) fileInput.value = '';
+            if (imagePreviewContainer) {
+                imagePreviewContainer.innerHTML = '';
+                imagePreviewContainer.classList.remove('show');
+            }
+        }
+
         // 发送消息
         function sendMessage(message) {
-            if (!message.trim() || !isConnected) return;
+            // ⭐ 修改：判断是否为空时，也要考虑是否有文件
+            if ((!message.trim() && !currentFileData) || !isConnected) return;
 
             // ⭐ 新增：历史会话禁止发送消息（双重保险）
             if (isHistorySession) {
@@ -1867,12 +2128,25 @@
                 return;
             }
 
-            addMessage(message, true);
-
-            websocket.send(JSON.stringify({
+            // 构建发送数据
+            const payload = {
                 type: 'message',
-                content: message
-            }));
+                content: message,
+            };
+
+            // 如果有图片
+            if (currentFileData) {
+                payload.image = currentFileData;
+            }
+
+            // 本地显示消息
+            // 传递 extra info for display
+            addMessage(message, true, currentFileData, currentFileType);
+
+            websocket.send(JSON.stringify(payload));
+
+            // 发送后清空文件
+            removeFilePreview();
 
             // ⭐ 新增：发送消息后进入"等待回复"状态
             isWaitingForResponse = true;
@@ -2020,12 +2294,7 @@
                 // ⭐ 0. 检查是否已经是新会话 (非历史会话且没有活跃对话)
                 // 避免重复创建空会话
                 if (!isHistorySession && !hasActiveConversation) {
-                    console.log('⚠️ 当前已经是新会话，无需创建');
-                    // 仅重置UI状态以防万一
-                    document.getElementById('chatMessages').innerHTML = '';
-                    updateInputState();
-                    // 确保侧边栏高亮正确
-                    loadChatHistory();
+                    console.log('⚠️ 当前已经是新会话，无需创建，保持界面不动');
                     return;
                 }
 
@@ -2072,13 +2341,16 @@
 
                 // ⭐ 5. 清除历史会话标记
                 isHistorySession = false;
-                const banner = document.getElementById('history-session-banner');
-                if (banner) banner.remove();
+                const banner = document.getElementById('historyBanner');
+                if (banner) banner.classList.remove('show');
 
                 // 6. 重新连接 WebSocket
                 connectWebSocket();
 
-                // ⭐ 7. 重置状态
+                // ⭐ 7. 显示欢迎消息（手动添加，因为WebSocket重连可能不会触发welcome事件）
+                addMessage('👋 你好！我是 FastMoss 达人推荐助手。\n请告诉我您的商品名称或需求，我将为您寻找最匹配的带货达人。', false);
+
+                // ⭐ 8. 重置状态
                 hasActiveConversation = false;
                 isWaitingForReport = false;
                 currentSessionReports = [];
@@ -2159,60 +2431,42 @@
                 // ⭐ 5. 标记为历史会话
                 isHistorySession = true;
 
-                // ⭐ 6. 添加历史会话提示横幅
-                const banner = document.createElement('div');
-                banner.id = 'history-session-banner';
-                banner.style.cssText = `
-                    padding: 12px 16px;
-                    margin: 16px;
-                    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-                    border: 1px solid #fbbf24;
-                    border-radius: 8px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    animation: slideIn 0.3s ease-out;
-                `;
-                banner.innerHTML = `
-                    <span style="font-size: 24px;">📜</span>
-                    <div style="flex: 1;">
-                        <div style="font-weight: 600; color: #92400e; margin-bottom: 4px;">
-                            历史会话（只读模式）
-                        </div>
-                        <div style="font-size: 13px; color: #78350f;">
-                            您正在查看历史对话记录。如需继续对话，请点击"➕ 新聊天"创建新会话。
-                        </div>
-                    </div>
-                    <button
-                        onclick="createNewChat()"
-                        style="
-                            padding: 8px 16px;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            color: white;
-                            border: none;
-                            border-radius: 6px;
-                            cursor: pointer;
-                            font-weight: 500;
-                            white-space: nowrap;
-                        "
-                    >
-                        创建新聊天
-                    </button>
-                `;
-
-                chatMessages.appendChild(banner);
+                // ⭐ 6. 显示历史会话提示横幅
+                const banner = document.getElementById('historyBanner');
+                if (banner) banner.classList.add('show');
 
                 // 7. 渲染历史消息
                 if (messages.length === 0) {
                     console.log('⚠️ 该会话没有历史消息');
+                    addMessage('此会话暂无消息', false);
                 } else {
                     messages.forEach((msg, index) => {
                         console.log(`  渲染消息 ${index + 1}/${messages.length}:`, {
                             role: msg.role,
                             content: msg.content?.substring(0, 50) + '...'
                         });
-                        addMessage(msg.content, msg.role === 'user');
+
+                        // 兼容多种附件格式
+                        let fileData = null;
+                        let fileType = 'image';
+
+                        if (msg.attachments && msg.attachments.image) {
+                            fileData = msg.attachments.image;
+                            fileType = 'image';
+                        } else if (msg.image) {
+                            fileData = msg.image;
+                            fileType = 'image';
+                        } else if (msg.attachments && msg.attachments.file) {
+                            if (typeof msg.attachments.file === 'object') {
+                                fileData = msg.attachments.file.data;
+                                fileType = msg.attachments.file.type || 'pdf';
+                            } else {
+                                fileData = msg.attachments.file;
+                                fileType = 'pdf';
+                            }
+                        }
+
+                        addMessage(msg.content, msg.role === 'user', fileData, fileType);
                     });
                 }
 

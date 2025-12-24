@@ -532,19 +532,75 @@ class TikTokInfluencerAgent:
 
             # 添加图片内容
             if image_data:
-                # 如果图片数据是 Base64 格式（data:image/...;base64,xxx）
-                # 需要提取实际的 Base64 数据
-                if image_data.startswith('data:image'):
-                    # 提取 Base64 部分
-                    image_url = image_data
-                else:
-                    # 如果只是纯 Base64，添加前缀
-                    image_url = f"data:image/jpeg;base64,{image_data}"
+                # 预处理图片（Qwen 视觉模型约束）
+                processed_image_url = image_data
+                try:
+                    import base64
+                    import io
+                    import math
+                    from PIL import Image
+
+                    # 提取 Base64 数据
+                    if image_data.startswith('data:image'):
+                        header, encoded = image_data.split(",", 1)
+                        img_format = header.split(';')[0].split('/')[1]
+                    else:
+                        encoded = image_data
+                        img_format = 'jpeg'
+                        image_data = f"data:image/jpeg;base64,{image_data}" # 确保原始数据有前缀
+
+                    # 解码
+                    img_bytes = base64.b64decode(encoded)
+                    img = Image.open(io.BytesIO(img_bytes))
+                    w, h = img.size
+                    
+                    # 规则 1: 最小 56x56
+                    if w < 56 or h < 56:
+                        # 如果过小，放大
+                        scale = max(56/w, 56/h)
+                        w = int(w * scale)
+                        h = int(h * scale)
+                        img = img.resize((w, h), Image.Resampling.LANCZOS)
+
+                    # 规则 2: 最大 3584x3584 (保持长宽比缩放)
+                    MAX_SIDE = 3584
+                    if w > MAX_SIDE or h > MAX_SIDE:
+                        scale = min(MAX_SIDE/w, MAX_SIDE/h)
+                        w = int(w * scale)
+                        h = int(h * scale)
+                        img = img.resize((w, h), Image.Resampling.LANCZOS)
+                    
+                    # 规则 3: 按 28 的倍数取整 (detail=high)
+                    # "长宽先上取整到 28 的倍数"
+                    w_new = math.ceil(w / 28) * 28
+                    h_new = math.ceil(h / 28) * 28
+                    
+                    if w != w_new or h != h_new:
+                        img = img.resize((w_new, h_new), Image.Resampling.LANCZOS)
+                        print(f"🖼️ 图片已调整: {w}x{h} -> {w_new}x{h_new} (Token估算: {math.ceil(h_new/28)*math.ceil(w_new/28)})")
+
+                    # 重新编码
+                    buffered = io.BytesIO()
+                    # 保持原格式或默认 JPEG
+                    save_format = img_format.upper() if img_format != 'jpeg' else 'JPEG'
+                    # PIL jpg 需要 JPEG
+                    if save_format == 'JPG': save_format = 'JPEG'
+                    
+                    img.save(buffered, format=save_format)
+                    processed_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                    processed_image_url = f"data:image/{img_format};base64,{processed_base64}"
+                    
+                except Exception as e:
+                    print(f"⚠️ 图片预处理失败: {e}, 使用原始图片")
+                    if image_data.startswith('data:image'):
+                        processed_image_url = image_data
+                    else:
+                        processed_image_url = f"data:image/jpeg;base64,{image_data}"
 
                 message_content.append({
                     "type": "image_url",
                     "image_url": {
-                        "url": image_url
+                        "url": processed_image_url
                     }
                 })
 
