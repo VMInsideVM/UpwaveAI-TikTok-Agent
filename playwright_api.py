@@ -37,6 +37,37 @@ _page = None
 _is_initialized = False
 
 # ============================================================================
+# 登录相关常量
+# ============================================================================
+
+# 登录页面元素选择器
+LOGIN_SELECTORS = {
+    "login_button": "div.text-white.font-medium.text-sm.bg-vi.py-1.px-5.rounded-3xl.cursor-pointer:has-text('登录/注册')",
+    "modal": ".ant-modal-content",  # 登录模态框
+    "phone_login_tab": ".ant-modal-content .ant-tabs-tab-btn:has-text('手机号登录/注册')",
+    "phone_input": ".ant-modal-content input[placeholder='输入您的手机号码']",
+    "password_login_span": ".ant-modal-content span:has-text('密码登录')",
+    "password_input": ".ant-modal-content input[placeholder='输入密码']",
+    "submit_button": ".ant-modal-content button.ant-btn.css-1cx6hhi.ant-btn-primary.ant-btn-color-primary.ant-btn-variant-solid.ant-btn-lg:has-text('注册/登录')",
+    # 退出登录相关
+    "user_menu": "span:has-text('FM11287624')",  # 用户菜单按钮 (包含用户ID的span)
+    "logout_item": "li[data-key='Logout']",  # 退出登录选项
+}
+
+# 登录凭证
+LOGIN_CREDENTIALS = {
+    "phone": "13337315183",
+    "password": "julian13579"
+}
+
+# 登录状态缓存（带并发锁）
+_login_state = {
+    "is_logged_in": False,
+    "last_check_time": None,
+    "check_lock": None  # 将在 startup_event 中初始化为 asyncio.Lock()
+}
+
+# ============================================================================
 # Pydantic 模型定义
 # ============================================================================
 
@@ -69,7 +100,7 @@ class HealthResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """API 启动时初始化 Playwright (Async)"""
-    global _playwright, _browser, _context, _page, _is_initialized
+    global _playwright, _browser, _context, _page, _is_initialized, _login_state
 
     try:
         print("🔧 正在初始化 Playwright API 服务 (Async 模式)...")
@@ -87,6 +118,10 @@ async def startup_event():
         _context = _browser.contexts[0]
         _page = _context.pages[0]
         print("  ✓ 已获取浏览器页面")
+
+        # 初始化登录状态锁
+        _login_state["check_lock"] = asyncio.Lock()
+        print("  ✓ 登录状态锁已初始化")
 
         _is_initialized = True
         print("✅ Playwright API 服务启动成功！(Async 模式)")
@@ -135,6 +170,329 @@ def check_initialized():
             status_code=503,
             detail="Playwright 未初始化。请检查服务启动日志。"
         )
+
+# ============================================================================
+# 登录检查辅助函数
+# ============================================================================
+
+async def _wait_for_element_async(selector: str, timeout: int = 10000, should_exist: bool = True) -> bool:
+    """
+    等待元素出现或消失
+
+    Args:
+        selector: 元素选择器
+        timeout: 超时时间（毫秒）
+        should_exist: True表示等待元素出现，False表示等待元素消失
+
+    Returns:
+        bool: 操作是否成功
+    """
+    try:
+        if should_exist:
+            await _page.wait_for_selector(selector, timeout=timeout)
+        else:
+            # 等待元素消失
+            start_time = asyncio.get_event_loop().time()
+            while True:
+                element = await _page.query_selector(selector)
+                if not element:
+                    return True
+                if (asyncio.get_event_loop().time() - start_time) * 1000 > timeout:
+                    return False
+                await asyncio.sleep(0.5)
+        return True
+    except:
+        return not should_exist  # 元素不存在时，should_exist=False会返回True
+
+async def _click_element_async(selector: str, timeout: int = 10000) -> bool:
+    """
+    安全地点击元素
+
+    Args:
+        selector: 元素选择器
+        timeout: 超时时间
+
+    Returns:
+        bool: 操作是否成功
+    """
+    try:
+        element = await _page.query_selector(selector)
+        if element:
+            print(f"     ✓ 找到元素: {selector[:80]}...")
+            await element.click()
+            return True
+        else:
+            print(f"     ✗ 未找到元素: {selector[:80]}...")
+            return False
+    except Exception as e:
+        print(f"     ⚠️ 点击元素失败: {selector[:80]}... - {e}")
+        return False
+
+async def _fill_input_async(selector: str, text: str, clear: bool = True) -> bool:
+    """
+    安全地填充输入框
+
+    Args:
+        selector: 输入框选择器
+        text: 要输入的文本
+        clear: 是否先清空输入框
+
+    Returns:
+        bool: 操作是否成功
+    """
+    try:
+        element = await _page.query_selector(selector)
+        if element:
+            print(f"     ✓ 找到输入框: {selector[:80]}...")
+            if clear:
+                await element.fill("")
+            await element.type(text, delay=50)  # 延迟输入，模拟真实用户
+            return True
+        else:
+            print(f"     ✗ 未找到输入框: {selector[:80]}...")
+            return False
+    except Exception as e:
+        print(f"     ⚠️ 填充输入框失败: {selector[:80]}... - {e}")
+        return False
+
+async def _logout_async() -> bool:
+    """
+    退出登录
+
+    Returns:
+        bool: 是否成功退出登录
+    """
+    try:
+        print("\n🚪 [退出登录] 开始退出登录...")
+
+        # 步骤 1: 点击用户菜单
+        print("  1️⃣ 点击用户菜单...")
+        print(f"     查找选择器: {LOGIN_SELECTORS['user_menu']}")
+
+        # 先尝试查找用户菜单
+        user_menu = await _page.query_selector(LOGIN_SELECTORS["user_menu"])
+        if not user_menu:
+            print("     ⚠️ 未找到用户菜单,可能已经退出登录")
+            # 检查是否已经显示登录按钮
+            login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
+            if login_button:
+                print("     ✓ 检测到登录按钮,已经是退出状态")
+                return True
+            else:
+                print("     ✗ 也未检测到登录按钮,状态未知")
+                return False
+
+        print(f"     ✓ 找到用户菜单")
+        await user_menu.click()
+        await asyncio.sleep(1)
+
+        # 步骤 2: 点击退出登录
+        print("  2️⃣ 点击退出登录选项...")
+        print(f"     查找选择器: {LOGIN_SELECTORS['logout_item']}")
+
+        logout_item = await _page.query_selector(LOGIN_SELECTORS["logout_item"])
+        if not logout_item:
+            print("     ✗ 未找到退出登录选项")
+            raise Exception("无法找到退出登录选项")
+
+        print(f"     ✓ 找到退出登录选项")
+        await logout_item.click()
+        await asyncio.sleep(2)
+
+        # 步骤 3: 验证是否退出成功 (检查登录按钮是否出现)
+        print("  3️⃣ 验证退出登录结果...")
+        login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
+        if login_button:
+            print("  ✅ 退出登录成功: 检测到登录按钮")
+            return True
+        else:
+            print("  ⚠️ 退出登录可能失败: 未检测到登录按钮")
+            return False
+
+    except Exception as e:
+        print(f"  ❌ 退出登录失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+async def check_and_login_async(max_retries: int = 1, skip_cache: bool = False) -> Dict[str, Any]:
+    """
+    异步检查登录状态并在需要时自动登录
+
+    Args:
+        max_retries: 登录失败重试次数（默认1次）
+        skip_cache: 是否跳过缓存，强制检查（默认False）
+
+    Returns:
+        Dict: {
+            "is_logged_in": bool,           # 是否已登录
+            "status": str,                  # "already_logged_in" | "logged_in_success" | "login_failed" | "cached"
+            "message": str,                 # 可读的状态消息
+            "error": str (可选)              # 失败时的错误详情
+        }
+
+    Raises:
+        HTTPException: Playwright 未初始化时
+    """
+    check_initialized()
+
+    # 获取锁，防止并发登录
+    async with _login_state["check_lock"]:
+        # 检查缓存 - 改为24小时(86400秒)
+        if not skip_cache:
+            last_check = _login_state["last_check_time"]
+            if last_check and (datetime.now() - last_check).seconds < 86400:
+                # 24小时内的检查结果可复用
+                if _login_state["is_logged_in"]:
+                    print("  ✅ [登录检查] 使用缓存的登录状态（24小时内）")
+                    return {
+                        "is_logged_in": True,
+                        "status": "cached",
+                        "message": "使用缓存的登录状态"
+                    }
+
+        print("\n🔐 [登录检查] 开始检查登录状态...")
+
+        attempt = 0
+        while attempt <= max_retries:
+            try:
+                # 步骤 1: 检查登录状态
+                print(f"  1️⃣ 检查登录状态 (尝试 {attempt + 1}/{max_retries + 1})...")
+                print(f"     正在查找登录按钮: {LOGIN_SELECTORS['login_button'][:80]}...")
+
+                login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
+                if not login_button:
+                    print("     ✓ 未找到登录按钮 → 已登录")
+                    print("  ℹ️ 检测到已登录状态,需要先退出登录再重新登录")
+
+                    # 退出登录
+                    if await _logout_async():
+                        print("  ⏳ 等待5秒后重新登录...")
+                        await asyncio.sleep(5)
+                        # 重新检查登录按钮是否出现
+                        print("  🔄 重新检查登录按钮...")
+                        login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
+                        if not login_button:
+                            raise Exception("退出登录后仍未检测到登录按钮")
+                    else:
+                        print("  ⚠️ 退出登录失败")
+                        raise Exception("退出登录失败")
+
+                print("     ✗ 找到登录按钮 → 未登录")
+                print("  ℹ️ 开始自动登录...")
+
+                # 步骤 2: 点击登录按钮
+                print("  2️⃣ 点击登录/注册按钮...")
+                if not await _click_element_async(LOGIN_SELECTORS["login_button"]):
+                    raise Exception("无法点击登录按钮")
+                await asyncio.sleep(1)
+
+                # 步骤 3: 点击手机号登录选项
+                print("  3️⃣ 选择手机号登录...")
+                if not await _click_element_async(LOGIN_SELECTORS["phone_login_tab"]):
+                    raise Exception("无法点击手机号登录选项")
+                await asyncio.sleep(1)
+
+                # 步骤 4: 输入手机号
+                print(f"  4️⃣ 输入手机号: {LOGIN_CREDENTIALS['phone']}...")
+                print(f"     等待手机号输入框: {LOGIN_SELECTORS['phone_input'][:80]}...")
+                if not await _wait_for_element_async(LOGIN_SELECTORS["phone_input"]):
+                    print("     ✗ 手机号输入框未出现")
+                    raise Exception("手机号输入框未出现")
+                if not await _fill_input_async(LOGIN_SELECTORS["phone_input"], LOGIN_CREDENTIALS["phone"]):
+                    raise Exception("无法输入手机号")
+                await asyncio.sleep(1)
+
+                # 步骤 5: 切换到密码登录
+                print("  5️⃣ 切换到密码登录...")
+                if not await _click_element_async(LOGIN_SELECTORS["password_login_span"]):
+                    raise Exception("无法点击密码登录选项")
+                await asyncio.sleep(1)
+
+                # 步骤 6: 输入密码
+                print("  6️⃣ 输入密码...")
+                print(f"     等待密码输入框: {LOGIN_SELECTORS['password_input'][:80]}...")
+                if not await _wait_for_element_async(LOGIN_SELECTORS["password_input"]):
+                    print("     ✗ 密码输入框未出现")
+                    raise Exception("密码输入框未出现")
+                if not await _fill_input_async(LOGIN_SELECTORS["password_input"], LOGIN_CREDENTIALS["password"]):
+                    raise Exception("无法输入密码")
+                await asyncio.sleep(1)
+
+                # 步骤 7: 点击登录按钮
+                print("  7️⃣ 点击注册/登录按钮...")
+                if not await _click_element_async(LOGIN_SELECTORS["submit_button"]):
+                    raise Exception("无法点击提交按钮")
+
+                # 步骤 8: 等待登录完成
+                print("  8️⃣ 等待登录完成...")
+                await asyncio.sleep(2)
+
+                # 步骤 9: 验证登录成功
+                print("  9️⃣ 验证登录结果...")
+                await asyncio.sleep(1)
+
+                # 检查登录按钮是否消失（登录成功的标志）
+                print(f"     检查登录按钮是否消失: {LOGIN_SELECTORS['login_button'][:80]}...")
+                login_button_still_exists = await _page.query_selector(LOGIN_SELECTORS["login_button"])
+
+                if not login_button_still_exists:
+                    print("     ✓ 登录按钮已消失 → 登录成功")
+                    print("  ✅ 登录成功: 登录按钮已消失")
+                    # 更新缓存
+                    _login_state["is_logged_in"] = True
+                    _login_state["last_check_time"] = datetime.now()
+                    return {
+                        "is_logged_in": True,
+                        "status": "logged_in_success",
+                        "message": "自动登录成功"
+                    }
+                else:
+                    # 登录可能失败，尝试重试
+                    print("     ✗ 登录按钮仍然存在 → 登录可能失败")
+                    print("  ⚠️ 登录可能失败: 登录按钮仍然存在")
+                    attempt += 1
+                    if attempt <= max_retries:
+                        print(f"  🔄 等待2秒后重试...")
+                        await asyncio.sleep(2)
+                        continue
+                    else:
+                        # 更新缓存为未登录
+                        _login_state["is_logged_in"] = False
+                        _login_state["last_check_time"] = datetime.now()
+                        return {
+                            "is_logged_in": False,
+                            "status": "login_failed",
+                            "message": "自动登录失败: 达到最大重试次数",
+                            "error": "登录按钮仍然存在，可能是登录凭证错误或页面加载不完全"
+                        }
+
+            except Exception as e:
+                print(f"  ❌ 登录过程中出错: {e}")
+                attempt += 1
+                if attempt <= max_retries:
+                    print(f"  🔄 等待2秒后重试 (尝试 {attempt}/{max_retries})...")
+                    await asyncio.sleep(2)
+                else:
+                    # 更新缓存为未登录
+                    _login_state["is_logged_in"] = False
+                    _login_state["last_check_time"] = datetime.now()
+                    return {
+                        "is_logged_in": False,
+                        "status": "login_failed",
+                        "message": f"自动登录失败: {str(e)}",
+                        "error": str(e)
+                    }
+
+        # 更新缓存为未登录
+        _login_state["is_logged_in"] = False
+        _login_state["last_check_time"] = datetime.now()
+        return {
+            "is_logged_in": False,
+            "status": "login_failed",
+            "message": "无法完成登录流程",
+            "error": "未知错误"
+        }
 
 def check_influencer_cache(influencer_id: str, cache_days: int) -> Optional[str]:
     """
@@ -239,12 +597,14 @@ async def navigate(req: NavigateRequest):
     导航到指定 URL (Async)
 
     此端点执行页面导航操作，支持等待页面加载完成。
+    新增功能：访问 fastmoss.com 域名时自动检查并处理登录。
     """
     check_initialized()
 
     try:
         print(f"🌐 正在访问: {req.url}")
 
+        # 先导航到页面
         if req.wait_for_load:
             # 使用 domcontentloaded 替代 networkidle，更可靠
             await _page.goto(req.url, wait_until="domcontentloaded", timeout=30000)
@@ -257,6 +617,15 @@ async def navigate(req: NavigateRequest):
         else:
             await _page.goto(req.url, timeout=30000)
             await asyncio.sleep(2)
+
+        # 导航完成后，如果是 fastmoss.com 域名，检查登录状态
+        if "fastmoss.com" in req.url:
+            login_result = await check_and_login_async()
+            if not login_result["is_logged_in"]:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"登录失败: {login_result.get('message', '未知错误')}"
+                )
 
         print(f"✅ 访问成功: {req.url}")
 
@@ -282,10 +651,21 @@ async def get_max_page():
     获取当前页面的最大页数 (Async)
 
     从分页控件中提取最大页码。必须先调用 /navigate 导航到搜索页面。
+    新增功能：自动检查并处理登录状态。
     """
     check_initialized()
 
     try:
+        # 检查登录状态
+        current_url = _page.url
+        if "fastmoss.com" in current_url:
+            login_result = await check_and_login_async()
+            if not login_result["is_logged_in"]:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"登录失败: {login_result.get('message', '未知错误')}"
+                )
+
         print("📊 正在获取最大页数...")
 
         # 使用异步方式获取最大页数
@@ -795,6 +1175,14 @@ async def fetch_influencer_detail_async(influencer_id: str) -> Dict[str, Any]:
         Dict: 包含 success 和 message 的结果字典
     """
     try:
+        # 检查登录状态（使用缓存，避免频繁检查）
+        login_result = await check_and_login_async()
+        if not login_result["is_logged_in"]:
+            return {
+                "success": False,
+                "message": f"登录失败: {login_result.get('message', '未知错误')}"
+            }
+
         # 构建详情页 URL
         target_url = f"https://www.fastmoss.com/zh/influencer/detail/{influencer_id}"
         print(f"   🌐 正在访问达人详情页: {target_url}")
@@ -1046,6 +1434,13 @@ async def get_data_row_keys(url: str, max_pages: int) -> List[str]:
         List[str]: data-row-key 列表，如果失败则返回空列表
     """
     try:
+        # 如果访问 fastmoss.com 域名，先检查登录状态
+        if "fastmoss.com" in url:
+            login_result = await check_and_login_async()
+            if not login_result["is_logged_in"]:
+                print(f"   ❌ 登录失败: {login_result.get('message', '未知错误')}")
+                return []
+
         # 导航到指定 URL
         print(f"🌐 正在访问: {url}")
         await _page.goto(url, wait_until="domcontentloaded", timeout=30000)
