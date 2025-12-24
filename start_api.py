@@ -17,10 +17,10 @@ def main():
 ╚═══════════════════════════════════════════════════════════════╝
     """)
 
-    print("📝 启动前检查:")
-    print("   1. 确保 Chrome 浏览器已启动")
-    print("   2. 确保 CDP 端口 9224 已开放")
-    print("   3. 启动命令: chrome.exe --remote-debugging-port=9224")
+    print("📝 启动特性:")
+    print("   1. 无头模式运行 (Headless)")
+    print("   2. 自动管理浏览器实例 (无需手动启动 Chrome)")
+    print("   3. 用户数据持久化保存至 ./browser_data")
     print()
     print("🔐 启动时自动检查:")
     print("   - 自动打开 https://www.fastmoss.com/zh/influencer/search?shop_window=1")

@@ -107,21 +107,50 @@ async def startup_event():
     global _playwright, _browser, _context, _page, _is_initialized, _login_state
 
     try:
-        print("🔧 正在初始化 Playwright API 服务 (Async 模式)...")
+        print("🔧 正在初始化 Playwright API 服务 (Headless 模式)...")
 
         # 启动 Playwright (异步 API)
         _playwright = await async_playwright().start()
         print("  ✓ Playwright 异步实例已创建")
 
-        # 连接到现有的 Chrome 实例（CDP 端口 9224）
-        # 使用 127.0.0.1 而不是 localhost 避免 IPv6 解析问题
-        _browser = await _playwright.chromium.connect_over_cdp("http://127.0.0.1:9224")
-        print("  ✓ 已连接到 Chrome (CDP:9224)")
+        # 定义用户数据目录 (用于保留登录状态、Cookies等)
+        user_data_dir = os.path.join(os.getcwd(), "browser_data")
+        if not os.path.exists(user_data_dir):
+            os.makedirs(user_data_dir)
+        print(f"  📂 用户数据目录: {user_data_dir}")
 
-        # 获取浏览器上下文和页面
-        _context = _browser.contexts[0]
-        _page = _context.pages[0]
-        print("  ✓ 已获取浏览器页面")
+        # 启动持久化上下文 (Headless 模式)
+        # 替代原本的 connect_over_cdp，由代码直接管理浏览器实例
+        print("  🚀 正在启动无头浏览器 (Persistent Context)...")
+        _context = await _playwright.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=True,  # 启用无头模式
+            accept_downloads=True,
+            viewport={"width": 1920, "height": 1080},  # 设置大分辨率以防布局问题
+            args=[
+                "--disable-blink-features=AutomationControlled",  # 核心：屏蔽自动化控制特征
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-infobars",
+                "--window-position=0,0",
+                "--ignore-certificate-errors",
+                "--disable-extensions",
+                "--disable-gpu",  # 无头模式通常建议禁用 GPU
+            ],
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        print("  ✓ 浏览器实例已启动")
+
+        # 持久化上下文本身就包含页面
+        _page = _context.pages[0] if _context.pages else await _context.new_page()
+        
+        # 注入防检测脚本
+        await _page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+        print("  ✓ 已获取浏览器页面并注入防检测脚本")
 
         # 初始化登录状态锁
         _login_state["check_lock"] = asyncio.Lock()
@@ -134,15 +163,11 @@ async def startup_event():
             time_since = datetime.now() - last_login
             hours_since = time_since.total_seconds() / 3600
             print(f"  ✓ 加载登录记录: {last_login.strftime('%Y-%m-%d %H:%M:%S')} ({hours_since:.1f} 小时前)")
-            if is_login_expired(last_login, hours=24):
-                print(f"     ⚠️ 登录已过期（超过24小时）")
-            else:
-                print(f"     ✓ 登录仍有效（剩余 {24 - hours_since:.1f} 小时）")
         else:
             print("  ℹ️ 未找到登录记录")
 
         _is_initialized = True
-        print("✅ Playwright API 服务启动成功！(Async 模式)")
+        print("✅ Playwright API 服务启动成功！(Headless 模式)")
         print("📡 API 文档: http://127.0.0.1:8000/docs")
 
         # 自动打开 FastMoss 并检测登录状态
@@ -177,10 +202,10 @@ async def startup_event():
 
     except Exception as e:
         print(f"❌ Playwright 初始化失败: {e}")
+        # 移除 CDP 相关提示，改为目录权限提示
         print("请确保:")
-        print("  1. Chrome 浏览器已启动")
-        print("  2. CDP 端口 9224 已开放")
-        print("  3. 使用命令: chrome.exe --remote-debugging-port=9224")
+        print("  1. 当前用户对 browser_data 目录有读写权限")
+        print("  2. 没有其他 Playwright 进程锁定了该目录")
         _is_initialized = False
         import traceback
         traceback.print_exc()
@@ -188,14 +213,15 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """API 关闭时清理资源"""
-    global _playwright, _browser, _is_initialized
+    global _playwright, _context, _is_initialized
 
     print("\n🔧 正在关闭 Playwright API 服务...")
 
     try:
-        if _browser:
-            await _browser.close()
-            print("  ✓ 浏览器连接已关闭")
+        # 关闭上下文（这也会关闭由其管理的浏览器实例）
+        if _context:
+            await _context.close()
+            print("  ✓ 浏览器上下文已保存并关闭")
 
         if _playwright:
             await _playwright.stop()

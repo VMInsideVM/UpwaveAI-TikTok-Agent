@@ -4,6 +4,7 @@ docs/
 influencer/
 output/
 report_templates/
+browser_data/
 
 # Python
 __pycache__/
