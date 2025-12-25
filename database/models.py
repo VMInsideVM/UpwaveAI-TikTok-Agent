@@ -180,7 +180,7 @@ class UserUsage(Base):
 
     usage_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.user_id"), unique=True, nullable=False, index=True)
-    total_credits = Column(Integer, default=300, nullable=False)  # 总积分（默认300积分，可查询3个达人，每个达人100积分）
+    total_credits = Column(Integer, default=0, nullable=False)  # 总积分（默认0积分）
     used_credits = Column(Integer, default=0, nullable=False)  # 已使用积分
     total_tokens_used = Column(Integer, default=0, nullable=False)  # ⭐ 新增：总Token消耗
     last_reset_date = Column(DateTime)  # 仅用于记录，不自动重置（永久累计）

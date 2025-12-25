@@ -254,8 +254,8 @@ async def register(
         # 6. 创建配额记录
         usage = UserUsage(
             user_id=new_user.user_id,
-            total_quota=1,  # 默认 1 次
-            used_count=0
+            total_credits=0,
+            used_credits=0
         )
         db.add(usage)
 
@@ -351,7 +351,7 @@ async def get_current_user_info(
         # 如果没有积分记录，创建一个（默认300积分）
         usage = UserUsage(
             user_id=current_user.user_id,
-            total_credits=300,
+            total_credits=0,
             used_credits=0
         )
         db.add(usage)
@@ -578,10 +578,10 @@ async def register_with_phone(
         db.add(new_user)
         db.flush()
 
-        # 7. 创建积分记录（默认300积分）
+        # 7. 创建积分记录（默认0积分）
         usage = UserUsage(
             user_id=new_user.user_id,
-            total_credits=300,
+            total_credits=0,
             used_credits=0
         )
         db.add(usage)
