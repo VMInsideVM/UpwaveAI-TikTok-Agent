@@ -37,6 +37,12 @@ from api.payment import router as payment_router
 from api.admin_payment import router as admin_payment_router
 from api.user_orders import router as user_orders_router
 
+# 导入安全相关模块
+from utils.security import content_moderator, get_client_ip, rate_limiter
+from services.security_service import security_service
+from config.pricing import MAX_ROUNDS_PER_SESSION, calculate_max_daily_conversations
+from utils.timezone import today_start as get_today_start  # 东八区时间工具
+
 # 创建 FastAPI 应用
 app = FastAPI(
     title="TikTok 达人推荐聊天机器人",
@@ -490,17 +496,45 @@ async def create_session(
         # ⭐ 检查用户积分是否足够（至少需要100积分）
         MIN_CREDITS_REQUIRED = 100
         from database.models import UserUsage
-        
+
         usage = db.query(UserUsage).filter(
             UserUsage.user_id == current_user.user_id
         ).first()
-        
+
         if usage:
             remaining_credits = usage.total_credits - usage.used_credits
             if remaining_credits < MIN_CREDITS_REQUIRED:
                 raise HTTPException(
                     status_code=403,
                     detail=f"积分不足：您当前剩余 {remaining_credits} 积分，至少需要 {MIN_CREDITS_REQUIRED} 积分才能创建新对话。每个达人消耗100积分。"
+                )
+
+            # ⭐ 检查每日新对话创建限制（基于积分动态计算）
+            today_start = get_today_start()  # 使用东八区时间
+
+            # 统计今日已创建的新对话数（有消息的会话才算）
+            # 先获取今日所有会话
+            today_sessions = db.query(ChatSession.session_id).filter(
+                ChatSession.user_id == current_user.user_id,
+                ChatSession.created_at >= today_start
+            ).all()
+
+            # 统计有消息的会话数
+            today_sessions_count = 0
+            for session in today_sessions:
+                message_count = db.query(Message).filter(
+                    Message.session_id == session.session_id
+                ).count()
+                if message_count > 0:
+                    today_sessions_count += 1
+
+            # 计算用户每日最大新对话数
+            max_daily_conversations = calculate_max_daily_conversations(remaining_credits)
+
+            if today_sessions_count >= max_daily_conversations:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"今日新对话数已达上限（{today_sessions_count}/{max_daily_conversations}）。当前积分 {remaining_credits} 对应每日 {max_daily_conversations} 个新对话。充值可增加额度。"
                 )
         
         # 检查 Playwright API 是否可用
@@ -1013,6 +1047,93 @@ async def websocket_endpoint(
                 image_data = message_data.get("image", None)  # 获取图片数据
 
                 if message_type == "message" and (content or image_data):
+                    # ⭐ 安全检查 1: 内容审核
+                    if content:
+                        is_safe, violation_reason = content_moderator.check_content(content)
+                        if not is_safe:
+                            with get_db_context() as db:
+                                client_ip = websocket.client.host if websocket.client else "unknown"
+                                security_service.log_security_event(
+                                    db=db,
+                                    event_type="content_violation",
+                                    severity="medium",
+                                    user_id=user_id,
+                                    ip_address=client_ip,
+                                    event_details={"reason": violation_reason, "content_preview": content[:100]}
+                                )
+                                security_service.update_user_risk_score(db, user_id, violation_increment=1, risk_increment=5)
+
+                            await websocket.send_json({
+                                "type": "error",
+                                "content": f"内容违规：{violation_reason}。请遵守使用规范。",
+                                "timestamp": datetime.now().isoformat()
+                            })
+                            continue
+
+                        # ⭐ 安全检查 2: Prompt注入检测
+                        is_injection, injection_reason = content_moderator.detect_prompt_injection(content)
+                        if is_injection:
+                            with get_db_context() as db:
+                                client_ip = websocket.client.host if websocket.client else "unknown"
+                                security_service.log_security_event(
+                                    db=db,
+                                    event_type="prompt_injection",
+                                    severity="high",
+                                    user_id=user_id,
+                                    ip_address=client_ip,
+                                    event_details={"reason": injection_reason, "content_preview": content[:100]}
+                                )
+                                security_service.update_user_risk_score(db, user_id, violation_increment=1, risk_increment=15)
+
+                            await websocket.send_json({
+                                "type": "error",
+                                "content": f"检测到可疑输入模式，已被拦截。请正常使用对话功能。",
+                                "timestamp": datetime.now().isoformat()
+                            })
+                            continue
+
+                    # ⭐ 安全检查 3: 对话频率限制（每分钟最多5条消息）
+                    allowed, remaining = rate_limiter.check_rate_limit(
+                        key=f"chat_message:{user_id}",
+                        max_requests=5,
+                        window_seconds=60
+                    )
+                    if not allowed:
+                        with get_db_context() as db:
+                            client_ip = websocket.client.host if websocket.client else "unknown"
+                            security_service.log_security_event(
+                                db=db,
+                                event_type="rate_limit_exceeded",
+                                severity="low",
+                                user_id=user_id,
+                                ip_address=client_ip,
+                                event_details={"action": "chat_message", "limit": "per_minute"}
+                            )
+
+                        await websocket.send_json({
+                            "type": "error",
+                            "content": "发送消息过快，请稍后再试（每分钟最多5条消息）",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        continue
+
+                    # ⭐ 安全检查 4: 检查会话轮次是否超限（最多50轮）
+                    with get_db_context() as db:
+                        message_count = db.query(Message).filter(
+                            Message.session_id == session_id
+                        ).count()
+
+                        # 计算轮次：每2条消息（1用户+1助手）= 1轮
+                        current_rounds = message_count // 2
+
+                        if current_rounds >= MAX_ROUNDS_PER_SESSION:
+                            await websocket.send_json({
+                                "type": "error",
+                                "content": f"当前会话已达到最大轮次限制（{MAX_ROUNDS_PER_SESSION}轮）。请创建新会话继续对话。",
+                                "timestamp": datetime.now().isoformat()
+                            })
+                            continue
+
                     # ⭐ 检查用户积分是否足够（至少需要100积分）
                     MIN_CREDITS_REQUIRED = 100
                     with get_db_context() as db:
@@ -1020,7 +1141,7 @@ async def websocket_endpoint(
                         usage = db.query(UserUsage).filter(
                             UserUsage.user_id == user_id
                         ).first()
-                        
+
                         if usage:
                             remaining_credits = usage.total_credits - usage.used_credits
                             if remaining_credits < MIN_CREDITS_REQUIRED:

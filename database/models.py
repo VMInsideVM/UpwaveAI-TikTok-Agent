@@ -4,8 +4,13 @@ SQLAlchemy ORM Models for FastMoss MVP
 """
 from sqlalchemy import Boolean, Column, String, Integer, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime
 import uuid
+import sys
+from pathlib import Path
+
+# 添加项目根目录到路径，以便导入 utils.timezone
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.timezone import now_naive
 
 Base = declarative_base()
 
@@ -27,7 +32,7 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=True, nullable=False)  # 默认激活，跳过邮箱验证
     is_admin = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
     last_login = Column(DateTime)
 
     # 手机号修改历史（新增）
@@ -51,8 +56,8 @@ class ChatSession(Base):
     session_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
     title = Column(String(200), default="新对话")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
+    updated_at = Column(DateTime, default=now_naive, onupdate=now_naive, nullable=False)
     meta_data = Column(JSON)  # 存储额外信息，如 JSON 文件路径
 
     # Relationships
@@ -77,7 +82,7 @@ class Message(Base):
     message_type = Column(String(20), default="text")  # text, image, etc.
     attachments = Column(JSON)  # 附件信息
     meta_data = Column(JSON)  # 其他元数据
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
@@ -97,8 +102,8 @@ class Task(Base):
     progress = Column(JSON)  # 进度信息
     result = Column(JSON)  # 结果数据
     error = Column(JSON)  # 错误信息
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
+    updated_at = Column(DateTime, default=now_naive, onupdate=now_naive, nullable=False)
 
     def __repr__(self):
         return f"<Task {self.task_id} - {self.task_type} ({self.status})>"
@@ -113,7 +118,7 @@ class InvitationCode(Base):
     is_used = Column(Boolean, default=False, nullable=False)
     created_by_admin = Column(String(36), ForeignKey("users.user_id"), nullable=False)
     used_by_user = Column(String(36), ForeignKey("users.user_id"))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
     used_at = Column(DateTime)
     expires_at = Column(DateTime)  # NULL = 永久有效
 
@@ -146,7 +151,7 @@ class SMSVerification(Base):
     ip_address = Column(String(45))  # 支持 IPv6
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=now_naive, nullable=False, index=True)
     expires_at = Column(DateTime, nullable=False, index=True)  # 5分钟后过期
 
     # 关联用户（可选，仅在已登录情况下）
@@ -158,7 +163,7 @@ class SMSVerification(Base):
     @property
     def is_expired(self):
         """验证码是否已过期"""
-        return datetime.utcnow() > self.expires_at
+        return now_naive() > self.expires_at
 
     @property
     def is_locked(self):
@@ -210,7 +215,7 @@ class CreditHistory(Base):
     reason = Column(String(200))  # 变动原因
     related_report_id = Column(String(36), ForeignKey("reports.report_id"))  # 关联的报告ID（如果有）
     related_order_id = Column(String(36), ForeignKey("orders.order_id"))  # 关联的订单ID（充值/退款）
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=now_naive, nullable=False, index=True)
     meta_data = Column(JSON)  # 其他元数据
 
     # Relationships
@@ -241,7 +246,7 @@ class Report(Base):
     report_eta = Column(Integer)  # 报告生成阶段预计剩余时间（秒）
 
     estimated_time = Column(Integer)  # 总预计生成时间（秒）- 保留用于兼容性
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
     completed_at = Column(DateTime)
     error_message = Column(Text)
     meta_data = Column(JSON)  # 其他元数据（如产品名称、达人数量等）
@@ -266,7 +271,7 @@ class Appeal(Base):
     status = Column(String(20), default="pending", nullable=False, index=True)  # pending, resolved, ignored
     admin_comment = Column(Text)  # 管理员回复/备注
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=now_naive, nullable=False)
     resolved_at = Column(DateTime)
     resolved_by = Column(String(36), ForeignKey("users.user_id"), nullable=True)  # 处理管理员ID
 
@@ -293,7 +298,7 @@ class TokenUsage(Base):
     total_tokens = Column(Integer, default=0)
     model_name = Column(String(50))
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=now_naive, nullable=False, index=True)
 
     # Relationships
     user = relationship("User")
@@ -326,7 +331,7 @@ class Order(Base):
     qr_code_url = Column(Text)  # 支付二维码URL
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=now_naive, nullable=False, index=True)
     paid_at = Column(DateTime)
     expired_at = Column(DateTime)  # 订单过期时间（15分钟后）
 
@@ -366,7 +371,7 @@ class Refund(Base):
     error_message = Column(Text)  # 退款失败原因
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=now_naive, nullable=False, index=True)
     processed_at = Column(DateTime)
 
     # 元数据
@@ -378,3 +383,77 @@ class Refund(Base):
 
     def __repr__(self):
         return f"<Refund {self.refund_no} - {self.refund_amount_yuan}元 ({self.status})>"
+
+
+class SecurityLog(Base):
+    """安全事件日志表"""
+    __tablename__ = "security_logs"
+
+    log_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.user_id", ondelete="SET NULL"))
+    event_type = Column(String(50), nullable=False)  # rate_limit, content_violation, etc.
+    severity = Column(String(20), nullable=False)  # low, medium, high, critical
+    ip_address = Column(String(45))
+    device_fingerprint = Column(String(64))
+    event_details = Column(JSON)
+    created_at = Column(DateTime, default=now_naive, nullable=False, index=True)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f"<SecurityLog {self.event_type} - {self.severity}>"
+
+
+class UserRiskScore(Base):
+    """用户风险评分表"""
+    __tablename__ = "user_risk_scores"
+
+    user_id = Column(String(36), ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
+    risk_score = Column(Integer, default=0, nullable=False)  # 0-100
+    violation_count = Column(Integer, default=0, nullable=False)
+    last_violation_at = Column(DateTime)
+    is_blocked = Column(Boolean, default=False, nullable=False, index=True)
+    blocked_until = Column(DateTime)
+    blocked_reason = Column(Text)
+    updated_at = Column(DateTime, default=now_naive, onupdate=now_naive, nullable=False)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f"<UserRiskScore {self.user_id} - {self.risk_score}>"
+
+
+class IPBlacklist(Base):
+    """IP黑名单表"""
+    __tablename__ = "ip_blacklist"
+
+    ip_address = Column(String(45), primary_key=True)
+    reason = Column(Text, nullable=False)
+    blocked_at = Column(DateTime, default=now_naive, nullable=False)
+    expires_at = Column(DateTime)
+    created_by = Column(String(36), ForeignKey("users.user_id", ondelete="SET NULL"))
+
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f"<IPBlacklist {self.ip_address}>"
+
+
+class DeviceBlacklist(Base):
+    """设备黑名单表"""
+    __tablename__ = "device_blacklist"
+
+    device_fingerprint = Column(String(64), primary_key=True)
+    reason = Column(Text, nullable=False)
+    blocked_at = Column(DateTime, default=now_naive, nullable=False)
+    expires_at = Column(DateTime)
+    created_by = Column(String(36), ForeignKey("users.user_id", ondelete="SET NULL"))
+
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f"<DeviceBlacklist {self.device_fingerprint[:8]}...>"

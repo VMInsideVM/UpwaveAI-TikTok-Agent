@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
+from utils.timezone import now_naive
 import logging
 import os
 
@@ -20,6 +21,8 @@ from config.pricing import (
     get_tier_by_id, get_all_tiers, validate_tier_id, validate_payment_method
 )
 from services.payment.manager import payment_manager
+from utils.security import get_client_ip, rate_limiter
+from services.security_service import security_service
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +141,7 @@ async def create_order(
     pending_count = db.query(Order).filter(
         Order.user_id == current_user.user_id,
         Order.payment_status == "pending",
-        Order.expired_at > datetime.utcnow()
+        Order.expired_at > now_naive()
     ).count()
 
     if pending_count >= MAX_PENDING_ORDERS_PER_USER:
@@ -148,7 +151,7 @@ async def create_order(
         )
 
     # 4. 检查每小时订单限制
-    hour_ago = datetime.utcnow() - timedelta(hours=1)
+    hour_ago = now_naive() - timedelta(hours=1)
     hourly_count = db.query(Order).filter(
         Order.user_id == current_user.user_id,
         Order.created_at >= hour_ago
@@ -164,7 +167,7 @@ async def create_order(
     order_no = payment_manager.generate_order_no()
 
     # 6. 计算过期时间
-    expires_at = datetime.utcnow() + timedelta(seconds=ORDER_EXPIRATION_SECONDS)
+    expires_at = now_naive() + timedelta(seconds=ORDER_EXPIRATION_SECONDS)
 
     # 7. 调用支付SDK生成二维码
     # 从环境变量获取回调URL
@@ -246,7 +249,7 @@ async def get_order_status(
     # 检查是否已过期
     expired = False
     if order.payment_status == "pending" and order.expired_at:
-        if datetime.utcnow() > order.expired_at:
+        if now_naive() > order.expired_at:
             expired = True
             # 自动更新状态为已取消
             order.payment_status = "cancelled"
@@ -362,7 +365,7 @@ async def process_payment_success(order_no: str, trade_no: str, db: Session):
         # 1. 更新订单状态
         order.payment_status = "paid"
         order.trade_no = trade_no
-        order.paid_at = datetime.utcnow()
+        order.paid_at = now_naive()
 
         # 2. 获取或创建用户积分记录
         usage = db.query(UserUsage).filter(
@@ -517,3 +520,74 @@ async def wechat_callback(
     except Exception as e:
         logger.exception(f"处理微信支付回调异常: {e}")
         return {"code": "FAIL", "message": str(e)}
+
+
+# ==================== 积分历史查询 ====================
+
+class CreditHistoryItem(BaseModel):
+    """积分历史记录"""
+    history_id: str
+    change_type: str
+    amount: int
+    before_credits: int
+    after_credits: int
+    reason: Optional[str]
+    created_at: datetime
+    order_no: Optional[str] = None  # 关联的订单号
+    report_title: Optional[str] = None  # 关联的报告标题
+
+
+@router.get("/credit-history", response_model=List[CreditHistoryItem])
+async def get_credit_history(
+    limit: int = 50,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取用户积分变动历史
+
+    - **limit**: 返回记录数量（默认50，最大100）
+    - **offset**: 跳过记录数量（用于分页）
+    """
+    # 限制最大查询数量
+    limit = min(limit, 100)
+
+    # 查询积分历史记录
+    histories = db.query(CreditHistory).filter(
+        CreditHistory.user_id == current_user.user_id
+    ).order_by(
+        CreditHistory.created_at.desc()
+    ).limit(limit).offset(offset).all()
+
+    # 构建响应数据
+    result = []
+    for history in histories:
+        # 获取关联的订单号
+        order_no = None
+        if history.related_order_id:
+            order = db.query(Order).filter(Order.order_id == history.related_order_id).first()
+            if order:
+                order_no = order.order_no
+
+        # 获取关联的报告标题
+        report_title = None
+        if history.related_report_id:
+            from database.models import Report
+            report = db.query(Report).filter(Report.report_id == history.related_report_id).first()
+            if report:
+                report_title = report.report_name or "达人推荐报告"
+
+        result.append(CreditHistoryItem(
+            history_id=history.history_id,
+            change_type=history.change_type,
+            amount=history.amount,
+            before_credits=history.before_credits,
+            after_credits=history.after_credits,
+            reason=history.reason,
+            created_at=history.created_at,
+            order_no=order_no,
+            report_title=report_title
+        ))
+
+    return result

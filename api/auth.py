@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, validator
 from datetime import datetime, timedelta
+from utils.timezone import now_naive
 from typing import Optional
 import secrets
 
@@ -21,6 +22,8 @@ from auth.security import (
 )
 from auth.dependencies import get_current_user
 from services.sms_service import get_sms_service
+from utils.security import get_client_ip, generate_device_fingerprint, rate_limiter
+from services.security_service import security_service
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
@@ -205,7 +208,7 @@ async def register(
         )
 
     # 检查邀请码是否过期（expires_at 为 NULL 表示永久有效）
-    if invitation.expires_at and invitation.expires_at < datetime.utcnow():
+    if invitation.expires_at and invitation.expires_at < now_naive():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邀请码已过期"
@@ -262,7 +265,7 @@ async def register(
         # 7. 标记邀请码为已使用
         invitation.is_used = True
         invitation.used_by_user = new_user.user_id
-        invitation.used_at = datetime.utcnow()
+        invitation.used_at = now_naive()
 
         db.commit()
 
@@ -320,7 +323,7 @@ async def login(
         )
 
     # 4. 更新最后登录时间
-    user.last_login = datetime.utcnow()
+    user.last_login = now_naive()
     db.commit()
 
     # 5. 生成令牌
@@ -497,6 +500,7 @@ async def send_sms_code(
 @router.post("/register-phone", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register_with_phone(
     request: PhoneRegisterRequest,
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -504,7 +508,86 @@ async def register_with_phone(
 
     只需要短信验证码（已移除邀请码要求）
     """
-    # 1. 验证短信验证码
+    # 0. 获取IP和设备指纹
+    client_ip = get_client_ip(http_request)
+    device_fp = generate_device_fingerprint(http_request)
+
+    # 0.1 检查IP是否被封禁
+    is_blocked, reason = security_service.check_ip_blocked(db, client_ip)
+    if is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"该IP已被封禁: {reason}"
+        )
+
+    # 0.2 检查设备是否被封禁
+    is_blocked, reason = security_service.check_device_blocked(db, device_fp)
+    if is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"该设备已被封禁: {reason}"
+        )
+
+    # 0.3 检查IP注册频率限制（每小时最多3次，每天最多5次）
+    allowed, remaining = rate_limiter.check_rate_limit(
+        key=f"register_ip_hour:{client_ip}",
+        max_requests=3,
+        window_seconds=3600
+    )
+    if not allowed:
+        security_service.log_security_event(
+            db=db,
+            event_type="rate_limit_exceeded",
+            severity="medium",
+            ip_address=client_ip,
+            device_fingerprint=device_fp,
+            event_details={"action": "register", "limit": "hourly"}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="注册过于频繁，请稍后再试（每小时最多3次）"
+        )
+
+    allowed, remaining = rate_limiter.check_rate_limit(
+        key=f"register_ip_day:{client_ip}",
+        max_requests=5,
+        window_seconds=86400
+    )
+    if not allowed:
+        security_service.log_security_event(
+            db=db,
+            event_type="rate_limit_exceeded",
+            severity="high",
+            ip_address=client_ip,
+            device_fingerprint=device_fp,
+            event_details={"action": "register", "limit": "daily"}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="注册过于频繁，请明天再试（每天最多5次）"
+        )
+
+    # 0.4 检查设备注册频率（每天最多2次）
+    allowed, remaining = rate_limiter.check_rate_limit(
+        key=f"register_device:{device_fp}",
+        max_requests=2,
+        window_seconds=86400
+    )
+    if not allowed:
+        security_service.log_security_event(
+            db=db,
+            event_type="rate_limit_exceeded",
+            severity="high",
+            ip_address=client_ip,
+            device_fingerprint=device_fp,
+            event_details={"action": "register", "limit": "device_daily"}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="该设备今日注册次数已达上限"
+        )
+
+    # 1. 验证短信验证码（强制验证）
     sms_service = get_sms_service()
     is_valid, message, _ = sms_service.verify_code(
         db=db,
@@ -514,6 +597,14 @@ async def register_with_phone(
     )
 
     if not is_valid:
+        security_service.log_security_event(
+            db=db,
+            event_type="invalid_sms_code",
+            severity="low",
+            ip_address=client_ip,
+            device_fingerprint=device_fp,
+            event_details={"phone": request.phone_number, "error": message}
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=message
@@ -588,6 +679,21 @@ async def register_with_phone(
 
         db.commit()
 
+        # 7.5 记录注册成功的安全日志
+        security_service.log_security_event(
+            db=db,
+            event_type="registration",
+            severity="low",
+            user_id=new_user.user_id,
+            ip_address=client_ip,
+            device_fingerprint=device_fp,
+            event_details={
+                "phone": request.phone_number,
+                "username": username,
+                "success": True
+            }
+        )
+
         # 8. 生成令牌
         access_token = create_access_token(data={"sub": new_user.user_id})
         refresh_token = create_refresh_token(data={"sub": new_user.user_id})
@@ -651,7 +757,7 @@ async def login_with_phone_or_username(
         )
 
     # 更新最后登录时间
-    user.last_login = datetime.utcnow()
+    user.last_login = now_naive()
     db.commit()
 
     # 生成令牌
@@ -758,7 +864,7 @@ async def change_phone_number(
     change_record = {
         "old": old_phone,
         "new": request.new_phone_number,
-        "changed_at": datetime.utcnow().isoformat()
+        "changed_at": now_naive().isoformat()
     }
 
     if current_user.phone_change_history:

@@ -59,7 +59,33 @@ ORDER_EXPIRATION_SECONDS = ORDER_EXPIRATION_MINUTES * 60
 
 # 订单限制
 MAX_PENDING_ORDERS_PER_USER = 3  # 每用户最多同时存在的待支付订单数
-MAX_ORDERS_PER_HOUR = 10  # 每用户每小时最多创建订单数
+MAX_ORDERS_PER_HOUR = 5  # 每用户每小时最多创建订单数
+
+# 对话限制
+MAX_ROUNDS_PER_SESSION = 50  # 单个会话最多对话轮数
+NEW_CONVERSATIONS_PER_1000_CREDITS = 10  # 基准：1000积分对应每天10个新对话
+
+
+def calculate_max_daily_conversations(user_credits: int) -> int:
+    """
+    根据用户积分动态计算每天可创建的最大新对话数
+
+    Args:
+        user_credits: 用户当前积分
+
+    Returns:
+        每天最多可创建的新对话数
+
+    Example:
+        1000 积分 = 10 个对话/天
+        2000 积分 = 20 个对话/天
+        500 积分 = 5 个对话/天
+        100 积分 = 1 个对话/天（最少保证1个）
+    """
+    if user_credits < 100:
+        return 1  # 最少保证1个对话
+
+    return max(1, (user_credits // 100) * (NEW_CONVERSATIONS_PER_1000_CREDITS // 10))
 
 # 支付方式
 PAYMENT_METHODS = {
