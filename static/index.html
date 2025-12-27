@@ -1195,7 +1195,13 @@
             <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
             <div class="top-bar-title">🤖 TikTok 达人推荐助手</div>
             <div class="top-bar-actions">
-                <div class="quota-badge" id="quotaBadge">剩余次数: --</div>
+                <div class="quota-section" style="display: flex; align-items: center; gap: 8px;">
+                    <div class="quota-badge" id="quotaBadge">剩余积分: --</div>
+                    <button class="recharge-btn" onclick="openRechargeModal()" title="充值积分"
+                        style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 4px; transition: all 0.2s;">
+                        💳 <span>充值</span>
+                    </button>
+                </div>
                 <button class="text-btn" onclick="showAppealModal()" title="发起申诉"
                     style="background:none; border:none; color: #6b7280; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 4px;">
                     📢 <span>申诉</span>
@@ -1208,6 +1214,7 @@
                     </button>
                     <div class="user-dropdown" id="userDropdown">
                         <div class="dropdown-item" onclick="window.location.href='/settings.html'">个人设置</div>
+                        <div class="dropdown-item" onclick="openOrdersModal()">💳 我的订单</div>
                         <div class="dropdown-item" onclick="logout()">退出登录</div>
                     </div>
                 </div>
@@ -1318,6 +1325,197 @@
                     <div id="appealHistory" style="max-height: 200px; overflow-y: auto;">
                         <div style="text-align: center; color: #9ca3af; padding: 20px;">加载中...</div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 充值模态框 -->
+    <div id="rechargeModal" class="modal">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3 class="modal-title">💳 充值积分</h3>
+                <button class="modal-close" onclick="closeRechargeModal()">×</button>
+            </div>
+            <div class="modal-body" id="rechargeBody">
+                <!-- 步骤1: 选择套餐 -->
+                <div id="rechargeStep1">
+                    <h4 style="margin-bottom: 16px; color: var(--text-color);">选择充值套餐</h4>
+                    <div id="tierGrid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                        <!-- 动态加载套餐 -->
+                    </div>
+
+                    <h4 style="margin: 24px 0 16px; color: var(--text-color);">选择支付方式</h4>
+                    <div id="paymentMethods" style="display: flex; gap: 12px;">
+                        <button class="payment-method-btn" data-method="alipay" onclick="selectPaymentMethod('alipay')"
+                            style="flex: 1; padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; background: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: all 0.2s;">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect fill='%231677FF' width='48' height='48' rx='8'/%3E%3Cpath fill='white' d='M35.5 28.5c-3.5 1.5-8 2.5-11.5 2.5-5 0-9-1.5-9-1.5V18h20v10.5z'/%3E%3C/svg%3E"
+                                alt="支付宝" style="width: 40px; height: 40px;">
+                            <span style="font-weight: 500; color: #1677FF;">支付宝</span>
+                        </button>
+                        <button class="payment-method-btn" data-method="wechat" onclick="selectPaymentMethod('wechat')"
+                            style="flex: 1; padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; background: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: all 0.2s;">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect fill='%2307C160' width='48' height='48' rx='8'/%3E%3Cpath fill='white' d='M24 12c-7.7 0-14 5.4-14 12 0 3.5 1.7 6.6 4.4 8.8L13 38l6-3c1.6.5 3.3.8 5 .8 7.7 0 14-5.4 14-12S31.7 12 24 12z'/%3E%3C/svg%3E"
+                                alt="微信" style="width: 40px; height: 40px;">
+                            <span style="font-weight: 500; color: #07C160;">微信支付</span>
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 24px; text-align: center;">
+                        <button id="createOrderBtn" onclick="createPaymentOrder()" disabled
+                            style="padding: 12px 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; opacity: 0.5; transition: all 0.2s;">
+                            确认充值
+                        </button>
+                        <p style="margin-top: 12px; font-size: 12px; color: #9ca3af;">请先选择套餐和支付方式</p>
+                    </div>
+                </div>
+
+                <!-- 步骤2: 扫码支付 -->
+                <div id="rechargeStep2" style="display: none; text-align: center;">
+                    <div style="margin-bottom: 16px;">
+                        <span id="paymentMethodIcon" style="font-size: 24px;"></span>
+                        <span id="paymentMethodLabel"
+                            style="font-size: 18px; font-weight: 500; margin-left: 8px;"></span>
+                    </div>
+
+                    <div id="qrCodeContainer"
+                        style="display: inline-block; padding: 16px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <img id="paymentQrCode" src="" alt="支付二维码" style="width: 200px; height: 200px;">
+                    </div>
+
+                    <div style="margin-top: 16px;">
+                        <p style="color: var(--text-color); margin-bottom: 8px;">请使用 <span id="paymentMethodName"
+                                style="font-weight: bold;"></span> 扫描二维码完成支付</p>
+                        <p style="color: #f59e0b; font-weight: 500;">
+                            剩余时间: <span id="countdownTimer">15:00</span>
+                        </p>
+                        <p style="color: #9ca3af; font-size: 13px; margin-top: 8px;">
+                            订单号: <span id="orderNo">--</span>
+                        </p>
+                        <p style="color: #9ca3af; font-size: 13px;">
+                            金额: ¥<span id="orderAmount">--</span> | 积分: <span id="orderCredits">--</span>
+                        </p>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; justify-content: center; margin-top: 20px;">
+                        <button onclick="cancelPayment()"
+                            style="padding: 10px 24px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;">
+                            取消支付
+                        </button>
+                        <!-- 本地调试用：模拟支付按钮 -->
+                        <button id="simulatePayBtn" onclick="simulatePayment()"
+                            style="padding: 10px 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                            🧪 模拟支付（调试）
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤3: 支付成功 -->
+                <div id="rechargeStep3" style="display: none; text-align: center; padding: 20px 0;">
+                    <div style="font-size: 64px; margin-bottom: 16px;">✅</div>
+                    <h3 style="color: #10b981; margin-bottom: 12px;">支付成功！</h3>
+                    <p style="font-size: 24px; font-weight: bold; color: var(--primary-color); margin-bottom: 8px;">
+                        +<span id="creditsPurchased">1000</span> 积分
+                    </p>
+                    <p style="color: #9ca3af; margin-bottom: 24px;">积分已到账，祝您使用愉快！</p>
+                    <button onclick="closeRechargeModal()"
+                        style="padding: 12px 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer;">
+                        完成
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 我的订单模态框 -->
+    <div id="ordersModal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h3 class="modal-title">💳 我的订单</h3>
+                <button class="modal-close" onclick="closeOrdersModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- 标签页切换 -->
+                <div style="display: flex; gap: 16px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
+                    <button id="ordersTabBtn" onclick="switchOrderTab('orders')" style="padding: 12px 24px; background: none; border: none; border-bottom: 3px solid var(--primary-color); color: var(--primary-color); font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                        充值订单
+                    </button>
+                    <button id="refundsTabBtn" onclick="switchOrderTab('refunds')" style="padding: 12px 24px; background: none; border: none; border-bottom: 3px solid transparent; color: #6b7280; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+                        售后退款
+                    </button>
+                </div>
+
+                <!-- 充值订单表格 -->
+                <div id="ordersTableContainer" style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <thead>
+                            <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-color);">
+                                <th style="padding: 12px; text-align: left;">订单号</th>
+                                <th style="padding: 12px; text-align: left;">金额</th>
+                                <th style="padding: 12px; text-align: left;">积分</th>
+                                <th style="padding: 12px; text-align: left;">支付方式</th>
+                                <th style="padding: 12px; text-align: left;">状态</th>
+                                <th style="padding: 12px; text-align: left;">创建时间</th>
+                                <th style="padding: 12px; text-align: center;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ordersTableBody">
+                            <tr>
+                                <td colspan="7" style="text-align: center; padding: 40px; color: #9ca3af;">
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 售后退款表格 -->
+                <div id="refundsTableContainer" style="overflow-x: auto; display: none;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <thead>
+                            <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-color);">
+                                <th style="padding: 12px; text-align: left;">退款单号</th>
+                                <th style="padding: 12px; text-align: left;">订单号</th>
+                                <th style="padding: 12px; text-align: left;">退款金额</th>
+                                <th style="padding: 12px; text-align: left;">退款积分</th>
+                                <th style="padding: 12px; text-align: left;">状态</th>
+                                <th style="padding: 12px; text-align: left;">申请时间</th>
+                                <th style="padding: 12px; text-align: left;">原因</th>
+                            </tr>
+                        </thead>
+                        <tbody id="refundsTableBody">
+                            <tr>
+                                <td colspan="7" style="text-align: center; padding: 40px; color: #9ca3af;">
+                                    暂无退款记录
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 申请退款模态框 -->
+    <div id="refundModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">申请退款</h3>
+                <button class="modal-close" onclick="closeRefundModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">订单号</label>
+                    <input type="text" id="refundOrderNo" readonly class="chat-input" style="width: 100%; border-radius: 8px; background: #f3f4f6;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">退款原因 <span style="color: red;">*</span></label>
+                    <textarea id="refundReason" class="chat-input" style="width: 100%; border-radius: 8px; min-height: 100px;" placeholder="请说明退款原因..."></textarea>
+                </div>
+                <div id="refundMessage" style="margin-bottom: 16px; color: #ef4444; display: none;"></div>
+                <div style="text-align: right; display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="sidebar-btn" onclick="closeRefundModal()" style="background: #e5e7eb; width: auto; padding: 10px 24px;">取消</button>
+                    <button class="sidebar-btn" onclick="submitRefundRequest()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: auto; padding: 10px 24px;">提交申请</button>
                 </div>
             </div>
         </div>
@@ -3168,6 +3366,556 @@
             } catch (error) {
                 console.error('加载申诉历史失败:', error);
                 container.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 20px;">网络错误</div>';
+            }
+        }
+
+        // ==================== 充值功能 ====================
+
+        // 充值状态
+        let selectedTier = null;
+        let selectedPaymentMethod = null;
+        let currentOrderId = null;
+        let currentOrderNo = null;
+        let paymentPollingInterval = null;
+        let countdownInterval = null;
+        let countdownSeconds = 0;
+
+        async function openRechargeModal() {
+            document.getElementById('rechargeModal').classList.add('show');
+            // 重置状态
+            selectedTier = null;
+            selectedPaymentMethod = null;
+            currentOrderId = null;
+            currentOrderNo = null;
+            // 显示步骤1
+            document.getElementById('rechargeStep1').style.display = 'block';
+            document.getElementById('rechargeStep2').style.display = 'none';
+            document.getElementById('rechargeStep3').style.display = 'none';
+            // 加载套餐
+            await loadPricingTiers();
+            // 重置按钮状态
+            updateCreateOrderButton();
+        }
+
+        function closeRechargeModal() {
+            document.getElementById('rechargeModal').classList.remove('show');
+            // 清理定时器
+            if (paymentPollingInterval) {
+                clearInterval(paymentPollingInterval);
+                paymentPollingInterval = null;
+            }
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+            // 刷新用户信息
+            loadUserInfo();
+        }
+
+        async function loadPricingTiers() {
+            const tierGrid = document.getElementById('tierGrid');
+            try {
+                const response = await fetchWithAuth('/api/payment/tiers');
+                if (response.ok) {
+                    const tiers = await response.json();
+                    tierGrid.innerHTML = tiers.map(tier => `
+                        <div class="tier-card" data-tier-id="${tier.id}" onclick="selectTier('${tier.id}')"
+                            style="padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; cursor: pointer; position: relative; transition: all 0.2s; background: white;">
+                            ${tier.popular ? '<div style="position: absolute; top: -10px; right: 10px; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;">热门</div>' : ''}
+                            <div style="font-size: 24px; font-weight: bold; color: var(--primary-color); margin-bottom: 4px;">¥${tier.price_yuan}</div>
+                            <div style="font-size: 18px; font-weight: 500; color: var(--text-color); margin-bottom: 8px;">${tier.credits} 积分</div>
+                            <div style="font-size: 13px; color: #9ca3af;">${tier.name}</div>
+                            <div style="font-size: 12px; color: #9ca3af;">${tier.description}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    tierGrid.innerHTML = '<div style="grid-column: span 2; text-align: center; color: #ef4444; padding: 20px;">加载套餐失败</div>';
+                }
+            } catch (error) {
+                console.error('加载套餐失败:', error);
+                tierGrid.innerHTML = '<div style="grid-column: span 2; text-align: center; color: #ef4444; padding: 20px;">网络错误</div>';
+            }
+        }
+
+        function selectTier(tierId) {
+            selectedTier = tierId;
+            // 更新UI
+            document.querySelectorAll('.tier-card').forEach(card => {
+                if (card.dataset.tierId === tierId) {
+                    card.style.borderColor = '#667eea';
+                    card.style.background = 'linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1))';
+                } else {
+                    card.style.borderColor = '#e5e7eb';
+                    card.style.background = 'white';
+                }
+            });
+            updateCreateOrderButton();
+        }
+
+        function selectPaymentMethod(method) {
+            selectedPaymentMethod = method;
+            // 更新UI
+            document.querySelectorAll('.payment-method-btn').forEach(btn => {
+                if (btn.dataset.method === method) {
+                    btn.style.borderColor = method === 'alipay' ? '#1677FF' : '#07C160';
+                    btn.style.background = method === 'alipay' ? 'rgba(22, 119, 255, 0.1)' : 'rgba(7, 193, 96, 0.1)';
+                } else {
+                    btn.style.borderColor = '#e5e7eb';
+                    btn.style.background = 'white';
+                }
+            });
+            updateCreateOrderButton();
+        }
+
+        function updateCreateOrderButton() {
+            const btn = document.getElementById('createOrderBtn');
+            if (selectedTier && selectedPaymentMethod) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            } else {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+            }
+        }
+
+        async function createPaymentOrder() {
+            if (!selectedTier || !selectedPaymentMethod) {
+                alert('请先选择套餐和支付方式');
+                return;
+            }
+
+            const btn = document.getElementById('createOrderBtn');
+            btn.disabled = true;
+            btn.textContent = '创建订单中...';
+
+            try {
+                const response = await fetchWithAuth('/api/payment/create-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tier_id: selectedTier,
+                        payment_method: selectedPaymentMethod
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    currentOrderId = data.order_id;
+                    currentOrderNo = data.order_no;
+
+                    // 显示步骤2
+                    document.getElementById('rechargeStep1').style.display = 'none';
+                    document.getElementById('rechargeStep2').style.display = 'block';
+
+                    // 设置支付信息
+                    const methodName = selectedPaymentMethod === 'alipay' ? '支付宝' : '微信';
+                    const methodColor = selectedPaymentMethod === 'alipay' ? '#1677FF' : '#07C160';
+                    document.getElementById('paymentMethodLabel').textContent = methodName;
+                    document.getElementById('paymentMethodLabel').style.color = methodColor;
+                    document.getElementById('paymentMethodName').textContent = methodName;
+                    document.getElementById('orderNo').textContent = data.order_no;
+                    document.getElementById('orderAmount').textContent = data.amount_yuan;
+                    document.getElementById('orderCredits').textContent = data.credits;
+
+                    // 显示二维码或支付链接
+                    const qrCodeImg = document.getElementById('paymentQrCode');
+                    const qrContainer = qrCodeImg.parentElement;
+
+                    // 清除之前的支付按钮（如果有）
+                    const oldPayBtn = document.getElementById('payDirectBtn');
+                    if (oldPayBtn) oldPayBtn.remove();
+
+                    if (data.payment_url) {
+                        // 电脑网站支付，显示跳转按钮
+                        qrCodeImg.style.display = 'none';
+                        const btn = document.createElement('a');
+                        btn.id = 'payDirectBtn';
+                        btn.href = data.payment_url;
+                        btn.target = '_blank';
+                        btn.className = 'chat-send-btn'; // 复用样式
+                        btn.style.cssText = 'display: inline-flex; text-decoration: none; margin-top: 10px; width: auto; background: #1677FF;';
+                        btn.innerHTML = '👉 点击前往支付宝支付';
+                        qrContainer.appendChild(btn);
+
+                        // 自动在新窗口打开
+                        window.open(data.payment_url, '_blank');
+                    } else if (data.qr_code_base64) {
+                        qrCodeImg.style.display = 'block';
+                        qrCodeImg.src = 'data:image/png;base64,' + data.qr_code_base64;
+                    } else if (data.qr_code_url) {
+                        // 如果没有 base64，使用 URL 生成二维码
+                        qrCodeImg.style.display = 'block';
+                        qrCodeImg.src = data.qr_code_url;
+                    }
+
+                    // 启动倒计时
+                    countdownSeconds = 15 * 60;
+                    startCountdown();
+
+                    // 启动轮询
+                    startPaymentPolling();
+
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || '创建订单失败');
+                }
+            } catch (error) {
+                console.error('创建订单失败:', error);
+                alert('网络错误，请稍后重试');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '确认充值';
+            }
+        }
+
+        function startCountdown() {
+            const timerEl = document.getElementById('countdownTimer');
+            countdownInterval = setInterval(() => {
+                countdownSeconds--;
+                if (countdownSeconds <= 0) {
+                    clearInterval(countdownInterval);
+                    clearInterval(paymentPollingInterval);
+                    alert('订单已超时，请重新创建');
+                    closeRechargeModal();
+                    return;
+                }
+                const minutes = Math.floor(countdownSeconds / 60);
+                const seconds = countdownSeconds % 60;
+                timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        function startPaymentPolling() {
+            paymentPollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetchWithAuth(`/api/payment/orders/${currentOrderId}/status`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.payment_status === 'paid') {
+                            clearInterval(paymentPollingInterval);
+                            clearInterval(countdownInterval);
+                            showPaymentSuccess(data.credits);
+                        } else if (data.expired || data.payment_status === 'cancelled') {
+                            clearInterval(paymentPollingInterval);
+                            clearInterval(countdownInterval);
+                            alert('订单已取消或超时');
+                            closeRechargeModal();
+                        }
+                    }
+                } catch (error) {
+                    console.error('查询订单状态失败:', error);
+                }
+            }, 2000);
+        }
+
+        function showPaymentSuccess(credits) {
+            document.getElementById('rechargeStep2').style.display = 'none';
+            document.getElementById('rechargeStep3').style.display = 'block';
+            document.getElementById('creditsPurchased').textContent = credits;
+        }
+
+        async function cancelPayment() {
+            if (!currentOrderId) return;
+
+            try {
+                const response = await fetchWithAuth(`/api/payment/orders/${currentOrderId}/cancel`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    clearInterval(paymentPollingInterval);
+                    clearInterval(countdownInterval);
+                    closeRechargeModal();
+                }
+            } catch (error) {
+                console.error('取消订单失败:', error);
+            }
+        }
+
+        // 模拟支付（本地调试用）
+        async function simulatePayment() {
+            if (!currentOrderId) return;
+
+            const btn = document.getElementById('simulatePayBtn');
+            btn.disabled = true;
+            btn.textContent = '处理中...';
+
+            try {
+                const response = await fetchWithAuth(`/api/payment/orders/${currentOrderId}/simulate-pay`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    // 停止轮询和倒计时
+                    clearInterval(paymentPollingInterval);
+                    clearInterval(countdownInterval);
+                    // 显示成功界面
+                    showPaymentSuccess(data.credits);
+                    // 刷新积分显示
+                    loadUserInfo();
+                } else {
+                    const error = await response.json();
+                    alert('模拟支付失败: ' + (error.detail || '未知错误'));
+                    btn.disabled = false;
+                    btn.textContent = '🧪 模拟支付（调试）';
+                }
+            } catch (error) {
+                console.error('模拟支付失败:', error);
+                alert('模拟支付失败: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = '🧪 模拟支付（调试）';
+            }
+        }
+
+        // ==================== 我的订单功能 ====================
+        let currentRefundOrderId = null;
+        let currentTab = 'orders';
+
+        function openOrdersModal() {
+            document.getElementById('ordersModal').style.display = 'flex';
+            currentTab = 'orders';
+            switchOrderTab('orders');
+        }
+
+        function closeOrdersModal() {
+            document.getElementById('ordersModal').style.display = 'none';
+        }
+
+        function switchOrderTab(tab) {
+            currentTab = tab;
+            const ordersBtn = document.getElementById('ordersTabBtn');
+            const refundsBtn = document.getElementById('refundsTabBtn');
+            const ordersContainer = document.getElementById('ordersTableContainer');
+            const refundsContainer = document.getElementById('refundsTableContainer');
+
+            if (tab === 'orders') {
+                ordersBtn.style.borderBottom = '3px solid var(--primary-color)';
+                ordersBtn.style.color = 'var(--primary-color)';
+                ordersBtn.style.fontWeight = '600';
+                refundsBtn.style.borderBottom = '3px solid transparent';
+                refundsBtn.style.color = '#6b7280';
+                refundsBtn.style.fontWeight = '500';
+                ordersContainer.style.display = 'block';
+                refundsContainer.style.display = 'none';
+                loadUserOrders();
+            } else {
+                refundsBtn.style.borderBottom = '3px solid var(--primary-color)';
+                refundsBtn.style.color = 'var(--primary-color)';
+                refundsBtn.style.fontWeight = '600';
+                ordersBtn.style.borderBottom = '3px solid transparent';
+                ordersBtn.style.color = '#6b7280';
+                ordersBtn.style.fontWeight = '500';
+                ordersContainer.style.display = 'none';
+                refundsContainer.style.display = 'block';
+                loadUserRefunds();
+            }
+        }
+
+        async function loadUserOrders() {
+            const tbody = document.getElementById('ordersTableBody');
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #9ca3af;">加载中...</td></tr>';
+
+            try {
+                const response = await fetchWithAuth('/api/user/orders');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.orders && data.orders.length > 0) {
+                        renderOrdersTable(data.orders);
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #9ca3af;">暂无订单记录</td></tr>';
+                    }
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #ef4444;">加载失败</td></tr>';
+                }
+            } catch (error) {
+                console.error('加载订单失败:', error);
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #ef4444;">加载失败</td></tr>';
+            }
+        }
+
+        async function loadUserRefunds() {
+            const tbody = document.getElementById('refundsTableBody');
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #9ca3af;">加载中...</td></tr>';
+
+            try {
+                const response = await fetchWithAuth('/api/user/refunds');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.refunds && data.refunds.length > 0) {
+                        renderRefundsTable(data.refunds);
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #9ca3af;">暂无退款记录</td></tr>';
+                    }
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #ef4444;">加载失败</td></tr>';
+                }
+            } catch (error) {
+                console.error('加载退款记录失败:', error);
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #ef4444;">加载失败</td></tr>';
+            }
+        }
+
+        function renderOrdersTable(orders) {
+            const tbody = document.getElementById('ordersTableBody');
+            const now = new Date();
+
+            const statusColors = {
+                'pending': '#f59e0b',
+                'paid': '#10b981',
+                'failed': '#ef4444',
+                'cancelled': '#6b7280',
+                'expired': '#9ca3af'
+            };
+            const statusText = {
+                'pending': '待支付',
+                'paid': '已支付',
+                'failed': '失败',
+                'cancelled': '已取消',
+                'expired': '已超时'
+            };
+            const paymentMethodText = {
+                'alipay': '支付宝',
+                'wechat': '微信支付'
+            };
+
+            tbody.innerHTML = orders.map(order => {
+                // 检查是否超时（订单创建后15分钟）
+                const expired = order.expired_at && new Date(order.expired_at) < now;
+                const isPending = order.payment_status === 'pending';
+                const displayStatus = (isPending && expired) ? 'expired' : order.payment_status;
+
+                // 计算剩余支付时间
+                let timeRemaining = '';
+                if (isPending && !expired && order.expired_at) {
+                    const expiredTime = new Date(order.expired_at);
+                    const seconds = Math.floor((expiredTime - now) / 1000);
+                    const minutes = Math.floor(seconds / 60);
+                    const secs = seconds % 60;
+                    timeRemaining = ` (剩余 ${minutes}:${secs.toString().padStart(2, '0')})`;
+                }
+
+                return `
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px; font-family: monospace; font-size: 12px;">${order.order_no}</td>
+                    <td style="padding: 12px;">¥${order.amount_yuan}</td>
+                    <td style="padding: 12px;">${order.credits}</td>
+                    <td style="padding: 12px;">${paymentMethodText[order.payment_method] || order.payment_method}</td>
+                    <td style="padding: 12px;">
+                        <span style="color: ${statusColors[displayStatus]}; font-weight: 500;">
+                            ${statusText[displayStatus] || displayStatus}${isPending && !expired ? timeRemaining : ''}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; font-size: 12px;">${new Date(order.created_at).toLocaleString('zh-CN')}</td>
+                    <td style="padding: 12px; text-align: center;">
+                        ${isPending && !expired ?
+                            `<button onclick="repayOrder('${order.order_id}')" style="padding: 6px 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">去付款</button>` :
+                          order.payment_status === 'paid' && !order.refund_status ?
+                            `<button onclick="openRefundModal('${order.order_id}', '${order.order_no}')" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">申请退款</button>` :
+                          '-'}
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function renderRefundsTable(refunds) {
+            const tbody = document.getElementById('refundsTableBody');
+            const statusColors = {
+                'pending': '#f59e0b',
+                'rejected': '#ef4444',
+                'processing': '#3b82f6',
+                'success': '#10b981',
+                'failed': '#ef4444'
+            };
+            const statusText = {
+                'pending': '⏳ 审核中',
+                'rejected': '❌ 已拒绝',
+                'processing': '💫 退款中',
+                'success': '✅ 已退款',
+                'failed': '⚠️ 退款失败'
+            };
+
+            tbody.innerHTML = refunds.map(refund => `
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px; font-family: monospace; font-size: 12px;">${refund.refund_no}</td>
+                    <td style="padding: 12px; font-family: monospace; font-size: 12px;">${refund.order_no}</td>
+                    <td style="padding: 12px;">¥${refund.refund_amount_yuan}</td>
+                    <td style="padding: 12px;">${refund.refund_credits}</td>
+                    <td style="padding: 12px;">
+                        <span style="color: ${statusColors[refund.status]}; font-weight: 500;">
+                            ${statusText[refund.status] || refund.status}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; font-size: 12px;">${new Date(refund.created_at).toLocaleString('zh-CN')}</td>
+                    <td style="padding: 12px; font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${refund.reason}">${refund.reason}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function repayOrder(orderId) {
+            // 重新打开支付界面
+            try {
+                const response = await fetchWithAuth(`/api/payment/orders/${orderId}/status`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.payment_url) {
+                        window.open(data.payment_url, '_blank');
+                    } else {
+                        alert('订单已失效，请重新下单');
+                    }
+                } else {
+                    alert('获取支付链接失败');
+                }
+            } catch (error) {
+                console.error('获取支付链接失败:', error);
+                alert('网络错误，请稍后重试');
+            }
+        }
+
+        function openRefundModal(orderId, orderNo) {
+            currentRefundOrderId = orderId;
+            document.getElementById('refundOrderNo').value = orderNo;
+            document.getElementById('refundReason').value = '';
+            document.getElementById('refundMessage').style.display = 'none';
+            document.getElementById('refundModal').style.display = 'flex';
+        }
+
+        function closeRefundModal() {
+            document.getElementById('refundModal').style.display = 'none';
+            currentRefundOrderId = null;
+        }
+
+        async function submitRefundRequest() {
+            const reason = document.getElementById('refundReason').value.trim();
+            const messageEl = document.getElementById('refundMessage');
+
+            if (!reason) {
+                messageEl.textContent = '请填写退款原因';
+                messageEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetchWithAuth(`/api/user/orders/${currentRefundOrderId}/refund`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason })
+                });
+
+                if (response.ok) {
+                    alert('退款申请已提交，请等待管理员审核');
+                    closeRefundModal();
+                    loadUserOrders(); // 刷新订单列表
+                } else {
+                    const error = await response.json();
+                    messageEl.textContent = error.detail || '提交失败';
+                    messageEl.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('提交退款申请失败:', error);
+                messageEl.textContent = '网络错误，请稍后重试';
+                messageEl.style.display = 'block';
             }
         }
 

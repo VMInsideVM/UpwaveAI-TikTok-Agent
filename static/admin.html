@@ -686,6 +686,8 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('overview')">📊 概览</button>
             <button class="tab" onclick="switchTab('users')">👥 用户管理</button>
+            <button class="tab" onclick="switchTab('orders')">💳 订单管理</button>
+            <button class="tab" onclick="switchTab('refunds')">↩️ 售后管理</button>
             <button class="tab" onclick="switchTab('reports')">📄 报告管理</button>
             <button class="tab" onclick="switchTab('appeals')">📢 申诉管理</button>
             <button class="tab" onclick="switchTab('tasks')">⚙️ 任务队列</button>
@@ -809,6 +811,107 @@
                 </div>
 
                 <div id="usersTable">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 订单管理标签页 -->
+        <div id="orders-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">充值订单管理</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="orderSearch" class="form-input" placeholder="搜索用户/订单号..."
+                            style="width: 200px; padding: 6px 12px;" onkeydown="if(event.key==='Enter') loadOrders()">
+                        <select id="orderStatusFilter" class="form-input" style="width: auto;">
+                            <option value="all">全部状态</option>
+                            <option value="pending">待支付</option>
+                            <option value="paid">已支付</option>
+                            <option value="cancelled">已取消</option>
+                            <option value="refunded">已退款</option>
+                            <option value="partial_refunded">部分退款</option>
+                        </select>
+                        <select id="paymentMethodFilter" class="form-input" style="width: auto;">
+                            <option value="all">全部方式</option>
+                            <option value="alipay">支付宝</option>
+                            <option value="wechat">微信支付</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="loadOrders()">🔍 搜索</button>
+                        <button class="btn btn-sm" onclick="loadOrderStatistics()">📊 刷新统计</button>
+                    </div>
+                </div>
+
+                <!-- 统计卡片 -->
+                <div class="stats-grid" style="margin-bottom: 20px; padding: 0 20px;">
+                    <div class="stat-card">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-label">今日收入</div>
+                        <div class="stat-value" id="todayRevenue">¥0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-label">今日订单</div>
+                        <div class="stat-value" id="todayOrders">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💵</div>
+                        <div class="stat-label">总收入</div>
+                        <div class="stat-value" id="totalRevenue">¥0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">↩️</div>
+                        <div class="stat-label">待处理退款</div>
+                        <div class="stat-value" id="pendingRefunds">0</div>
+                    </div>
+                </div>
+
+                <div id="ordersTable" style="padding: 0 20px 20px;">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 售后管理标签页 -->
+        <div id="refunds-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">退款申请管理</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="refundStatusFilter" class="form-input" style="width: auto;">
+                            <option value="all">全部状态</option>
+                            <option value="pending">待审核</option>
+                            <option value="rejected">已拒绝</option>
+                            <option value="processing">退款中</option>
+                            <option value="success">已退款</option>
+                            <option value="failed">退款失败</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="loadRefunds()">🔍 搜索</button>
+                        <button class="btn btn-sm" onclick="loadRefunds()">🔄 刷新</button>
+                    </div>
+                </div>
+
+                <!-- 统计信息 -->
+                <div class="stats-grid" style="margin-bottom: 20px; padding: 0 20px;">
+                    <div class="stat-card">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-label">待审核</div>
+                        <div class="stat-value" id="refundPendingCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-label">已完成</div>
+                        <div class="stat-value" id="refundSuccessCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">❌</div>
+                        <div class="stat-label">已拒绝</div>
+                        <div class="stat-value" id="refundRejectedCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-label">总退款金额</div>
+                        <div class="stat-value" id="totalRefundedAmount">¥0</div>
+                    </div>
+                </div>
+
+                <div id="refundsTable" style="padding: 0 20px 20px;">加载中...</div>
             </div>
         </div>
 
@@ -1123,6 +1226,13 @@
                     break;
                 case 'users':
                     loadUsers();
+                    break;
+                case 'orders':
+                    loadOrders();
+                    loadOrderStatistics();
+                    break;
+                case 'refunds':
+                    loadRefunds();
                     break;
                 case 'reports':
                     loadReports();
@@ -2361,6 +2471,398 @@
                 alert('处理失败: ' + error.message);
             }
         }
+
+        // ==================== 订单管理功能 ====================
+
+        async function loadOrders() {
+            const tableContainer = document.getElementById('ordersTable');
+            const search = document.getElementById('orderSearch').value;
+            const statusFilter = document.getElementById('orderStatusFilter').value;
+            const methodFilter = document.getElementById('paymentMethodFilter').value;
+
+            tableContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+
+            try {
+                let url = '/api/admin/payment/orders?limit=100';
+                if (search) {
+                    url += `&user_search=${encodeURIComponent(search)}`;
+                }
+                if (statusFilter && statusFilter !== 'all') {
+                    url += `&payment_status=${statusFilter}`;
+                }
+                if (methodFilter && methodFilter !== 'all') {
+                    url += `&payment_method=${methodFilter}`;
+                }
+
+                const response = await apiRequest(url);
+                if (response && response.ok) {
+                    const orders = await response.json();
+
+                    if (orders.length === 0) {
+                        tableContainer.innerHTML = '<div class="empty-state">暂无订单记录</div>';
+                        return;
+                    }
+
+                    let html = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>订单号</th>
+                                    <th>用户</th>
+                                    <th>套餐</th>
+                                    <th>金额</th>
+                                    <th>积分</th>
+                                    <th>支付方式</th>
+                                    <th>状态</th>
+                                    <th>时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    orders.forEach(order => {
+                        let statusBadge = '';
+                        switch (order.payment_status) {
+                            case 'pending': statusBadge = '<span class="badge badge-warning">待支付</span>'; break;
+                            case 'paid': statusBadge = '<span class="badge badge-success">已支付</span>'; break;
+                            case 'cancelled': statusBadge = '<span class="badge" style="background: #9ca3af; color: white;">已取消</span>'; break;
+                            case 'refunded': statusBadge = '<span class="badge badge-danger">已退款</span>'; break;
+                            case 'partial_refunded': statusBadge = '<span class="badge" style="background: #f59e0b; color: white;">部分退款</span>'; break;
+                        }
+
+                        let methodIcon = order.payment_method === 'alipay' ? '💙' : '💚';
+                        let methodName = order.payment_method === 'alipay' ? '支付宝' : '微信';
+
+                        html += `
+                            <tr>
+                                <td>
+                                    <div style="font-family: monospace; font-size: 12px;">${order.order_no}</div>
+                                    ${order.trade_no ? `<div style="font-size: 11px; color: #9ca3af;">交易号: ${order.trade_no.substring(0, 12)}...</div>` : ''}
+                                </td>
+                                <td>
+                                    <div>${order.username || '-'}</div>
+                                    <div style="font-size: 12px; color: #6b7280;">${order.phone_number || '-'}</div>
+                                </td>
+                                <td>${order.tier_name || order.tier_id}</td>
+                                <td style="font-weight: 600; color: #ef4444;">¥${order.amount_yuan}</td>
+                                <td>${order.credits}</td>
+                                <td>${methodIcon} ${methodName}</td>
+                                <td>${statusBadge}</td>
+                                <td>
+                                    <div>${new Date(order.created_at).toLocaleString()}</div>
+                                    ${order.paid_at ? `<div style="font-size: 11px; color: #10b981;">支付: ${new Date(order.paid_at).toLocaleString()}</div>` : ''}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm" onclick="viewOrderDetail('${order.order_id}')">详情</button>
+                                    ${order.payment_status === 'paid' || order.payment_status === 'partial_refunded' ?
+                                        `<button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="openRefundModal('${order.order_id}', ${order.amount_yuan}, ${order.refunded_amount || 0})">退款</button>` : ''}
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `</tbody></table>`;
+                    tableContainer.innerHTML = html;
+                }
+            } catch (error) {
+                console.error('加载订单失败:', error);
+                tableContainer.innerHTML = '<div class="alert alert-error show">加载失败</div>';
+            }
+        }
+
+        async function loadOrderStatistics() {
+            try {
+                const response = await apiRequest('/api/admin/payment/statistics');
+                if (response && response.ok) {
+                    const stats = await response.json();
+                    document.getElementById('todayRevenue').textContent = '¥' + stats.today_revenue_yuan;
+                    document.getElementById('todayOrders').textContent = stats.today_orders;
+                    document.getElementById('totalRevenue').textContent = '¥' + stats.total_revenue_yuan;
+                    document.getElementById('pendingRefunds').textContent = stats.pending_refunds;
+                }
+            } catch (error) {
+                console.error('加载订单统计失败:', error);
+            }
+        }
+
+        // 加载退款申请列表
+        async function loadRefunds() {
+            const tableContainer = document.getElementById('refundsTable');
+            const statusFilter = document.getElementById('refundStatusFilter').value;
+
+            tableContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+
+            try {
+                let url = '/api/admin/payment/refunds?limit=100';
+                if (statusFilter && statusFilter !== 'all') {
+                    url += `&status=${statusFilter}`;
+                }
+
+                const response = await apiRequest(url);
+                if (response && response.ok) {
+                    const refunds = await response.json();
+
+                    // 计算统计数据
+                    const pendingCount = refunds.filter(r => r.status === 'pending').length;
+                    const successCount = refunds.filter(r => r.status === 'success').length;
+                    const rejectedCount = refunds.filter(r => r.status === 'rejected').length;
+                    const totalAmount = refunds.filter(r => r.status === 'success').reduce((sum, r) => sum + r.refund_amount_yuan, 0);
+
+                    document.getElementById('refundPendingCount').textContent = pendingCount;
+                    document.getElementById('refundSuccessCount').textContent = successCount;
+                    document.getElementById('refundRejectedCount').textContent = rejectedCount;
+                    document.getElementById('totalRefundedAmount').textContent = '¥' + totalAmount;
+
+                    if (refunds.length === 0) {
+                        tableContainer.innerHTML = '<div class="empty-state">暂无退款申请</div>';
+                        return;
+                    }
+
+                    let html = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>退款单号</th>
+                                    <th>订单号</th>
+                                    <th>用户</th>
+                                    <th>退款金额</th>
+                                    <th>退款积分</th>
+                                    <th>状态</th>
+                                    <th>申请时间</th>
+                                    <th>申请理由</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    refunds.forEach(refund => {
+                        let statusBadge = '';
+                        switch (refund.status) {
+                            case 'pending': statusBadge = '<span class="badge badge-warning">⏳ 待审核</span>'; break;
+                            case 'rejected': statusBadge = '<span class="badge badge-danger">❌ 已拒绝</span>'; break;
+                            case 'processing': statusBadge = '<span class="badge badge-info">💫 退款中</span>'; break;
+                            case 'success': statusBadge = '<span class="badge badge-success">✅ 已退款</span>'; break;
+                            case 'failed': statusBadge = '<span class="badge badge-danger">⚠️ 退款失败</span>'; break;
+                        }
+
+                        html += `
+                            <tr>
+                                <td style="font-family: monospace; font-size: 12px;">${refund.refund_no}</td>
+                                <td style="font-family: monospace; font-size: 12px;">${refund.order_no}</td>
+                                <td>
+                                    <div>${refund.username || '-'}</div>
+                                    <div style="font-size: 12px; color: #6b7280;">${refund.phone_number || '-'}</div>
+                                </td>
+                                <td style="font-weight: 600; color: #ef4444;">¥${refund.refund_amount_yuan}</td>
+                                <td>${refund.refund_credits}</td>
+                                <td>${statusBadge}</td>
+                                <td>
+                                    <div style="font-size: 12px;">${new Date(refund.created_at).toLocaleString()}</div>
+                                    ${refund.processed_at ? `<div style="font-size: 11px; color: #6b7280;">处理: ${new Date(refund.processed_at).toLocaleString()}</div>` : ''}
+                                </td>
+                                <td style="max-width: 200px;">
+                                    <div style="font-size: 12px; overflow: hidden; text-overflow: ellipsis;">${refund.reason}</div>
+                                    ${refund.admin_reason ? `<div style="font-size: 11px; color: #ef4444; margin-top: 4px;">拒绝原因: ${refund.admin_reason}</div>` : ''}
+                                </td>
+                                <td>
+                                    ${refund.status === 'pending' ?
+                                        `<button class="btn btn-sm" style="background: #10b981; color: white;" onclick="reviewRefund('${refund.refund_id}', 'approve')">✅ 同意</button>
+                                         <button class="btn btn-sm" style="background: #ef4444; color: white; margin-top: 4px;" onclick="reviewRefund('${refund.refund_id}', 'reject')">❌ 拒绝</button>`
+                                        : '-'}
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `</tbody></table>`;
+                    tableContainer.innerHTML = html;
+                }
+            } catch (error) {
+                console.error('加载退款申请失败:', error);
+                tableContainer.innerHTML = '<div class="alert alert-error show">加载失败</div>';
+            }
+        }
+
+        // 审核退款申请
+        async function reviewRefund(refundId, action) {
+            let adminReason = null;
+
+            if (action === 'reject') {
+                adminReason = prompt('请输入拒绝理由:');
+                if (!adminReason) {
+                    alert('请输入拒绝理由');
+                    return;
+                }
+            } else {
+                if (!confirm('确认同意此退款申请？\n系统将自动调用支付宝退款接口并扣除用户积分。')) {
+                    return;
+                }
+            }
+
+            try {
+                const response = await apiRequest(`/api/admin/payment/refunds/${refundId}/review`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: action,
+                        admin_reason: adminReason
+                    })
+                });
+
+                if (response && response.ok) {
+                    const result = await response.json();
+                    alert(action === 'approve' ? '退款已批准并处理' : '退款已拒绝');
+                    loadRefunds(); // 刷新列表
+                } else {
+                    const error = await response.json();
+                    alert('操作失败: ' + (error.detail || '未知错误'));
+                }
+            } catch (error) {
+                console.error('审核退款失败:', error);
+                alert('操作失败，请重试');
+            }
+        }
+
+        async function viewOrderDetail(orderId) {
+            try {
+                const response = await apiRequest(`/api/admin/payment/orders/${orderId}`);
+                if (response && response.ok) {
+                    const order = await response.json();
+
+                    let refundsHtml = '';
+                    if (order.refunds && order.refunds.length > 0) {
+                        refundsHtml = '<h4 style="margin-top: 16px;">退款记录</h4><ul style="list-style: none; padding: 0;">';
+                        order.refunds.forEach(r => {
+                            refundsHtml += `<li style="padding: 8px; background: #f3f4f6; margin: 4px 0; border-radius: 4px;">
+                                ${r.refund_no}: ¥${r.refund_amount_yuan} (${r.status}) - ${r.reason}
+                            </li>`;
+                        });
+                        refundsHtml += '</ul>';
+                    }
+
+                    alert(`订单详情:
+订单号: ${order.order_no}
+用户: ${order.username || '-'} (${order.phone_number || '-'})
+套餐: ${order.tier_name}
+金额: ¥${order.amount_yuan}
+积分: ${order.credits}
+支付方式: ${order.payment_method === 'alipay' ? '支付宝' : '微信支付'}
+状态: ${order.payment_status}
+交易号: ${order.trade_no || '-'}
+创建时间: ${new Date(order.created_at).toLocaleString()}
+支付时间: ${order.paid_at ? new Date(order.paid_at).toLocaleString() : '-'}
+${order.refunds && order.refunds.length > 0 ? '\n退款记录:\n' + order.refunds.map(r => `  - ${r.refund_no}: ¥${r.refund_amount_yuan} (${r.status})`).join('\n') : ''}`);
+                }
+            } catch (error) {
+                console.error('查看订单详情失败:', error);
+                alert('查看订单详情失败');
+            }
+        }
+
+        let currentRefundOrderId = null;
+        let currentRefundMaxAmount = 0;
+
+        function openRefundModal(orderId, totalAmount, refundedAmount) {
+            currentRefundOrderId = orderId;
+            currentRefundMaxAmount = totalAmount - refundedAmount;
+
+            const content = `
+                <div style="padding: 20px;">
+                    <h3 style="margin-bottom: 16px;">处理退款</h3>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 4px;">订单金额</label>
+                        <input type="text" value="¥${totalAmount}" disabled style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px;">
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 4px;">已退款金额</label>
+                        <input type="text" value="¥${refundedAmount}" disabled style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px;">
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 4px;">退款金额（最大可退 ¥${currentRefundMaxAmount}）</label>
+                        <input type="number" id="refundAmountInput" min="1" max="${currentRefundMaxAmount}" value="${currentRefundMaxAmount}" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px;">退款原因</label>
+                        <textarea id="refundReasonInput" rows="3" placeholder="请输入退款原因..." style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; resize: vertical;"></textarea>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="submitRefund()" style="flex: 1; padding: 10px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer;">确认退款</button>
+                        <button onclick="closeRefundModal()" style="flex: 1; padding: 10px; background: #e5e7eb; border: none; border-radius: 6px; cursor: pointer;">取消</button>
+                    </div>
+                </div>
+            `;
+
+            // 创建或获取退款模态框
+            let modal = document.getElementById('refundModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'refundModal';
+                modal.className = 'modal';
+                modal.innerHTML = '<div class="modal-content" style="max-width: 400px;"></div>';
+                document.body.appendChild(modal);
+            }
+            modal.querySelector('.modal-content').innerHTML = content;
+            modal.classList.add('show');
+        }
+
+        function closeRefundModal() {
+            const modal = document.getElementById('refundModal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
+        }
+
+        async function submitRefund() {
+            if (!currentRefundOrderId) return;
+
+            const amount = parseInt(document.getElementById('refundAmountInput').value);
+            const reason = document.getElementById('refundReasonInput').value.trim();
+
+            if (!amount || amount <= 0 || amount > currentRefundMaxAmount) {
+                alert('请输入有效的退款金额');
+                return;
+            }
+
+            if (!reason) {
+                alert('请输入退款原因');
+                return;
+            }
+
+            try {
+                const response = await apiRequest(`/api/admin/payment/orders/${currentRefundOrderId}/refund`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        refund_amount_yuan: amount,
+                        reason: reason
+                    })
+                });
+
+                if (response && response.ok) {
+                    const result = await response.json();
+                    alert(`退款成功！\n退款单号: ${result.refund_no}\n扣除积分: ${result.refund_credits}`);
+                    closeRefundModal();
+                    loadOrders();
+                    loadOrderStatistics();
+                } else {
+                    const error = await response.json();
+                    alert('退款失败: ' + (error.detail || '未知错误'));
+                }
+            } catch (error) {
+                console.error('提交退款失败:', error);
+                alert('退款失败: ' + error.message);
+            }
+        }
+
+        // 在switchTab函数中添加订单加载
+        const originalSwitchTab = switchTab;
+        switchTab = function(tabName) {
+            originalSwitchTab(tabName);
+            if (tabName === 'orders') {
+                loadOrders();
+                loadOrderStatistics();
+            }
+        };
     </script>
 </body>
 

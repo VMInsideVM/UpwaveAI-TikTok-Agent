@@ -33,6 +33,9 @@ from api.reports import router as reports_router
 from api.admin import router as admin_router
 from api.admin_extensions import router as admin_ext_router
 from api.appeals import router as appeals_router
+from api.payment import router as payment_router
+from api.admin_payment import router as admin_payment_router
+from api.user_orders import router as user_orders_router
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -60,6 +63,9 @@ app.include_router(reports_router)
 app.include_router(admin_router)
 app.include_router(admin_ext_router)  # 注册管理员扩展路由
 app.include_router(appeals_router)  # 注册申诉路由
+app.include_router(payment_router)  # 注册支付路由
+app.include_router(admin_payment_router)  # 注册管理员支付路由
+app.include_router(user_orders_router)  # 注册用户订单路由
 
 # 挂载静态文件目录（用于提供前端页面）
 try:

@@ -45,6 +45,9 @@ env/
 .env
 .env.local
 
+# Payment certificates (sensitive)
+certs/
+
 # Database
 *.db
 *.sqlite

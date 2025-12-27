@@ -203,18 +203,20 @@ class CreditHistory(Base):
 
     history_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
-    change_type = Column(String(20), nullable=False, index=True)  # 'add', 'deduct', 'refund'
+    change_type = Column(String(20), nullable=False, index=True)  # 'add', 'deduct', 'refund', 'recharge', 'refund_deduct'
     amount = Column(Integer, nullable=False)  # 变动数量（正数为增加，负数为扣除）
     before_credits = Column(Integer, nullable=False)  # 变动前积分
     after_credits = Column(Integer, nullable=False)  # 变动后积分
     reason = Column(String(200))  # 变动原因
     related_report_id = Column(String(36), ForeignKey("reports.report_id"))  # 关联的报告ID（如果有）
+    related_order_id = Column(String(36), ForeignKey("orders.order_id"))  # 关联的订单ID（充值/退款）
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     meta_data = Column(JSON)  # 其他元数据
 
     # Relationships
     user = relationship("User")
     report = relationship("Report")
+    order = relationship("Order", foreign_keys=[related_order_id])
 
     def __repr__(self):
         return f"<CreditHistory {self.user_id} {self.change_type} {self.amount} credits>"
@@ -285,12 +287,12 @@ class TokenUsage(Base):
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
     session_id = Column(String(36), ForeignKey("sessions.session_id"), nullable=True, index=True)
     message_id = Column(String(36), nullable=True)
-    
+
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
     model_name = Column(String(50))
-    
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Relationships
@@ -299,3 +301,80 @@ class TokenUsage(Base):
 
     def __repr__(self):
         return f"<TokenUsage {self.user_id} - {self.total_tokens}>"
+
+
+class Order(Base):
+    """充值订单表"""
+    __tablename__ = "orders"
+
+    order_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_no = Column(String(32), unique=True, nullable=False, index=True)  # 系统订单号
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
+
+    # 套餐信息
+    tier_id = Column(String(20), nullable=False)  # tier_299, tier_599, tier_999, tier_1799
+    amount_yuan = Column(Integer, nullable=False)  # 金额（元）
+    credits = Column(Integer, nullable=False)  # 积分数量
+
+    # 支付信息
+    payment_method = Column(String(20), nullable=False)  # 'alipay', 'wechat'
+    payment_status = Column(String(20), default="pending", nullable=False, index=True)
+    # pending(待支付), paid(已支付), cancelled(已取消), refunded(已退款), partial_refunded(部分退款)
+
+    # 第三方支付信息
+    trade_no = Column(String(64))  # 支付宝/微信交易号
+    qr_code_url = Column(Text)  # 支付二维码URL
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    paid_at = Column(DateTime)
+    expired_at = Column(DateTime)  # 订单过期时间（15分钟后）
+
+    # 元数据
+    meta_data = Column(JSON)  # IP地址、设备信息等
+
+    # Relationships
+    user = relationship("User", backref="orders")
+    refunds = relationship("Refund", back_populates="order", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Order {self.order_no} - {self.amount_yuan}元 ({self.payment_status})>"
+
+
+class Refund(Base):
+    """退款记录表"""
+    __tablename__ = "refunds"
+
+    refund_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(36), ForeignKey("orders.order_id"), nullable=False, index=True)
+
+    # 退款信息
+    refund_no = Column(String(32), unique=True, nullable=False, index=True)  # 系统退款单号
+    refund_amount_yuan = Column(Integer, nullable=False)  # 退款金额（元）
+    refund_credits = Column(Integer, nullable=False)  # 扣回的积分
+
+    # 状态
+    status = Column(String(20), default="pending", nullable=False, index=True)
+    # pending(待审核), rejected(已拒绝), processing(退款中), success(已退款), failed(退款失败)
+
+    # 原因和审批
+    reason = Column(Text, nullable=False)
+    admin_id = Column(String(36), ForeignKey("users.user_id"))  # 处理管理员
+
+    # 第三方退款信息
+    refund_trade_no = Column(String(64))  # 支付平台退款交易号
+    error_message = Column(Text)  # 退款失败原因
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    processed_at = Column(DateTime)
+
+    # 元数据
+    meta_data = Column(JSON)
+
+    # Relationships
+    order = relationship("Order", back_populates="refunds")
+    admin = relationship("User", foreign_keys=[admin_id])
+
+    def __repr__(self):
+        return f"<Refund {self.refund_no} - {self.refund_amount_yuan}元 ({self.status})>"
