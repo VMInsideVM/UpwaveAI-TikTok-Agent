@@ -927,48 +927,124 @@ class TikTokInfluencerReportAgent:
     </div>
 """
 
-    def _generate_collaboration_tips(self, _inf: Dict, dim_scores: Dict) -> str:
-        """Generate collaboration tips based on strengths."""
+    def _generate_collaboration_tips(self, inf: Dict, dim_scores: Dict) -> str:
+        """Generate comprehensive collaboration tips based on strengths."""
         tips = []
 
-        # Based on engagement
+        # 获取达人数据
         engagement_score = dim_scores.get('engagement', {}).get('score', 0)
-        if engagement_score >= 70:
-            tips.append("<li>利用其高互动率优势,设计互动性强的营销活动(如挑战赛、问答等)</li>")
-
-        # Based on sales
         sales_score = dim_scores.get('sales', {}).get('score', 0)
-        if sales_score >= 70:
-            tips.append("<li>重点合作带货视频,可考虑佣金激励模式以最大化ROI</li>")
-        elif sales_score < 40:
-            tips.append("<li>电商经验有限,建议从品牌曝光类合作开始,逐步引入带货</li>")
-
-        # Based on audience match
         audience_score = dim_scores.get('audience_match', {}).get('score', 0)
-        if audience_score >= 80:
-            tips.append("<li>受众高度匹配,可直接推广核心产品,转化率预期较高</li>")
-
-        # Based on content fit
         content_score = dim_scores.get('content_fit', {}).get('score', 0)
-        if content_score >= 75:
-            tips.append("<li>内容风格与品牌契合度高,建议给予创作自由度,保持真实性</li>")
-
-        # Based on growth
         growth_score = dim_scores.get('growth', {}).get('score', 0)
+        influence_score = dim_scores.get('influence', {}).get('score', 0)
+
+        # 1. 核心优势结合策略
+        tips.append("<li><strong>💡 优势结合策略:</strong> ")
+        strategy_parts = []
+
+        if engagement_score >= 70 and content_score >= 70:
+            strategy_parts.append("利用其高互动率与内容契合度优势，设计互动性强的原生广告(如挑战赛、教程类内容)，最大化粉丝参与和品牌认同")
+        elif sales_score >= 70 and audience_score >= 70:
+            strategy_parts.append("结合其强带货能力与精准受众，重点推广转化型产品，采用佣金+固定费用模式激励销售")
+        elif growth_score >= 70:
+            strategy_parts.append("把握其成长红利期，以较低成本锁定长期合作，随着达人影响力提升获得更高ROI")
+        elif influence_score >= 70:
+            strategy_parts.append("发挥其高影响力优势，聚焦品牌曝光和形象提升，适合新品发布或品牌升级场景")
+        else:
+            strategy_parts.append("建议从小规模测试合作开始，根据数据表现调整合作深度和投入")
+
+        tips.append(strategy_parts[0] if strategy_parts else "综合评估后制定合作策略")
+        tips.append("</li>")
+
+        # 2. 建联方式建议
+        tips.append("<li><strong>🤝 建联方式:</strong> ")
+        contact_methods = []
+
+        # 根据达人等级选择建联方式
+        total_score = inf.get('total_score', 0)
+        if total_score >= 75:
+            contact_methods.append("优先通过MCN机构或经纪人联系(更专业高效)")
+            contact_methods.append("准备详细的合作企划书和预算方案")
+        elif total_score >= 60:
+            contact_methods.append("可直接私信联系，同时关注其是否有商务邮箱")
+            contact_methods.append("附上品牌简介和初步合作意向")
+        else:
+            contact_methods.append("直接私信或评论区留言，表达合作兴趣")
+
+        if sales_score >= 60:
+            contact_methods.append("强调产品佣金优势和销售支持")
+
+        tips.append("；".join(contact_methods[:2]))
+        tips.append("</li>")
+
+        # 3. 合作模式建议
+        tips.append("<li><strong>📋 合作模式:</strong> ")
+
+        if sales_score >= 70:
+            tips.append("佣金+固定费用模式，设置阶梯佣金激励销售")
+        elif engagement_score >= 70:
+            tips.append("按互动效果付费(CPE)，关注评论、点赞、分享等互动数据")
+        elif influence_score >= 70:
+            tips.append("按曝光付费(CPM)，适合品牌宣传和新品发布")
+        else:
+            tips.append("固定费用 + 效果分成，兼顾保底和激励")
+
+        # 添加合作周期建议
         if growth_score >= 70:
-            tips.append("<li>处于高速成长期,建议尽早合作锁定长期关系,享受成长红利</li>")
+            tips.append("，建议签订6-12个月长约锁定成长红利")
         elif growth_score < 40:
-            tips.append("<li>增长放缓,建议短期合作测试效果,根据数据决定是否长期投入</li>")
+            tips.append("，建议1-3个月短期合作测试效果")
+        else:
+            tips.append("，建议3-6个月中期合作观察表现")
 
-        # Default tip
-        if not tips:
-            tips.append("<li>建议先进行小规模测试合作,根据数据表现调整策略</li>")
-            tips.append("<li>保持沟通频率,了解达人的内容规划和粉丝反馈</li>")
+        tips.append("</li>")
 
-        # Add generic tips
-        tips.append("<li>签约前务必审核达人的历史内容,确保品牌安全</li>")
+        # 4. 风险规避要点
+        tips.append("<li><strong>⚠️ 风险规避:</strong> ")
+        risks = []
 
-        return "".join(tips[:5])  # Max 5 tips
+        # 内容风险
+        if content_score < 60:
+            risks.append("内容契合度较低，需详细审核内容脚本，避免品牌调性偏差")
+
+        # 数据真实性风险
+        if engagement_score < 40 or (engagement_score < 50 and influence_score >= 70):
+            risks.append("互动率偏低可能存在刷粉风险，建议使用第三方工具核验数据真实性")
+
+        # 销售能力风险
+        if sales_score < 40 and audience_score >= 70:
+            risks.append("带货经验不足，建议提供详细的产品培训和话术支持")
+
+        # 增长风险
+        if growth_score < 30:
+            risks.append("账号增长停滞，需评估是否值得长期投入，建议短期测试")
+
+        # 通用风险
+        risks.append("签约前必须审核历史内容，确保无违规、负面内容")
+        risks.append("合同中明确内容审核权、修改次数、违约责任等条款")
+
+        tips.append("；".join(risks[:3]))
+        tips.append("</li>")
+
+        # 5. 执行建议
+        tips.append("<li><strong>🎯 执行要点:</strong> ")
+        execution = []
+
+        if content_score >= 70:
+            execution.append("给予充分的创作自由度，保持内容真实性和达人风格")
+        else:
+            execution.append("提供详细的内容指引和品牌调性说明，确保内容质量")
+
+        if sales_score >= 60:
+            execution.append("配合专属优惠码/链接追踪效果，提供售后支持")
+
+        execution.append("建立定期沟通机制，及时调整策略")
+
+        tips.append("；".join(execution[:2]))
+        tips.append("</li>")
+
+        return "".join(tips)
 
     def _generate_simple_recommendation(self, inf: Dict, dim_scores: Dict) -> str:
         """Generate simple recommendation text."""

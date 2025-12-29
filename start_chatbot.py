@@ -10,7 +10,6 @@ import requests
 import subprocess
 import shutil
 from pathlib import Path
-from typing import Tuple
 
 # 设置UTF-8编码输出（解决Windows下emoji显示问题）
 if sys.platform == 'win32':
@@ -58,6 +57,77 @@ def check_port(port: int) -> bool:
     return result == 0
 
 
+def find_pid_by_port(port: int) -> list:
+    """查找占用指定端口的进程 PID"""
+    try:
+        # 运行 netstat 命令
+        result = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore"
+        )
+
+        # 解析输出
+        pids = []
+        for line in result.stdout.splitlines():
+            if f":{port}" in line and "LISTENING" in line:
+                # 提取 PID（最后一列）
+                parts = line.split()
+                if parts:
+                    pid = parts[-1]
+                    if pid.isdigit():
+                        pids.append(int(pid))
+
+        return pids
+
+    except Exception as e:
+        print(f"❌ 查找进程失败: {e}")
+        return []
+
+
+def kill_process(pid: int) -> bool:
+    """终止指定 PID 的进程"""
+    try:
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            check=True,
+            capture_output=True
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def clear_port(port: int) -> bool:
+    """清理占用指定端口的进程"""
+    pids = find_pid_by_port(port)
+
+    if not pids:
+        return True  # 端口未被占用
+
+    print(f"\n⚠️  发现 {len(pids)} 个进程占用端口 {port}:")
+    for pid in pids:
+        print(f"   - PID: {pid}")
+
+    print(f"\n🔨 正在自动清理占用端口的进程...")
+    success_count = 0
+    for pid in pids:
+        if kill_process(pid):
+            print(f"✅ 已终止进程 {pid}")
+            success_count += 1
+        else:
+            print(f"❌ 无法终止进程 {pid} (可能需要管理员权限)")
+
+    if success_count == len(pids):
+        print(f"✅ 端口 {port} 已清理完成\n")
+        return True
+    else:
+        print(f"⚠️  部分进程清理失败 ({success_count}/{len(pids)})\n")
+        return False
+
+
 
 
 
@@ -70,12 +140,12 @@ def check_playwright_api() -> bool:
         return False
 
 
-def check_dependencies() -> Tuple[bool, bool, bool]:
+def check_dependencies() -> bool:
     """
     检查所有依赖服务
 
     Returns:
-        (chrome_ok, playwright_ok, port_available)
+        playwright_ok: Playwright API 是否可用
     """
     # 检查 Playwright API
     print("1️⃣  检查 Playwright API (端口 8000)...", end=" ")
@@ -85,15 +155,16 @@ def check_dependencies() -> Tuple[bool, bool, bool]:
     else:
         print("❌ 不可用")
 
-    # 检查聊天机器人端口
+    # 检查并清理聊天机器人端口
     print("2️⃣  检查聊天机器人端口 (8001)...", end=" ")
-    port_available = not check_port(8001)
-    if port_available:
-        print("✅ 可用")
-    else:
+    if check_port(8001):
         print("❌ 已被占用")
+        # 自动清理端口
+        clear_port(8001)
+    else:
+        print("✅ 可用")
 
-    return playwright_ok, port_available
+    return playwright_ok
 
 
 def print_playwright_instructions():
@@ -166,25 +237,15 @@ def main():
     clear_python_cache()
     print()
 
-    # 检查依赖
-    playwright_ok, port_available = check_dependencies()
+    # 检查依赖（端口会自动清理）
+    playwright_ok = check_dependencies()
 
     print("\n" + "=" * 60)
 
     # 检查结果
-    all_ok = playwright_ok and port_available
-
-    # 此处已移除 Chrome CDP 检查提示
-
     if not playwright_ok:
         print("\n⚠️  Playwright API 服务未启动")
         print_playwright_instructions()
-
-    if not port_available:
-        print("\n⚠️  端口 8001 已被占用")
-        print("   请关闭占用该端口的程序，或修改配置使用其他端口")
-
-    if not all_ok:
         print("\n" + "=" * 60)
         response = input("\n是否继续启动? (y/n): ")
         if response.lower() != 'y':
