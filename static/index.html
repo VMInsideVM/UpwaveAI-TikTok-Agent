@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TikTok 达人推荐聊天机器人</title>
+    <title>TikTok达人推荐Agent</title>
     <style>
         :root {
             --primary-color: #667eea;
@@ -55,6 +55,27 @@
         .sidebar-header {
             padding: 16px;
             border-bottom: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+        }
+
+        .sidebar-logo img {
+            width: 32px;
+            height: 32px;
+        }
+
+        .sidebar-logo-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-color);
         }
 
         .sidebar-actions {
@@ -1176,6 +1197,10 @@
     <!-- 侧边栏 -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <img src="/logo.svg" alt="Logo">
+                <span class="sidebar-logo-text">TikTok达人推荐Agent</span>
+            </div>
             <div class="sidebar-actions">
                 <button class="sidebar-btn btn-reports" onclick="openReportsModal()">📊 报告库</button>
                 <button class="sidebar-btn btn-new-chat" onclick="createNewChat()">+ 新对话</button>
@@ -1233,7 +1258,7 @@
         <div class="chat-area">
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-message">
-                    <h2>欢迎使用 TikTok 达人推荐助手！</h2>
+                    <h2>🎯 欢迎使用 TikTok 达人推荐智能助手 🎯</h2>
                     <p>正在初始化，请稍候...</p>
                 </div>
             </div>

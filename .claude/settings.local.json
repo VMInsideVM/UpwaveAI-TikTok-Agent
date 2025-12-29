@@ -44,7 +44,8 @@
       "Bash(.venv/Scripts/pip.exe:*)",
       "Bash(.venv/Scripts/python.exe:*)",
       "Bash(timeout 3 type:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(copy:*)"
     ],
     "deny": [],
     "ask": []
