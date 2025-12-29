@@ -58,8 +58,8 @@ ORDER_EXPIRATION_MINUTES = 15  # 订单过期时间（分钟）
 ORDER_EXPIRATION_SECONDS = ORDER_EXPIRATION_MINUTES * 60
 
 # 订单限制
-MAX_PENDING_ORDERS_PER_USER = 3  # 每用户最多同时存在的待支付订单数
-MAX_ORDERS_PER_HOUR = 5  # 每用户每小时最多创建订单数
+MAX_PENDING_ORDERS_PER_USER = 10  # 每用户最多同时存在的待支付订单数
+MAX_ORDERS_PER_HOUR = 20  # 每用户每小时最多创建订单数
 
 # 对话限制
 MAX_ROUNDS_PER_SESSION = 50  # 单个会话最多对话轮数

@@ -29,6 +29,9 @@ class WechatPayProvider(PaymentProvider):
         self.key_path = os.getenv("WECHAT_KEY_PATH", "")
         self.serial_no = os.getenv("WECHAT_SERIAL_NO", "")
         self.notify_url = os.getenv("WECHAT_NOTIFY_URL", "")
+        # 新增：支持公钥方式
+        self.public_key_path = os.getenv("WECHAT_PUBLIC_KEY", "")
+        self.public_key_id = os.getenv("WECHAT_PUBLIC_KEY_ID", "")
 
         self._client = None
 
@@ -48,6 +51,13 @@ class WechatPayProvider(PaymentProvider):
                 with open(self.key_path, 'r') as f:
                     private_key = f.read()
 
+                # 读取公钥（用于验签）
+                public_key = None
+                if self.public_key_path and os.path.exists(self.public_key_path):
+                    with open(self.public_key_path, 'r') as f:
+                        public_key = f.read()
+                    logger.info(f"已加载微信支付公钥: {self.public_key_path}")
+
                 self._client = WeChatPay(
                     wechatpay_type=WeChatPayType.NATIVE,  # 扫码支付
                     mchid=self.mch_id,
@@ -55,8 +65,13 @@ class WechatPayProvider(PaymentProvider):
                     cert_serial_no=self.serial_no,
                     apiv3_key=self.api_v3_key,
                     appid=self.app_id,
-                    notify_url=self.notify_url
+                    notify_url=self.notify_url,
+                    # 使用公钥代替平台证书（参数名是 public_key，不是 wechatpay_public_key）
+                    public_key=public_key,
+                    public_key_id=self.public_key_id
                 )
+
+                logger.info("微信支付客户端初始化成功（使用公钥验签）")
             except ImportError:
                 logger.error("未安装 wechatpayv3，请运行: pip install wechatpayv3")
                 raise
@@ -90,6 +105,22 @@ class WechatPayProvider(PaymentProvider):
             )
 
             code, response = result
+
+            # 调试日志：查看返回值类型和内容
+            logger.info(f"微信支付API返回: code={code}, response类型={type(response)}, response内容={response}")
+
+            # 如果 response 是字符串，尝试解析为 JSON
+            if isinstance(response, str):
+                import json
+                try:
+                    response = json.loads(response)
+                except:
+                    logger.error(f"无法解析响应为JSON: {response}")
+                    return PaymentResult(
+                        success=False,
+                        order_no=order_no,
+                        error_message=f"API返回格式错误: {response}"
+                    )
 
             if code == 200 and response.get("code_url"):
                 return PaymentResult(
