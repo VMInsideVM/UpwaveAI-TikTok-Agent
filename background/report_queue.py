@@ -4,13 +4,16 @@ Report Generation Queue
 """
 import asyncio
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 import os
 from pathlib import Path
 
 from database.connection import get_db_context
 from database.models import Report, UserUsage
+
+# 东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
 
 
 class ReportQueue:
@@ -62,7 +65,7 @@ class ReportQueue:
             "status": "queued",
             "progress": 0,
             "queue_position": self._queue.qsize(),
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(CHINA_TZ).replace(tzinfo=None).isoformat()
         }
 
         # 如果队列处理器未运行，启动它
@@ -198,7 +201,7 @@ class ReportQueue:
                 if report:
                     report.report_path = report_path
                     report.status = "completed"
-                    report.completed_at = datetime.utcnow()
+                    report.completed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
                     db.commit()
 
                     # 发送通知（异步）
@@ -248,7 +251,7 @@ class ReportQueue:
                 if error:
                     report.error_message = error
                 if status == "completed":
-                    report.completed_at = datetime.utcnow()
+                    report.completed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
                 db.commit()
 
     async def _send_report_notifications(

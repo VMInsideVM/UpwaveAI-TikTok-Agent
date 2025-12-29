@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from database.connection import get_db
@@ -17,6 +17,9 @@ from config.pricing import get_tier_by_id, CREDIT_TIERS
 from services.payment.manager import payment_manager
 
 logger = logging.getLogger(__name__)
+
+# 东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
 
 router = APIRouter(prefix="/api/admin/payment", tags=["管理员-支付管理"])
 
@@ -327,7 +330,7 @@ async def process_refund(
             # 更新退款状态
             refund.status = "success"
             refund.refund_trade_no = refund_result.refund_trade_no
-            refund.processed_at = datetime.utcnow()
+            refund.processed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
 
             # 更新订单状态
             new_refunded_total = refunded_total + request.refund_amount_yuan
@@ -376,7 +379,7 @@ async def process_refund(
         else:
             refund.status = "failed"
             refund.error_message = refund_result.error_message
-            refund.processed_at = datetime.utcnow()
+            refund.processed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
             db.commit()
 
             logger.error(f"退款失败: {refund_result.error_message}")
@@ -515,7 +518,7 @@ async def review_refund_request(
                 # 退款成功
                 refund.status = "success"
                 refund.refund_trade_no = refund_result.refund_trade_no
-                refund.processed_at = datetime.utcnow()
+                refund.processed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
 
                 # 更新订单状态（计算包含当前退款的总额）
                 # 查询其他已成功的退款总额
@@ -574,7 +577,7 @@ async def review_refund_request(
                 # 退款失败
                 refund.status = "failed"
                 refund.error_message = refund_result.error_message
-                refund.processed_at = datetime.utcnow()
+                refund.processed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
                 db.commit()
 
                 logger.error(f"退款失败: {refund.refund_no}, 错误: {refund_result.error_message}")

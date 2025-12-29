@@ -9,10 +9,13 @@ from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.utils import formataddr
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
 
 # SMTP 配置
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.qq.com")
@@ -136,12 +139,10 @@ class EmailService:
         """
         # 格式化完成时间
         if completed_at is None:
-            completed_at = datetime.utcnow()
+            completed_at = datetime.now(CHINA_TZ).replace(tzinfo=None)
 
-        # 转换为中国时区显示（UTC+8）
-        from datetime import timedelta
-        china_time = completed_at + timedelta(hours=8)
-        formatted_time = china_time.strftime('%Y年%m月%d日 %H:%M:%S')
+        # 直接格式化（已经是东八区时间）
+        formatted_time = completed_at.strftime('%Y年%m月%d日 %H:%M:%S')
 
         subject = f"您的达人推荐报告已生成完成 - {product_name}"
 

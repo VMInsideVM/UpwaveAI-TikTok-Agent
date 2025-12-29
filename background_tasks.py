@@ -8,7 +8,7 @@ import threading
 import uuid
 import re
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
 
@@ -16,6 +16,9 @@ from pathlib import Path
 from database.connection import get_db_context
 from database.models import Report
 from sqlalchemy import update
+
+# 东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
 
 
 class BackgroundTaskQueue:
@@ -324,7 +327,7 @@ class BackgroundTaskQueue:
             with get_db_context() as db:
                 stmt = update(Report).where(Report.report_id == report_id).values(
                     report_path=file_path,  # ⭐ 修复：使用正确的字段名
-                    completed_at=datetime.utcnow()
+                    completed_at=datetime.now(CHINA_TZ).replace(tzinfo=None)
                 )
                 db.execute(stmt)
                 db.commit()

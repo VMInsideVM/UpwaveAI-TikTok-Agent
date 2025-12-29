@@ -6,7 +6,7 @@ Token Tracking Service
 import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
@@ -15,6 +15,9 @@ from database.connection import get_db_context
 from database.models import TokenUsage, UserUsage, User
 
 logger = logging.getLogger(__name__)
+
+# 东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
 
 class TokenTrackingCallbackHandler(BaseCallbackHandler):
     """
@@ -68,7 +71,7 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
                     model_name=model_name,
-                    created_at=datetime.utcnow()
+                    created_at=datetime.now(CHINA_TZ).replace(tzinfo=None)
                 )
                 db.add(usage_record)
                 

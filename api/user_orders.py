@@ -7,12 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from database.connection import get_db
 from database.models import User, Order, Refund
 from api.auth import get_current_user
 import uuid
+
+# 东八区时区
+CHINA_TZ = timezone(timedelta(hours=8))
 
 router = APIRouter(prefix="/api/user", tags=["user_orders"])
 
@@ -136,7 +139,7 @@ async def request_refund(
         status="pending",  # 待审核
         reason=request.reason,
         admin_id=None,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(CHINA_TZ).replace(tzinfo=None)
     )
 
     db.add(refund)

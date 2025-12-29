@@ -71,6 +71,7 @@ class OrderStatusResponse(BaseModel):
     created_at: datetime
     paid_at: Optional[datetime]
     expired: bool
+    expired_at: Optional[datetime] = None  # 订单过期时间
     payment_url: Optional[str] = None  # 未过期的订单返回支付链接
 
 
@@ -182,8 +183,9 @@ async def create_order(
         payment_method=request.payment_method,
         order_no=order_no,
         amount_fen=tier["price_fen"],
-        subject=f"FastMoss积分充值 - {tier['name']}",
-        notify_url=notify_url
+        subject=f"Upwave AI积分充值 - {tier['name']}",
+        notify_url=notify_url,
+        time_expire=expires_at  # 传递过期时间给支付SDK
     )
 
     if not payment_result.success:
@@ -270,6 +272,7 @@ async def get_order_status(
         created_at=order.created_at,
         paid_at=order.paid_at,
         expired=expired,
+        expired_at=order.expired_at,
         payment_url=payment_url
     )
 
@@ -409,40 +412,6 @@ async def process_payment_success(order_no: str, trade_no: str, db: Session):
         db.rollback()
         logger.exception(f"处理支付成功失败: {e}")
         return False
-
-
-@router.post("/orders/{order_id}/simulate-pay")
-async def simulate_payment(
-    order_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    模拟支付成功（仅用于本地调试）
-    生产环境应删除此接口
-    """
-    order = db.query(Order).filter(
-        Order.order_id == order_id,
-        Order.user_id == current_user.user_id
-    ).first()
-
-    if not order:
-        raise HTTPException(status_code=404, detail="订单不存在")
-
-    if order.payment_status != "pending":
-        raise HTTPException(status_code=400, detail=f"订单状态为 {order.payment_status}，无法模拟支付")
-
-    # 模拟支付成功
-    success = await process_payment_success(
-        order_no=order.order_no,
-        trade_no=f"SIMULATE_{order.order_no}",
-        db=db
-    )
-
-    if success:
-        return {"message": "模拟支付成功", "credits": order.credits}
-    else:
-        raise HTTPException(status_code=500, detail="处理失败")
 
 
 @router.post("/callback/alipay")

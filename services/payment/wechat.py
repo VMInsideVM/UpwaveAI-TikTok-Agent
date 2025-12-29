@@ -93,16 +93,28 @@ class WechatPayProvider(PaymentProvider):
         try:
             client = self._get_client()
 
-            # 调用 Native 支付接口
-            result = client.pay(
-                description=subject,
-                out_trade_no=order_no,
-                amount={
+            # 准备支付参数
+            pay_params = {
+                "description": subject,
+                "out_trade_no": order_no,
+                "amount": {
                     "total": amount_fen,
                     "currency": "CNY"
                 },
-                notify_url=notify_url or self.notify_url
-            )
+                "notify_url": notify_url or self.notify_url
+            }
+
+            # 添加过期时间（如果提供）
+            time_expire = kwargs.get('time_expire')
+            if time_expire:
+                from datetime import datetime
+                # 微信支付要求 RFC 3339 格式: 2025-12-31T23:59:59+08:00
+                time_expire_str = time_expire.strftime('%Y-%m-%dT%H:%M:%S+08:00')
+                pay_params["time_expire"] = time_expire_str
+                logger.info(f"订单 {order_no} 设置过期时间: {time_expire_str}")
+
+            # 调用 Native 支付接口
+            result = client.pay(**pay_params)
 
             code, response = result
 
@@ -254,6 +266,33 @@ class WechatPayProvider(PaymentProvider):
                 reason=reason
             )
 
+            # 调试日志：查看返回值类型和内容
+            logger.info(f"微信退款API返回: code={code}, response类型={type(response)}, response内容={response}")
+
+            # 如果 response 是字符串，尝试解析为 JSON
+            if isinstance(response, str):
+                import json
+                try:
+                    response = json.loads(response)
+                    logger.info(f"成功解析退款响应为JSON: {response}")
+                except Exception as parse_error:
+                    logger.error(f"无法解析退款响应为JSON: {response}, 错误: {parse_error}")
+                    # 如果无法解析，但code是200，可能退款成功了
+                    if code == 200:
+                        return RefundResult(
+                            success=True,
+                            refund_no=refund_no,
+                            error_message="退款已提交（响应格式异常）",
+                            raw_response={"raw": response}
+                        )
+                    else:
+                        return RefundResult(
+                            success=False,
+                            refund_no=refund_no,
+                            error_message=f"退款失败: {response}",
+                            raw_response={"raw": response}
+                        )
+
             if code == 200:
                 status = response.get("status")
                 # 微信退款状态：SUCCESS, CLOSED, PROCESSING, ABNORMAL
@@ -266,11 +305,18 @@ class WechatPayProvider(PaymentProvider):
                     raw_response=response
                 )
             else:
+                # 确保response是字典
+                error_msg = "退款失败"
+                if isinstance(response, dict):
+                    error_msg = response.get("message", f"退款失败 (HTTP {code})")
+                else:
+                    error_msg = f"退款失败: {response}"
+
                 return RefundResult(
                     success=False,
                     refund_no=refund_no,
-                    error_message=response.get("message", "退款失败"),
-                    raw_response=response
+                    error_message=error_msg,
+                    raw_response=response if isinstance(response, dict) else {"raw": str(response)}
                 )
 
         except Exception as e:
@@ -288,6 +334,24 @@ class WechatPayProvider(PaymentProvider):
 
             code, response = client.query_refund(out_refund_no=refund_no)
 
+            # 调试日志：查看返回值类型和内容
+            logger.info(f"查询微信退款API返回: code={code}, response类型={type(response)}, response内容={response}")
+
+            # 如果 response 是字符串，尝试解析为 JSON
+            if isinstance(response, str):
+                import json
+                try:
+                    response = json.loads(response)
+                    logger.info(f"成功解析退款查询响应为JSON: {response}")
+                except Exception as parse_error:
+                    logger.error(f"无法解析退款查询响应为JSON: {response}, 错误: {parse_error}")
+                    return RefundResult(
+                        success=False,
+                        refund_no=refund_no,
+                        error_message=f"查询失败: {response}",
+                        raw_response={"raw": response}
+                    )
+
             if code == 200:
                 status = response.get("status")
                 success = status == "SUCCESS"
@@ -300,11 +364,18 @@ class WechatPayProvider(PaymentProvider):
                     raw_response=response
                 )
             else:
+                # 确保response是字典
+                error_msg = "查询退款失败"
+                if isinstance(response, dict):
+                    error_msg = response.get("message", f"查询退款失败 (HTTP {code})")
+                else:
+                    error_msg = f"查询退款失败: {response}"
+
                 return RefundResult(
                     success=False,
                     refund_no=refund_no,
-                    error_message=response.get("message", "查询退款失败"),
-                    raw_response=response
+                    error_message=error_msg,
+                    raw_response=response if isinstance(response, dict) else {"raw": str(response)}
                 )
 
         except Exception as e:

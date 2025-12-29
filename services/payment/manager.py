@@ -107,7 +107,8 @@ class PaymentManager:
         order_no: str,
         amount_fen: int,
         subject: str,
-        notify_url: str
+        notify_url: str,
+        time_expire=None
     ) -> PaymentResult:
         """
         创建支付订单
@@ -118,6 +119,7 @@ class PaymentManager:
             amount_fen: 金额（分）
             subject: 订单标题
             notify_url: 异步通知URL
+            time_expire: 订单过期时间（可选）
 
         Returns:
             PaymentResult: 支付结果
@@ -146,7 +148,8 @@ class PaymentManager:
             order_no=order_no,
             amount_fen=amount_fen,
             subject=subject,
-            notify_url=notify_url
+            notify_url=notify_url,
+            time_expire=time_expire
         )
 
         # 如果成功获取到二维码URL或支付URL，生成Base64编码的二维码
