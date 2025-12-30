@@ -1333,18 +1333,7 @@
 </head>
 
 <body>
-    <!-- 充值提示气泡 -->
-    <div class="recharge-hint" id="rechargeHint">
-        <div class="recharge-hint-content">
-            <div class="recharge-hint-icon">💳</div>
-            <div class="recharge-hint-text">
-                <strong>积分不足</strong>
-                <p>您当前积分为 0，每创建对话至少需要 100 积分</p>
-            </div>
-            <button class="recharge-hint-close" onclick="closeRechargeHint()">×</button>
-        </div>
-        <div class="recharge-hint-arrow"></div>
-    </div>
+
 
     <!-- 侧边栏遮罩（仅移动端显示） -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
@@ -2050,48 +2039,17 @@
                     setTimeout(() => showRechargeHint(), 800);
                 }
 
-                // ⭐ 检查积分是否足够（至少需要100积分才能使用）
-                const MIN_CREDITS_REQUIRED = 100;
-                const chatInput = document.getElementById('chatInput');
-                const sendBtn = document.getElementById('sendBtn');
+                // 积分充足，启用输入（如果WebSocket已连接）
+                if (isConnected) {
+                    chatInput.disabled = false;
+                    sendBtn.disabled = false;
+                    chatInput.placeholder = '请告诉我您的需求...';
+                }
 
-                if (user.remaining_credits < MIN_CREDITS_REQUIRED) {
-                    // 积分不足，禁用输入
-                    chatInput.disabled = true;
-                    sendBtn.disabled = true;
-                    chatInput.placeholder = `积分不足（剩余${user.remaining_credits}），至少需要${MIN_CREDITS_REQUIRED}积分才能使用`;
-                    console.warn(`⚠️ 积分不足: ${user.remaining_credits} < ${MIN_CREDITS_REQUIRED}`);
-
-                    // 在聊天区域显示警告消息
-                    const messagesDiv = document.getElementById('chatMessages');
-                    const existingWarning = document.getElementById('low-credits-warning');
-
-                    if (!existingWarning) {
-                        const warningDiv = document.createElement('div');
-                        warningDiv.id = 'low-credits-warning';
-                        warningDiv.style.cssText = 'padding: 16px; margin: 16px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; text-align: center;';
-                        warningDiv.innerHTML = `
-                            <p style="margin: 0; color: #856404; font-size: 16px;">
-                                <strong>⚠️ 积分不足</strong><br>
-                                您当前剩余 <strong>${user.remaining_credits}</strong> 积分，至少需要 <strong>${MIN_CREDITS_REQUIRED}</strong> 积分才能使用达人推荐服务。<br>
-                                <span style="font-size: 14px;">每个达人消耗100积分</span>
-                            </p>
-                        `;
-                        messagesDiv.appendChild(warningDiv);
-                    }
-                } else {
-                    // 积分充足，启用输入（如果WebSocket已连接）
-                    if (isConnected) {
-                        chatInput.disabled = false;
-                        sendBtn.disabled = false;
-                        chatInput.placeholder = '请告诉我您的需求...';
-                    }
-
-                    // 移除警告消息（如果存在）
-                    const existingWarning = document.getElementById('low-credits-warning');
-                    if (existingWarning) {
-                        existingWarning.remove();
-                    }
+                // 移除警告消息（如果存在）
+                const existingWarning = document.getElementById('low-credits-warning');
+                if (existingWarning) {
+                    existingWarning.remove();
                 }
             } catch (error) {
                 console.error('Failed to load user info:', error);
