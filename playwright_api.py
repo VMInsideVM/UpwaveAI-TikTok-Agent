@@ -72,6 +72,79 @@ _login_state = {
 LOGIN_LOG_FILE = "login_time.log"
 
 # ============================================================================
+# 任务队列状态管理
+# ============================================================================
+
+# 任务队列状态
+_task_queue_state = {
+    "current_task": None,  # 当前正在处理的任务信息
+    "queue": [],  # 等待队列 [{session_id, user_id, username, task_type, start_time}]
+    "is_processing": False,  # 是否正在处理任务
+    "processing_lock": None,  # 将在 startup_event 中初始化为 asyncio.Lock()
+    "stop_requested": False,  # 是否请求停止当前任务
+}
+
+def get_task_queue_status() -> Dict[str, Any]:
+    """获取任务队列状态（线程安全）"""
+    global _task_queue_state
+
+    current = _task_queue_state["current_task"]
+    queue_list = _task_queue_state["queue"]
+
+    return {
+        "is_processing": _task_queue_state["is_processing"],
+        "current_task": current.copy() if current else None,
+        "queue_length": len(queue_list),
+        "queued_tasks": [
+            {
+                "session_id": task["session_id"],
+                "user_id": task.get("user_id", "未知"),
+                "username": task.get("username", "未知用户"),
+                "task_type": task["task_type"],
+                "waiting_time": (datetime.now() - task["start_time"]).total_seconds() if "start_time" in task else 0
+            }
+            for task in queue_list
+        ],
+        "stop_requested": _task_queue_state["stop_requested"]
+    }
+
+def set_current_task(session_id: str, user_id: str = None, username: str = None, task_type: str = "scraping"):
+    """设置当前任务"""
+    global _task_queue_state
+    _task_queue_state["current_task"] = {
+        "session_id": session_id,
+        "user_id": user_id or "未知",
+        "username": username or "未知用户",
+        "task_type": task_type,
+        "start_time": datetime.now()
+    }
+    _task_queue_state["is_processing"] = True
+    _task_queue_state["stop_requested"] = False
+    print(f"[任务队列] 开始处理任务: 用户 {username} (会话 {session_id})")
+
+def clear_current_task():
+    """清除当前任务"""
+    global _task_queue_state
+    if _task_queue_state["current_task"]:
+        print(f"[任务队列] 完成任务: {_task_queue_state['current_task']['username']}")
+    _task_queue_state["current_task"] = None
+    _task_queue_state["is_processing"] = False
+    _task_queue_state["stop_requested"] = False
+
+def request_stop_current_task() -> bool:
+    """请求停止当前任务"""
+    global _task_queue_state
+    if _task_queue_state["is_processing"]:
+        _task_queue_state["stop_requested"] = True
+        print(f"[任务队列] 收到停止请求，将在下一个检查点停止当前任务")
+        return True
+    return False
+
+def is_stop_requested() -> bool:
+    """检查是否请求停止"""
+    return _task_queue_state.get("stop_requested", False)
+
+# ============================================================================
 # Pydantic 模型定义
 # ============================================================================
 
@@ -85,6 +158,9 @@ class ScrapeRequest(BaseModel):
     urls: List[str] = Field(..., description="搜索页面 URL 列表(支持多个排序维度)")
     max_pages: int = Field(..., ge=1, le=100, description="每个 URL 的最大爬取页数（1-100）")
     product_name: str = Field(..., description="商品名称(用于文件命名)")
+    session_id: Optional[str] = Field(None, description="会话ID（用于任务队列跟踪）")
+    user_id: Optional[str] = Field(None, description="用户ID（用于任务队列显示）")
+    username: Optional[str] = Field(None, description="用户名（用于任务队列显示）")
 
 class ProcessInfluencerListRequest(BaseModel):
     """处理达人列表的请求参数"""
@@ -104,10 +180,14 @@ class HealthResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """API 启动时初始化 Playwright (Async)"""
-    global _playwright, _browser, _context, _page, _is_initialized, _login_state
+    global _playwright, _browser, _context, _page, _is_initialized, _login_state, _task_queue_state
 
     try:
         print("🔧 正在初始化 Playwright API 服务 (Headless 模式)...")
+
+        # 初始化任务队列锁
+        _task_queue_state["processing_lock"] = asyncio.Lock()
+        print("  ✓ 任务队列管理已初始化")
 
         # 启动 Playwright (异步 API)
         _playwright = await async_playwright().start()
@@ -879,6 +959,14 @@ async def scrape_pages(req: ScrapeRequest):
     """
     check_initialized()
 
+    # 设置当前任务
+    set_current_task(
+        session_id=req.session_id or "unknown",
+        user_id=req.user_id,
+        username=req.username,
+        task_type="scraping"
+    )
+
     try:
         print(f"📊 开始爬取数据...")
         print(f"   - URL 数量: {len(req.urls)}")
@@ -890,6 +978,12 @@ async def scrape_pages(req: ScrapeRequest):
 
         # 依次爬取每个 URL
         for idx, url in enumerate(req.urls, 1):
+            # 检查是否请求停止
+            if is_stop_requested():
+                print(f"\n⚠️ 收到停止请求，中止爬取任务")
+                clear_current_task()
+                raise HTTPException(status_code=499, detail="任务已被管理员停止")
+
             print(f"\n🔄 正在爬取第 {idx}/{len(req.urls)} 个 URL...")
             print(f"   URL: {url}")
 
@@ -931,6 +1025,9 @@ async def scrape_pages(req: ScrapeRequest):
             }, f, ensure_ascii=False, indent=2)
         print(f"   ✅ 导出成功: {filepath}")
 
+        # 清除当前任务
+        clear_current_task()
+
         return {
             "success": True,
             "filepath": filepath,
@@ -941,11 +1038,13 @@ async def scrape_pages(req: ScrapeRequest):
         }
 
     except PlaywrightError as e:
+        clear_current_task()  # 出错时也清除任务状态
         error_msg = f"Playwright 错误: {str(e)}"
         print(f"❌ {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
     except Exception as e:
+        clear_current_task()  # 出错时也清除任务状态
         error_msg = f"爬取失败: {str(e)}"
         print(f"❌ {error_msg}")
         import traceback
@@ -2013,6 +2112,97 @@ def main():
 ║      🚀 Playwright Scraping API Service (Async) 🚀           ║
 ║                                                               ║
 ║      使用 Playwright Async API                                ║
+║      解决 LangChain 多线程 greenlet 问题                      ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+    """)
+
+# ============================================================================
+# 管理员API端点
+# ============================================================================
+
+@app.get("/api/admin/tasks")
+async def get_admin_tasks():
+    """
+    管理员API：获取任务队列状态
+
+    返回当前正在处理的任务、等待队列等信息
+    """
+    try:
+        status = get_task_queue_status()
+
+        # 格式化当前任务信息
+        current_task_info = None
+        if status["current_task"]:
+            task = status["current_task"]
+            elapsed_time = (datetime.now() - task["start_time"]).total_seconds() if "start_time" in task else 0
+            current_task_info = {
+                "session_id": task["session_id"],
+                "user_id": task.get("user_id", "未知"),
+                "username": task.get("username", "未知用户"),
+                "task_type": task.get("task_type", "unknown"),
+                "elapsed_time": int(elapsed_time),
+                "elapsed_time_formatted": f"{int(elapsed_time // 60)}分{int(elapsed_time % 60)}秒"
+            }
+
+        return {
+            "success": True,
+            "is_processing": status["is_processing"],
+            "current_task": current_task_info,
+            "queue_length": status["queue_length"],
+            "queued_tasks": status["queued_tasks"],
+            "stop_requested": status["stop_requested"]
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "is_processing": False,
+            "current_task": None,
+            "queue_length": 0,
+            "queued_tasks": []
+        }
+
+@app.post("/api/admin/tasks/stop")
+async def stop_current_task():
+    """
+    管理员API：停止当前任务
+
+    发送停止信号给当前正在执行的任务，任务会在下一个检查点停止
+    """
+    try:
+        stopped = request_stop_current_task()
+
+        if stopped:
+            return {
+                "success": True,
+                "message": "已发送停止信号，任务将在下一个检查点停止"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "当前没有正在处理的任务"
+            }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"停止任务失败: {str(e)}"
+        }
+
+# ============================================================================
+# 主函数
+# ============================================================================
+
+def main():
+    """主函数"""
+    print("""
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║       🚀 Playwright 爬虫 API 服务 (Async 版本)                 ║
+║                                                               ║
 ║      解决 LangChain 多线程 greenlet 问题                      ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝

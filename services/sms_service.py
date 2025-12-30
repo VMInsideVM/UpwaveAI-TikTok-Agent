@@ -5,7 +5,7 @@
 import os
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Tuple, Optional
 from passlib.context import CryptContext
 
@@ -39,7 +39,7 @@ MAX_ATTEMPTS = int(os.getenv("SMS_MAX_ATTEMPTS", "3"))
 
 # 限流配置
 RATE_LIMIT_PER_PHONE_HOUR = int(os.getenv("RATE_LIMIT_PER_PHONE_HOUR", "5"))
-RATE_LIMIT_PER_IP_HOUR = int(os.getenv("RATE_LIMIT_PER_IP_HOUR", "20"))
+RATE_LIMIT_PER_IP_DAY = int(os.getenv("RATE_LIMIT_PER_IP_DAY", "5"))
 
 
 class SMSService:
@@ -76,7 +76,10 @@ class SMSService:
         Returns:
             (is_allowed, error_message)
         """
-        one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+        from utils.timezone import now_naive
+
+        one_hour_ago = now_naive() - timedelta(hours=1)
+        one_day_ago = now_naive() - timedelta(days=1)
 
         # 检查手机号频率限制（每小时 5 次）
         phone_count = db.query(SMSVerification).filter(
@@ -87,14 +90,14 @@ class SMSService:
         if phone_count >= RATE_LIMIT_PER_PHONE_HOUR:
             return False, f"该手机号每小时最多发送 {RATE_LIMIT_PER_PHONE_HOUR} 次验证码，请稍后再试"
 
-        # 检查 IP 频率限制（每小时 20 次）
+        # 检查 IP 频率限制（每天 5 次）
         ip_count = db.query(SMSVerification).filter(
             SMSVerification.ip_address == ip_address,
-            SMSVerification.created_at >= one_hour_ago
+            SMSVerification.created_at >= one_day_ago
         ).count()
 
-        if ip_count >= RATE_LIMIT_PER_IP_HOUR:
-            return False, f"您的操作过于频繁，请稍后再试"
+        if ip_count >= RATE_LIMIT_PER_IP_DAY:
+            return False, f"您的IP今日验证码发送次数已达上限（{RATE_LIMIT_PER_IP_DAY}次），请明天再试"
 
         return True, ""
 
@@ -161,8 +164,10 @@ class SMSService:
             return False, "短信服务暂时不可用，请稍后重试"
 
         # 6. 存储验证码记录（哈希后）
+        from utils.timezone import now_naive
+
         hashed_code = sms_code_context.hash(code)
-        expires_at = datetime.utcnow() + timedelta(minutes=SMS_CODE_EXPIRE_MINUTES)
+        expires_at = now_naive() + timedelta(minutes=SMS_CODE_EXPIRE_MINUTES)
 
         verification = SMSVerification(
             phone_number=phone,
@@ -225,8 +230,10 @@ class SMSService:
                 return False, "验证码尝试次数过多，请重新获取", None
 
         # 5. 验证成功
+        from utils.timezone import now_naive
+
         verification.is_verified = True
-        verification.verified_at = datetime.utcnow()
+        verification.verified_at = now_naive()
         db.commit()
 
         return True, "验证成功", verification
@@ -238,7 +245,9 @@ class SMSService:
         Returns:
             删除的记录数
         """
-        one_day_ago = datetime.utcnow() - timedelta(days=1)
+        from utils.timezone import now_naive
+
+        one_day_ago = now_naive() - timedelta(days=1)
 
         deleted_count = db.query(SMSVerification).filter(
             SMSVerification.created_at < one_day_ago

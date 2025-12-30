@@ -17,6 +17,7 @@ nest_asyncio.apply()
 
 from agent_tools import get_all_tools, set_agent_instance
 from main import initialize_playwright, navigate_to_url
+from workflow_enforcer import get_enforcer
 
 # 加载环境变量
 load_dotenv()
@@ -25,18 +26,28 @@ load_dotenv()
 class TikTokInfluencerAgent:
     """TikTok 达人推荐智能 Agent"""
 
-    def __init__(self, user_id: Optional[str] = None, session_id: Optional[str] = None, callbacks: Optional[list] = None):
+    def __init__(self, user_id: Optional[str] = None, session_id: Optional[str] = None, username: Optional[str] = None, callbacks: Optional[list] = None):
         """
         初始化 Agent
 
         Args:
             user_id: 用户 ID，用于后台任务队列
             session_id: 会话 ID，用于创建报告记录
+            username: 用户名，用于任务队列显示
             callbacks: LangChain 回调列表
         """
         self.user_id = user_id  # 存储用户 ID
         self.session_id = session_id  # 存储会话 ID
-        self.callbacks = callbacks  # ⭐ 存储回调
+        self.username = username  # 存储用户名
+
+        # ⭐ 初始化工作流强制执行器
+        self.workflow_enforcer = get_enforcer(debug=False)
+
+        # ⭐ 合并用户提供的 callbacks 和工作流强制执行器
+        self.callbacks = callbacks if callbacks else []
+        if self.workflow_enforcer not in self.callbacks:
+            self.callbacks.append(self.workflow_enforcer)
+
         self.llm = self._init_llm()
         self.tools = get_all_tools()
 
@@ -102,9 +113,30 @@ class TikTokInfluencerAgent:
 ## 知识库摘要:
 {knowledge_base}
 
+## 图像理解能力:
+你可以分析用户提供的图像（本地文件或网络 URL），提取图像中的商品信息。
+
+**使用场景**:
+- 用户上传了商品图片，但没有明确说明商品名称
+- 用户提供了商品图片 URL，需要识别商品类型
+- 需要从图片中提取商品信息用于后续筛选
+
+**如何使用 analyze_image 工具**:
+1. 当用户提供图片路径或 URL 时，使用 analyze_image 工具分析图像
+2. 对于商品图片，使用 analysis_type="product" 提取商品信息
+3. 工具会返回商品名称、类别、特征、目标人群等信息
+4. 将提取的商品信息用于后续的分类匹配和参数收集
+
+**示例**:
+- 用户说："这是我的产品图片：https://example.com/product.jpg"
+  → 调用 analyze_image(image_url="https://example.com/product.jpg", analysis_type="product")
+- 用户说："分析这张图片：C:/images/lipstick.jpg"
+  → 调用 analyze_image(image_path="C:/images/lipstick.jpg", analysis_type="general")
+
 ## 你的工作流程:
 1. **理解需求**: 询问用户的商品名称、目标国家、达人数量、粉丝要求等
    - 收集所有需要的信息（商品、国家、数量、筛选条件）
+   - 🖼️ **图像识别**：如果用户提供了图片，先使用 analyze_image 工具识别商品
    - ⚠️ **特别重要：必须明确询问用户需要多少个达人！**
    - 将用户指定的达人数量记录下来（如果用户没说，默认10个）
 
@@ -386,7 +418,7 @@ class TikTokInfluencerAgent:
 
             # LangChain 1.0 的 agent 返回的是 CompiledStateGraph
             # 需要调用 invoke 方法，传入完整的对话历史
-            # ⭐ 支持传入 callbacks
+            # ⭐ 支持传入 callbacks（包含工作流强制执行器）
             config = {}
             if hasattr(self, 'callbacks') and self.callbacks:
                 config['callbacks'] = self.callbacks
@@ -394,6 +426,9 @@ class TikTokInfluencerAgent:
             result = self.agent.invoke({
                 "messages": self.chat_history
             }, config=config)
+
+            # ⭐ 重置工作流强制执行器状态（为下一轮对话做准备）
+            # 注意：不在这里重置，而是在处理完响应后重置
 
             # 提取 AI 的回复
             if "messages" in result and len(result["messages"]) > 0:
@@ -414,10 +449,48 @@ class TikTokInfluencerAgent:
 
                 # 如果有回复,返回最后一个
                 if ai_responses:
+                    # ⭐ 在返回响应前重置工作流状态
+                    self.workflow_enforcer.reset()
                     return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
 
-                # ⭐ 【新增】如果没有 AI 消息，检查是否有 review_parameters 工具调用
-                # 这是为了解决 Agent 调用工具后不输出的问题
+                # ⭐ 【新增】如果没有 AI 消息，检查工作流违反情况
+                violation_status = self.workflow_enforcer.get_violation_status()
+
+                if violation_status['expect_review_parameters']:
+                    # Agent 调用了 build_search_url 但没有调用 review_parameters
+                    print("⚠️ 工作流违反：Agent 调用了 build_search_url 但未调用 review_parameters")
+
+                    # 🔥 强制调用 review_parameters 工具
+                    try:
+                        from agent_tools import ReviewParametersTool
+
+                        # 准备参数
+                        review_tool = ReviewParametersTool()
+                        product_name = self.current_params.get('product_name', '未知商品')
+                        target_count = self.current_params.get('target_count', 10)
+                        category_info = self.current_params.get('category_info', None)
+
+                        # 强制调用工具
+                        print(f"🔧 强制调用 review_parameters: product_name={product_name}, target_count={target_count}")
+                        tool_output = review_tool._run(
+                            current_params=self.current_params,
+                            product_name=product_name,
+                            target_count=target_count,
+                            category_info=category_info
+                        )
+
+                        # 重置工作流状态
+                        self.workflow_enforcer.reset()
+
+                        # 返回工具输出
+                        return tool_output
+
+                    except Exception as e:
+                        print(f"❌ 强制调用 review_parameters 失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+                # 旧的降级保护机制（保留作为后备）
                 from response_validator import get_validator
                 validator = get_validator(debug=False)
 
@@ -427,11 +500,14 @@ class TikTokInfluencerAgent:
                         if tool_call['tool_name'] == 'review_parameters':
                             tool_output = tool_call['output']
                             print("⚠️ 检测到 review_parameters 调用但 Agent 未输出，强制返回工具输出")
+                            self.workflow_enforcer.reset()
                             return tool_output
 
                 # 检查是否有工具返回消息（不显示原始工具结果）
                 # 工具结果会被 agent 处理后以自然语言返回
 
+            # 重置工作流状态
+            self.workflow_enforcer.reset()
             return "抱歉,我无法处理你的请求。Agent 没有返回有效响应。"
 
         except Exception as e:
@@ -508,6 +584,11 @@ class TikTokInfluencerAgent:
         """
         运行 Agent 处理用户输入（支持图片）
 
+        ⭐ 双模型协作流程：
+        1. 使用专门的视觉模型（IMAGE_MODEL）分析图片
+        2. 将图片分析结果（文本）和用户输入合并
+        3. 传给主 Agent（文本模型）继续处理
+
         Args:
             user_input: 用户输入的文本
             image_data: Base64 编码的图片数据（data:image/...;base64,...格式）
@@ -516,124 +597,107 @@ class TikTokInfluencerAgent:
             Agent 的回复
         """
         try:
-            # 将用户输入添加到历史记录（包含图片）
-            from langchain_core.messages import HumanMessage
+            print("[INFO] 检测到图片输入，启动双模型协作流程")
 
-            # LangChain 支持多模态消息
-            # 构建包含文本和图片的消息
-            message_content = []
+            # ⭐ 步骤 1: 使用视觉模型分析图片
+            from image_analyzer import get_image_analyzer
 
-            # 添加文本内容
+            analyzer = get_image_analyzer()
+
+            # 准备分析提示词
             if user_input and user_input.strip():
-                message_content.append({
-                    "type": "text",
-                    "text": user_input
-                })
+                # 用户提供了文字描述，使用自定义提示词
+                analysis_prompt = f"""用户说："{user_input}"
 
-            # 添加图片内容
-            if image_data:
-                # 预处理图片（Qwen 视觉模型约束）
-                processed_image_url = image_data
-                try:
-                    import base64
-                    import io
-                    import math
-                    from PIL import Image
+请分析这张图片，提取以下信息：
+1. **商品名称**：图片中商品的具体名称或类型
+2. **商品类别**：所属的类别（如：美妆个护、服饰配饰、食品饮料、数码3C等）
+3. **商品特征**：主要特征（颜色、材质、风格、品牌等）
+4. **目标人群**：适合的用户群体（性别、年龄段等）
+5. **推广场景**：适合的推广场景或使用场景
 
-                    # 提取 Base64 数据
-                    if image_data.startswith('data:image'):
-                        header, encoded = image_data.split(",", 1)
-                        img_format = header.split(';')[0].split('/')[1]
-                    else:
-                        encoded = image_data
-                        img_format = 'jpeg'
-                        image_data = f"data:image/jpeg;base64,{image_data}" # 确保原始数据有前缀
+请结合用户的描述和图片内容，给出详细的分析结果。"""
+            else:
+                # 用户只上传了图片，没有文字
+                analysis_prompt = """请分析这张商品图片，提取以下信息：
 
-                    # 解码
-                    img_bytes = base64.b64decode(encoded)
-                    img = Image.open(io.BytesIO(img_bytes))
-                    w, h = img.size
-                    
-                    # 规则 1: 最小 56x56
-                    if w < 56 or h < 56:
-                        # 如果过小，放大
-                        scale = max(56/w, 56/h)
-                        w = int(w * scale)
-                        h = int(h * scale)
-                        img = img.resize((w, h), Image.Resampling.LANCZOS)
+1. **商品名称**：图片中商品的具体名称或类型
+2. **商品类别**：所属的类别（如：美妆个护、服饰配饰、食品饮料、数码3C等）
+3. **商品特征**：主要特征（颜色、材质、风格、品牌等）
+4. **目标人群**：适合的用户群体（性别、年龄段等）
+5. **推广场景**：适合的推广场景或使用场景
 
-                    # 规则 2: 最大 3584x3584 (保持长宽比缩放)
-                    MAX_SIDE = 3584
-                    if w > MAX_SIDE or h > MAX_SIDE:
-                        scale = min(MAX_SIDE/w, MAX_SIDE/h)
-                        w = int(w * scale)
-                        h = int(h * scale)
-                        img = img.resize((w, h), Image.Resampling.LANCZOS)
-                    
-                    # 规则 3: 按 28 的倍数取整 (detail=high)
-                    # "长宽先上取整到 28 的倍数"
-                    w_new = math.ceil(w / 28) * 28
-                    h_new = math.ceil(h / 28) * 28
-                    
-                    if w != w_new or h != h_new:
-                        img = img.resize((w_new, h_new), Image.Resampling.LANCZOS)
-                        print(f"🖼️ 图片已调整: {w}x{h} -> {w_new}x{h_new} (Token估算: {math.ceil(h_new/28)*math.ceil(w_new/28)})")
+请给出详细的分析结果。"""
 
-                    # 重新编码
-                    buffered = io.BytesIO()
-                    # 保持原格式或默认 JPEG
-                    save_format = img_format.upper() if img_format != 'jpeg' else 'JPEG'
-                    # PIL jpg 需要 JPEG
-                    if save_format == 'JPG': save_format = 'JPEG'
-                    
-                    img.save(buffered, format=save_format)
-                    processed_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                    processed_image_url = f"data:image/{img_format};base64,{processed_base64}"
-                    
-                except Exception as e:
-                    print(f"⚠️ 图片预处理失败: {e}, 使用原始图片")
-                    if image_data.startswith('data:image'):
-                        processed_image_url = image_data
-                    else:
-                        processed_image_url = f"data:image/jpeg;base64,{image_data}"
+            # 调用视觉模型分析图片
+            if image_data.startswith('data:image'):
+                # Data URL 格式 - 需要转换
+                # 视觉模型的 analyze_image_from_url 期望纯 URL，不支持 data URL
+                # 所以我们需要使用 HumanMessage 直接调用
+                from langchain_core.messages import HumanMessage
 
-                message_content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": processed_image_url
-                    }
-                })
+                print("[INFO] 正在使用视觉模型分析图片（data URL格式）...")
 
-            # 创建多模态消息
-            self.chat_history.append(HumanMessage(content=message_content))
+                message = HumanMessage(
+                    content=[
+                        {"type": "text", "text": analysis_prompt},
+                        {"type": "image_url", "image_url": {"url": image_data}}
+                    ]
+                )
 
-            # 调用 agent
-            result = self.agent.invoke({
-                "messages": self.chat_history
-            })
+                response = analyzer.image_model.invoke([message])
+                image_analysis = response.content
 
-            # 提取 AI 的回复（与 run() 方法相同）
-            if "messages" in result and len(result["messages"]) > 0:
-                messages = result["messages"]
-                self.chat_history = messages
+            elif image_data.startswith(('http://', 'https://')):
+                # HTTP/HTTPS URL
+                print(f"[INFO] 正在使用视觉模型分析图片 URL: {image_data[:100]}...")
+                image_analysis = analyzer.analyze_image_from_url(image_data, analysis_prompt)
+            else:
+                # 其他格式（可能是本地路径或纯 base64）
+                print(f"[INFO] 正在使用视觉模型分析图片（未知格式，尝试作为 data URL）...")
+                # 假设是纯 base64，添加前缀
+                if not image_data.startswith('data:'):
+                    image_data = f"data:image/jpeg;base64,{image_data}"
 
-                ai_responses = []
-                for msg in messages:
-                    if hasattr(msg, 'type') and msg.type == 'ai':
-                        if hasattr(msg, 'content') and msg.content:
-                            ai_responses.append(msg.content)
-                        # 工具调用由进度报告系统处理，不显示给用户
+                message = HumanMessage(
+                    content=[
+                        {"type": "text", "text": analysis_prompt},
+                        {"type": "image_url", "image_url": {"url": image_data}}
+                    ]
+                )
 
-                if ai_responses:
-                    return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
+                response = analyzer.image_model.invoke([message])
+                image_analysis = response.content
 
-                # 工具结果会被 agent 处理后以自然语言返回
+            print(f"[OK] 视觉模型分析完成，结果长度: {len(image_analysis)} 字符")
+            print(f"[INFO] 图片分析结果（前200字符）: {image_analysis[:200]}...")
 
-            return "抱歉,我无法处理你的请求。Agent 没有返回有效响应。"
+            # ⭐ 步骤 2: 构建包含图片分析结果的文本输入
+            if user_input and user_input.strip():
+                # 合并用户输入和图片分析结果
+                combined_input = f"""{user_input}
+
+【图片分析结果】
+{image_analysis}
+
+请根据以上信息（包括用户的文字描述和图片分析结果）继续处理。"""
+            else:
+                # 只有图片分析结果
+                combined_input = f"""用户上传了一张商品图片。
+
+【图片分析结果】
+{image_analysis}
+
+请根据图片分析结果，询问用户还需要提供哪些信息（如目标国家、达人数量、粉丝范围等）。"""
+
+            print("[INFO] 将图片分析结果传递给主 Agent")
+
+            # ⭐ 步骤 3: 调用主 Agent 的普通 run() 方法（纯文本输入）
+            return self.run(combined_input)
 
         except Exception as e:
-            error_msg = f"❌ 处理图片时出错: {str(e)}\n请重新描述你的需求。"
-            print(f"Error details: {e}")
+            error_msg = f"[ERROR] 处理图片时出错: {str(e)}\n请重新上传图片或描述需求。"
+            print(error_msg)
             import traceback
             traceback.print_exc()
             return error_msg

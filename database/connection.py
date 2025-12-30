@@ -119,11 +119,11 @@ def create_admin_user(username: str, password: str, email: str) -> bool:
             db.add(admin_user)
             db.flush()  # 获取 user_id
 
-            # 创建配额记录
+            # 创建积分记录
             usage = UserUsage(
                 user_id=admin_user.user_id,
-                total_quota=999999,  # 管理员无限配额
-                used_count=0
+                total_credits=999999,  # 管理员无限积分
+                used_credits=0
             )
 
             db.add(usage)

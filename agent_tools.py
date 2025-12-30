@@ -492,6 +492,17 @@ class ScrapeInfluencersTool(BaseTool):
         try:
             print(f"📊 开始搜索达人候选...")
 
+            # 获取会话信息
+            agent = get_agent_instance()
+            session_info = {}
+            if agent:
+                if hasattr(agent, 'session_id') and agent.session_id:
+                    session_info['session_id'] = agent.session_id
+                if hasattr(agent, 'user_id') and agent.user_id:
+                    session_info['user_id'] = agent.user_id
+                if hasattr(agent, 'username') and agent.username:
+                    session_info['username'] = agent.username
+
             # 调用 API 爬取数据并导出 JSON
             result = call_api(
                 "/scrape",
@@ -499,7 +510,8 @@ class ScrapeInfluencersTool(BaseTool):
                 data={
                     "urls": urls,
                     "max_pages": max_pages,
-                    "product_name": product_name
+                    "product_name": product_name,
+                    **session_info  # 传递会话信息
                 },
                 timeout=len(urls) * max_pages * 30  # 每个 URL 每页约 30 秒
             )
@@ -1217,6 +1229,130 @@ class SubmitSearchTaskTool(BaseTool):
         }
 
 
+# ============================================================================
+# 图像分析工具（使用专门的视觉模型）
+# ============================================================================
+
+class AnalyzeImageInput(BaseModel):
+    """图像分析工具的输入"""
+    image_path: Optional[str] = Field(
+        default=None,
+        description="图像文件的本地路径（例如: 'product.jpg' 或 'C:/images/product.png'）"
+    )
+    image_url: Optional[str] = Field(
+        default=None,
+        description="图像的网络 URL（例如: 'https://example.com/product.jpg'）"
+    )
+    analysis_type: str = Field(
+        default="general",
+        description="分析类型：'general' (通用描述) 或 'product' (商品信息提取)"
+    )
+    custom_prompt: Optional[str] = Field(
+        default=None,
+        description="自定义分析提示词（可选）"
+    )
+
+
+class AnalyzeImageTool(BaseTool):
+    """
+    图像分析工具
+
+    使用专门的视觉模型（IMAGE_MODEL）理解图像内容，将图像转换为文本描述。
+
+    功能:
+    1. 分析本地图像文件
+    2. 分析网络图像 URL
+    3. 提取商品信息（商品名称、类别、特征等）
+    4. 通用图像描述
+
+    使用场景:
+    - 用户上传商品图片，需要识别商品类型
+    - 用户提供图片 URL，需要了解图片内容
+    - 需要从图片中提取商品信息用于后续筛选
+    """
+
+    name: str = "analyze_image"
+    description: str = """分析图像内容，将图像转换为文本描述。
+
+支持:
+- 本地图像文件（提供 image_path）
+- 网络图像 URL（提供 image_url）
+- 通用描述（analysis_type='general'）
+- 商品信息提取（analysis_type='product'）
+
+返回图像的详细文本描述，包括主要元素、场景、颜色、风格等。
+对于商品图像，会提取商品名称、类别、特征、目标人群等信息。
+
+注意：至少需要提供 image_path 或 image_url 中的一个。"""
+
+    args_schema: type = AnalyzeImageInput
+
+    def _run(
+        self,
+        image_path: Optional[str] = None,
+        image_url: Optional[str] = None,
+        analysis_type: str = "general",
+        custom_prompt: Optional[str] = None
+    ) -> str:
+        """
+        执行图像分析
+
+        Args:
+            image_path: 本地图像路径
+            image_url: 网络图像 URL
+            analysis_type: 分析类型（'general' 或 'product'）
+            custom_prompt: 自定义提示词
+
+        Returns:
+            图像分析结果（文本描述）
+        """
+        try:
+            from image_analyzer import get_image_analyzer
+
+            # 检查参数
+            if not image_path and not image_url:
+                return "❌ 错误：必须提供 image_path（本地图像路径）或 image_url（网络图像URL）中的至少一个参数。"
+
+            analyzer = get_image_analyzer()
+
+            # 商品分析模式
+            if analysis_type == "product":
+                if image_path:
+                    result = analyzer.analyze_product_image(image_path)
+                    # 格式化结果
+                    if "raw_analysis" in result:
+                        return f"📸 商品图像分析结果:\n\n{result['raw_analysis']}"
+                    else:
+                        formatted = "📸 商品信息:\n\n"
+                        for key, value in result.items():
+                            if key != "error":
+                                formatted += f"• {key}: {value}\n"
+                        return formatted
+                else:
+                    return "❌ 商品分析模式仅支持本地图像文件（需要提供 image_path）"
+
+            # 通用分析模式
+            else:
+                # 确定提示词
+                if custom_prompt:
+                    prompt = custom_prompt
+                else:
+                    prompt = "请详细描述这张图片的内容，包括主要元素、场景、颜色、风格、可能的商品类型等。"
+
+                # 执行分析
+                if image_path:
+                    result = analyzer.analyze_image_from_path(image_path, prompt)
+                else:
+                    result = analyzer.analyze_image_from_url(image_url, prompt)
+
+                return f"📸 图像分析结果:\n\n{result}"
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            return f"❌ 图像分析失败: {str(e)}\n\n详细信息:\n{error_detail}"
+
+
 def get_all_tools() -> List[BaseTool]:
     """获取所有工具的列表"""
     return [
@@ -1231,7 +1367,8 @@ def get_all_tools() -> List[BaseTool]:
         ConfirmScrapingTool(),            # 用户确认开始搜索（新增）
         SubmitSearchTaskTool(),           # 提交后台搜索任务（新增）
         ScrapeInfluencersTool(),          # 搜索并保存达人候选（保留用于兼容）
-        ProcessInfluencerListTool()       # 批量获取达人详细数据（保留用于兼容）
+        ProcessInfluencerListTool(),      # 批量获取达人详细数据（保留用于兼容）
+        AnalyzeImageTool()                # 图像分析工具（新增）
     ]
 
 

@@ -79,11 +79,17 @@ class SessionManagerDB:
         if session_id in self._agent_cache:
             return self._agent_cache[session_id]
 
-        # 获取会话的 user_id
-        user_id = self._get_session_user_id(session_id)
+        # 获取会话的 user_id 和 username
+        user_info = self._get_session_user_info(session_id)
+        user_id = user_info.get('user_id') if user_info else None
+        username = user_info.get('username') if user_info else None
 
-        # 创建新 Agent 实例，传递 user_id 和 session_id
-        agent = TikTokInfluencerAgent(user_id=user_id, session_id=session_id)
+        # 创建新 Agent 实例，传递 user_id, session_id 和 username
+        agent = TikTokInfluencerAgent(
+            user_id=user_id,
+            session_id=session_id,
+            username=username
+        )
 
         # 加载历史消息
         history = self.get_session_history(session_id, limit=50)
@@ -95,17 +101,32 @@ class SessionManagerDB:
 
         return agent
 
-    def _get_session_user_id(self, session_id: str) -> Optional[str]:
-        """获取会话对应的用户 ID"""
+    def _get_session_user_info(self, session_id: str) -> Optional[Dict]:
+        """获取会话对应的用户信息（user_id 和 username）"""
         try:
             with get_db_context() as db:
                 session = db.query(ChatSession).filter(
                     ChatSession.session_id == session_id
                 ).first()
-                return session.user_id if session else None
+
+                if not session:
+                    return None
+
+                # 获取用户信息
+                user = db.query(User).filter(User.user_id == session.user_id).first()
+
+                return {
+                    'user_id': session.user_id,
+                    'username': user.username if user else None
+                }
         except Exception as e:
-            print(f"❌ 获取会话用户 ID 失败: {e}")
+            print(f"❌ 获取会话用户信息失败: {e}")
             return None
+
+    def _get_session_user_id(self, session_id: str) -> Optional[str]:
+        """获取会话对应的用户 ID（保留向后兼容）"""
+        info = self._get_session_user_info(session_id)
+        return info.get('user_id') if info else None
 
     def save_message(
         self,

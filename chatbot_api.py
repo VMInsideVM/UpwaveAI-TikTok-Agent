@@ -22,7 +22,7 @@ from services.token_tracker import TokenTrackingCallbackHandler  # 导入 Token 
 
 # 导入认证相关
 from database.connection import get_db, get_db_context
-from database.models import User, ChatSession, Report
+from database.models import User, ChatSession, Report, Message
 from auth.dependencies import get_current_user, get_optional_user
 from fastapi import Depends, Query
 from sqlalchemy.orm import Session as DBSession
@@ -40,8 +40,7 @@ from api.user_orders import router as user_orders_router
 # 导入安全相关模块
 from utils.security import content_moderator, get_client_ip, rate_limiter
 from services.security_service import security_service
-from config.pricing import MAX_ROUNDS_PER_SESSION, calculate_max_daily_conversations
-from utils.timezone import today_start as get_today_start  # 东八区时间工具
+from config.pricing import MAX_ROUNDS_PER_SESSION
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -289,23 +288,31 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
 
                 # ⭐ 从 Agent 实例获取真实的达人数量
                 agent = session_manager.get_agent(session_id)
-                influencer_count = 10  # 默认值
+                influencer_count = None  # 初始值为 None
 
                 print(f"🔍 调试信息:")
                 print(f"  - session_id: {session_id}")
                 print(f"  - agent: {agent}")
-                print(f"  - has target_influencer_count attr: {hasattr(agent, 'target_influencer_count') if agent else False}")
 
                 if agent:
-                    print(f"  - target_influencer_count value: {getattr(agent, 'target_influencer_count', None)}")
+                    # 方法 1: 从 current_params 获取（优先）
+                    if hasattr(agent, 'current_params') and agent.current_params:
+                        target_count = agent.current_params.get('target_count')
+                        if target_count:
+                            influencer_count = target_count
+                            print(f"✅ 从 Agent.current_params 获取目标达人数: {influencer_count}")
 
-                    if hasattr(agent, 'target_influencer_count') and agent.target_influencer_count:
+                    # 方法 2: 从 target_influencer_count 属性获取（备用）
+                    if not influencer_count and hasattr(agent, 'target_influencer_count') and agent.target_influencer_count:
                         influencer_count = agent.target_influencer_count
-                        print(f"✅ 从 Agent 获取目标达人数: {influencer_count}")
-                    else:
-                        print(f"⚠️ Agent 的 target_influencer_count 为空或不存在，使用默认值: {influencer_count}")
+                        print(f"✅ 从 Agent.target_influencer_count 获取目标达人数: {influencer_count}")
+
+                # 如果仍然没有获取到，使用默认值 10
+                if not influencer_count:
+                    influencer_count = 10
+                    print(f"⚠️ 无法从 Agent 获取达人数量，使用默认值: {influencer_count}")
                 else:
-                    print(f"⚠️ 无法获取 Agent 实例，使用默认值: {influencer_count}")
+                    print(f"✅ 最终使用的达人数量: {influencer_count}")
 
                 await websocket.send_json({
                     "type": "confirm_generate",
@@ -493,50 +500,7 @@ async def create_session(
 ):
     """创建新的聊天会话（需要认证）"""
     try:
-        # ⭐ 检查用户积分是否足够（至少需要100积分）
-        MIN_CREDITS_REQUIRED = 100
-        from database.models import UserUsage
-
-        usage = db.query(UserUsage).filter(
-            UserUsage.user_id == current_user.user_id
-        ).first()
-
-        if usage:
-            remaining_credits = usage.total_credits - usage.used_credits
-            if remaining_credits < MIN_CREDITS_REQUIRED:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"积分不足：您当前剩余 {remaining_credits} 积分，至少需要 {MIN_CREDITS_REQUIRED} 积分才能创建新对话。每个达人消耗100积分。"
-                )
-
-            # ⭐ 检查每日新对话创建限制（基于积分动态计算）
-            today_start = get_today_start()  # 使用东八区时间
-
-            # 统计今日已创建的新对话数（有消息的会话才算）
-            # 先获取今日所有会话
-            today_sessions = db.query(ChatSession.session_id).filter(
-                ChatSession.user_id == current_user.user_id,
-                ChatSession.created_at >= today_start
-            ).all()
-
-            # 统计有消息的会话数
-            today_sessions_count = 0
-            for session in today_sessions:
-                message_count = db.query(Message).filter(
-                    Message.session_id == session.session_id
-                ).count()
-                if message_count > 0:
-                    today_sessions_count += 1
-
-            # 计算用户每日最大新对话数
-            max_daily_conversations = calculate_max_daily_conversations(remaining_credits)
-
-            if today_sessions_count >= max_daily_conversations:
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"今日新对话数已达上限（{today_sessions_count}/{max_daily_conversations}）。当前积分 {remaining_credits} 对应每日 {max_daily_conversations} 个新对话。充值可增加额度。"
-                )
-        
+        # ⭐ 取消积分限制 - 所有用户都可以创建新对话
         # 检查 Playwright API 是否可用
         if not check_playwright_api():
             raise HTTPException(
@@ -1134,24 +1098,8 @@ async def websocket_endpoint(
                             })
                             continue
 
-                    # ⭐ 检查用户积分是否足够（至少需要100积分）
-                    MIN_CREDITS_REQUIRED = 100
-                    with get_db_context() as db:
-                        from database.models import UserUsage
-                        usage = db.query(UserUsage).filter(
-                            UserUsage.user_id == user_id
-                        ).first()
+                    # ⭐ 取消积分限制 - 所有用户都可以发送消息
 
-                        if usage:
-                            remaining_credits = usage.total_credits - usage.used_credits
-                            if remaining_credits < MIN_CREDITS_REQUIRED:
-                                await websocket.send_json({
-                                    "type": "error",
-                                    "content": f"积分不足：您当前剩余 {remaining_credits} 积分，至少需要 {MIN_CREDITS_REQUIRED} 积分才能使用。每个达人消耗100积分。",
-                                    "timestamp": datetime.now().isoformat()
-                                })
-                                continue
-                    
                     # 保存用户消息到数据库
                     session_manager.save_message(
                         session_id=session_id,

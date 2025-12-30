@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/logo.png" type="image/png">
     <title>管理员后台 - TikTok 达人推荐 system</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -1703,29 +1704,126 @@
         // 加载任务队列
         async function loadTasks() {
             try {
-                const response = await apiRequest('/api/admin/tasks');
+                const response = await fetch('http://127.0.0.1:8000/api/admin/tasks');
                 const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || '加载失败');
+                }
+
+                // 构建当前任务信息
+                let currentTaskHtml = '<div style="color: #666; font-style: italic;">无任务运行</div>';
+                if (data.current_task) {
+                    const task = data.current_task;
+                    currentTaskHtml = `
+                        <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                            <div style="display: grid; grid-template-columns: 120px 1fr; gap: 10px; font-size: 15px;">
+                                <div style="font-weight: 600; color: #1e40af;">用户名:</div>
+                                <div>${task.username}</div>
+
+                                <div style="font-weight: 600; color: #1e40af;">用户ID:</div>
+                                <div>${task.user_id}</div>
+
+                                <div style="font-weight: 600; color: #1e40af;">会话ID:</div>
+                                <div style="font-family: monospace; font-size: 13px;">${task.session_id.substring(0, 12)}...</div>
+
+                                <div style="font-weight: 600; color: #1e40af;">任务类型:</div>
+                                <div>${task.task_type === 'scraping' ? '🕷️ 达人搜索' : task.task_type}</div>
+
+                                <div style="font-weight: 600; color: #1e40af;">运行时间:</div>
+                                <div>${task.elapsed_time_formatted}</div>
+
+                                ${data.stop_requested ? `
+                                    <div style="grid-column: 1 / -1; margin-top: 10px;">
+                                        <span style="color: #dc2626; font-weight: 600;">⚠️ 已请求停止，等待任务响应...</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <div style="margin-top: 15px; text-align: right;">
+                                <button
+                                    class="btn btn-danger btn-sm"
+                                    onclick="stopCurrentTask()"
+                                    ${data.stop_requested ? 'disabled' : ''}
+                                >
+                                    ${data.stop_requested ? '⏳ 停止中...' : '⏹️ 停止任务'}
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 构建等待队列信息
+                let queueHtml = '';
+                if (data.queued_tasks && data.queued_tasks.length > 0) {
+                    queueHtml = `
+                        <div style="margin-top: 25px;">
+                            <h3 style="font-size: 16px; margin-bottom: 10px; color: #374151;">
+                                等待队列 (${data.queue_length} 个任务)
+                            </h3>
+                            <div style="background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                                ${data.queued_tasks.map((task, idx) => `
+                                    <div style="margin-bottom: ${idx < data.queued_tasks.length - 1 ? '10px' : '0'}; padding-bottom: ${idx < data.queued_tasks.length - 1 ? '10px' : '0'}; ${idx < data.queued_tasks.length - 1 ? 'border-bottom: 1px solid #fde68a;' : ''}">
+                                        <div style="font-weight: 600; color: #92400e;">
+                                            #${idx + 1} - ${task.username}
+                                        </div>
+                                        <div style="font-size: 13px; color: #78350f; margin-top: 3px;">
+                                            等待时间: ${Math.floor(task.waiting_time / 60)}分${Math.floor(task.waiting_time % 60)}秒
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
 
                 const html = `
                     <div style="font-size: 16px; line-height: 1.8;">
-                        <p><strong>当前任务:</strong> ${data.current_task || '无'}</p>
-                        <p><strong>队列长度:</strong> ${data.queue_length || 0}</p>
-                        <p><strong>处理中:</strong> ${data.is_processing ? '是' : '否'}</p>
-                        ${data.queue_length > 0 ? `
-                            <div style="margin-top: 20px;">
-                                <p><strong>等待队列:</strong></p>
-                                <ul style="margin-left: 20px;">
-                                    ${data.queued_reports?.map(r => `<li>${r}</li>`).join('') || ''}
-                                </ul>
-                            </div>
-                        ` : ''}
+                        <div style="margin-bottom: 20px;">
+                            <h3 style="font-size: 16px; margin-bottom: 10px; color: #374151;">
+                                ${data.is_processing ? '🟢 处理中' : '⚪ 空闲'}
+                            </h3>
+                            ${currentTaskHtml}
+                        </div>
+                        ${queueHtml}
                     </div>
                 `;
 
                 document.getElementById('tasksInfo').innerHTML = html;
             } catch (error) {
                 console.error('Failed to load tasks:', error);
-                document.getElementById('tasksInfo').innerHTML = '<div class="empty-state"><div class="empty-state-icon">😕</div><p>加载失败</p></div>';
+                document.getElementById('tasksInfo').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">😕</div>
+                        <p>加载失败: ${error.message}</p>
+                        <p style="font-size: 13px; color: #666; margin-top: 10px;">请确保 Playwright API 服务 (端口 8000) 正在运行</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 停止当前任务
+        async function stopCurrentTask() {
+            if (!confirm('确定要停止当前任务吗？\n\n任务会在下一个检查点停止，正在处理的数据可能会丢失。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/admin/tasks/stop', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                    // 刷新任务队列显示
+                    await loadTasks();
+                } else {
+                    alert('❌ ' + data.message);
+                }
+            } catch (error) {
+                console.error('Failed to stop task:', error);
+                alert('停止任务失败: ' + error.message);
             }
         }
 
@@ -2522,13 +2620,27 @@
                     `;
 
                     orders.forEach(order => {
+                        // ⭐ 检查订单是否已过期（待支付状态且超过过期时间）
+                        const now = new Date();
+                        const isExpired = order.payment_status === 'pending' &&
+                            order.expired_at &&
+                            new Date(order.expired_at) < now;
+
+                        // 确定显示状态：如果是待支付但已过期，显示为"已取消"
+                        const displayStatus = isExpired ? 'cancelled' : order.payment_status;
+
                         let statusBadge = '';
-                        switch (order.payment_status) {
+                        switch (displayStatus) {
                             case 'pending': statusBadge = '<span class="badge badge-warning">待支付</span>'; break;
                             case 'paid': statusBadge = '<span class="badge badge-success">已支付</span>'; break;
                             case 'cancelled': statusBadge = '<span class="badge" style="background: #9ca3af; color: white;">已取消</span>'; break;
                             case 'refunded': statusBadge = '<span class="badge badge-danger">已退款</span>'; break;
                             case 'partial_refunded': statusBadge = '<span class="badge" style="background: #f59e0b; color: white;">部分退款</span>'; break;
+                        }
+
+                        // 如果是过期订单，添加过期标记
+                        if (isExpired) {
+                            statusBadge = '<span class="badge" style="background: #9ca3af; color: white;">已取消 (超时)</span>';
                         }
 
                         let methodIcon = order.payment_method === 'alipay' ? '💙' : '💚';
@@ -2556,7 +2668,7 @@
                                 <td>
                                     <button class="btn btn-sm" onclick="viewOrderDetail('${order.order_id}')">详情</button>
                                     ${order.payment_status === 'paid' || order.payment_status === 'partial_refunded' ?
-                                        `<button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="openRefundModal('${order.order_id}', ${order.amount_yuan}, ${order.refunded_amount || 0})">退款</button>` : ''}
+                                `<button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="openRefundModal('${order.order_id}', ${order.amount_yuan}, ${order.refunded_amount || 0})">退款</button>` : ''}
                                 </td>
                             </tr>
                         `;
@@ -2668,9 +2780,9 @@
                                 </td>
                                 <td>
                                     ${refund.status === 'pending' ?
-                                        `<button class="btn btn-sm" style="background: #10b981; color: white;" onclick="reviewRefund('${refund.refund_id}', 'approve')">✅ 同意</button>
+                                `<button class="btn btn-sm" style="background: #10b981; color: white;" onclick="reviewRefund('${refund.refund_id}', 'approve')">✅ 同意</button>
                                          <button class="btn btn-sm" style="background: #ef4444; color: white; margin-top: 4px;" onclick="reviewRefund('${refund.refund_id}', 'reject')">❌ 拒绝</button>`
-                                        : '-'}
+                                : '-'}
                                 </td>
                             </tr>
                         `;
@@ -2856,7 +2968,7 @@ ${order.refunds && order.refunds.length > 0 ? '\n退款记录:\n' + order.refund
 
         // 在switchTab函数中添加订单加载
         const originalSwitchTab = switchTab;
-        switchTab = function(tabName) {
+        switchTab = function (tabName) {
             originalSwitchTab(tabName);
             if (tabName === 'orders') {
                 loadOrders();

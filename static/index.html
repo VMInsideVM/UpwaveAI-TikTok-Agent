@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/logo.png" type="image/png">
     <title>TikTok达人推荐Agent</title>
     <style>
         :root {
@@ -1185,12 +1186,166 @@
                 opacity: 1;
             }
         }
+
+        /* 充值提示气泡 */
+        .recharge-hint {
+            display: none;
+            position: fixed;
+            top: 70px;
+            right: 220px;
+            z-index: 9999;
+            animation: bounceIn 0.5s ease;
+        }
+
+        .recharge-hint.show {
+            display: block;
+        }
+
+        .recharge-hint-content {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            max-width: 320px;
+            position: relative;
+        }
+
+        .recharge-hint-icon {
+            font-size: 32px;
+            animation: pulse 2s ease infinite;
+        }
+
+        .recharge-hint-text {
+            flex: 1;
+        }
+
+        .recharge-hint-text strong {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .recharge-hint-text p {
+            font-size: 13px;
+            opacity: 0.95;
+            margin: 0;
+            line-height: 1.4;
+        }
+
+        .recharge-hint-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.2s;
+        }
+
+        .recharge-hint-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .recharge-hint-arrow {
+            position: absolute;
+            top: -8px;
+            right: 40px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 8px solid #f59e0b;
+        }
+
+        /* 充值按钮高亮效果 */
+        .recharge-btn.highlight {
+            animation: rechargeGlow 1.5s ease infinite;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.8) !important;
+        }
+
+        @keyframes bounceIn {
+            0% {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.8);
+            }
+
+            50% {
+                transform: translateY(5px) scale(1.05);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+        }
+
+        @keyframes rechargeGlow {
+
+            0%,
+            100% {
+                box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+            }
+
+            50% {
+                box-shadow: 0 0 25px rgba(245, 158, 11, 0.9);
+            }
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .recharge-hint {
+                top: 60px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+
+            .recharge-hint-arrow {
+                right: 20px;
+            }
+        }
     </style>
     <!-- QRCode.js for generating QR codes -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 
 <body>
+    <!-- 充值提示气泡 -->
+    <div class="recharge-hint" id="rechargeHint">
+        <div class="recharge-hint-content">
+            <div class="recharge-hint-icon">💳</div>
+            <div class="recharge-hint-text">
+                <strong>积分不足</strong>
+                <p>您当前积分为 0，每创建对话至少需要 100 积分</p>
+            </div>
+            <button class="recharge-hint-close" onclick="closeRechargeHint()">×</button>
+        </div>
+        <div class="recharge-hint-arrow"></div>
+    </div>
+
     <!-- 侧边栏遮罩（仅移动端显示） -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
@@ -1198,7 +1353,7 @@
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-logo">
-                <img src="/logo.svg" alt="Logo">
+                <img src="/static/logo.png" alt="Logo">
                 <span class="sidebar-logo-text">TikTok达人推荐Agent</span>
             </div>
             <div class="sidebar-actions">
@@ -1226,8 +1381,7 @@
                     <div class="quota-badge" id="quotaBadge" onclick="openCreditHistoryModal()"
                         style="cursor: pointer; transition: all 0.2s;"
                         onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'"
-                        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow=''"
-                        title="点击查看积分变动历史">
+                        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow=''" title="点击查看积分变动历史">
                         剩余积分: --
                     </div>
                     <button class="recharge-btn" onclick="openRechargeModal()" title="充值积分"
@@ -1373,33 +1527,47 @@
             <div class="modal-body" id="rechargeBody">
                 <!-- 步骤1: 选择套餐 -->
                 <div id="rechargeStep1">
-                    <h4 style="margin-bottom: 16px; color: var(--text-color);">选择充值套餐</h4>
-                    <div id="tierGrid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                    <!-- 积分说明 -->
+                    <div
+                        style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-left: 3px solid #3b82f6; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">💡</span>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: #1e40af; font-size: 13px; margin-bottom: 4px;">积分说明
+                                </div>
+                                <div style="color: #1e3a8a; font-size: 12px; line-height: 1.4;">
+                                    <strong>100积分</strong> = 1个达人 (推荐9个精选：Tier1×4, Tier2×3, Tier3×2)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4 style="margin-bottom: 12px; color: var(--text-color); font-size: 15px;">选择套餐</h4>
+                    <div id="tierGrid"
+                        style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px;">
                         <!-- 动态加载套餐 -->
                     </div>
 
-                    <h4 style="margin: 24px 0 16px; color: var(--text-color);">选择支付方式</h4>
-                    <div id="paymentMethods" style="display: flex; gap: 12px;">
+                    <h4 style="margin-bottom: 10px; color: var(--text-color); font-size: 15px;">支付方式</h4>
+                    <div id="paymentMethods" style="display: flex; gap: 10px; margin-bottom: 16px;">
                         <button class="payment-method-btn" data-method="alipay" onclick="selectPaymentMethod('alipay')"
-                            style="flex: 1; padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; background: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: all 0.2s;">
-                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect fill='%231677FF' width='48' height='48' rx='8'/%3E%3Cpath fill='white' d='M35.5 28.5c-3.5 1.5-8 2.5-11.5 2.5-5 0-9-1.5-9-1.5V18h20v10.5z'/%3E%3C/svg%3E"
-                                alt="支付宝" style="width: 40px; height: 40px;">
-                            <span style="font-weight: 500; color: #1677FF;">支付宝</span>
+                            style="flex: 1; padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; background: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all 0.2s;">
+                            <img src="/static/alipay_payment.png" alt="支付宝" style="width: 32px; height: 32px;">
+                            <span style="font-weight: 500; color: #009FE8; font-size: 13px;">支付宝</span>
                         </button>
                         <button class="payment-method-btn" data-method="wechat" onclick="selectPaymentMethod('wechat')"
-                            style="flex: 1; padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; background: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: all 0.2s;">
-                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect fill='%2307C160' width='48' height='48' rx='8'/%3E%3Cpath fill='white' d='M24 12c-7.7 0-14 5.4-14 12 0 3.5 1.7 6.6 4.4 8.8L13 38l6-3c1.6.5 3.3.8 5 .8 7.7 0 14-5.4 14-12S31.7 12 24 12z'/%3E%3C/svg%3E"
-                                alt="微信" style="width: 40px; height: 40px;">
-                            <span style="font-weight: 500; color: #07C160;">微信支付</span>
+                            style="flex: 1; padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; background: white; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all 0.2s;">
+                            <img src="/static/wechat_payment.png" alt="微信" style="width: 32px; height: 32px;">
+                            <span style="font-weight: 500; color: #15BA11; font-size: 13px;">微信支付</span>
                         </button>
                     </div>
 
-                    <div style="margin-top: 24px; text-align: center;">
+                    <div style="text-align: center;">
                         <button id="createOrderBtn" onclick="createPaymentOrder()" disabled
-                            style="padding: 12px 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; opacity: 0.5; transition: all 0.2s;">
+                            style="padding: 10px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; opacity: 0.5; transition: all 0.2s;">
                             确认充值
                         </button>
-                        <p style="margin-top: 12px; font-size: 12px; color: #9ca3af;">请先选择套餐和支付方式</p>
+                        <p style="margin-top: 8px; font-size: 11px; color: #9ca3af;">请先选择套餐和支付方式</p>
                     </div>
                 </div>
 
@@ -1464,11 +1632,14 @@
             </div>
             <div class="modal-body">
                 <!-- 标签页切换 -->
-                <div style="display: flex; gap: 16px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
-                    <button id="ordersTabBtn" onclick="switchOrderTab('orders')" style="padding: 12px 24px; background: none; border: none; border-bottom: 3px solid var(--primary-color); color: var(--primary-color); font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                <div
+                    style="display: flex; gap: 16px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
+                    <button id="ordersTabBtn" onclick="switchOrderTab('orders')"
+                        style="padding: 12px 24px; background: none; border: none; border-bottom: 3px solid var(--primary-color); color: var(--primary-color); font-weight: 600; cursor: pointer; transition: all 0.2s;">
                         充值订单
                     </button>
-                    <button id="refundsTabBtn" onclick="switchOrderTab('refunds')" style="padding: 12px 24px; background: none; border: none; border-bottom: 3px solid transparent; color: #6b7280; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+                    <button id="refundsTabBtn" onclick="switchOrderTab('refunds')"
+                        style="padding: 12px 24px; background: none; border: none; border-bottom: 3px solid transparent; color: #6b7280; font-weight: 500; cursor: pointer; transition: all 0.2s;">
                         售后退款
                     </button>
                 </div>
@@ -1534,16 +1705,21 @@
             <div class="modal-body">
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 500;">订单号</label>
-                    <input type="text" id="refundOrderNo" readonly class="chat-input" style="width: 100%; border-radius: 8px; background: #f3f4f6;">
+                    <input type="text" id="refundOrderNo" readonly class="chat-input"
+                        style="width: 100%; border-radius: 8px; background: #f3f4f6;">
                 </div>
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">退款原因 <span style="color: red;">*</span></label>
-                    <textarea id="refundReason" class="chat-input" style="width: 100%; border-radius: 8px; min-height: 100px;" placeholder="请说明退款原因..."></textarea>
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">退款原因 <span
+                            style="color: red;">*</span></label>
+                    <textarea id="refundReason" class="chat-input"
+                        style="width: 100%; border-radius: 8px; min-height: 100px;" placeholder="请说明退款原因..."></textarea>
                 </div>
                 <div id="refundMessage" style="margin-bottom: 16px; color: #ef4444; display: none;"></div>
                 <div style="text-align: right; display: flex; gap: 10px; justify-content: flex-end;">
-                    <button class="sidebar-btn" onclick="closeRefundModal()" style="background: #e5e7eb; width: auto; padding: 10px 24px;">取消</button>
-                    <button class="sidebar-btn" onclick="submitRefundRequest()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: auto; padding: 10px 24px;">提交申请</button>
+                    <button class="sidebar-btn" onclick="closeRefundModal()"
+                        style="background: #e5e7eb; width: auto; padding: 10px 24px;">取消</button>
+                    <button class="sidebar-btn" onclick="submitRefundRequest()"
+                        style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: auto; padding: 10px 24px;">提交申请</button>
                 </div>
             </div>
         </div>
@@ -1634,15 +1810,24 @@
                     • 报告生成成功后会有邮件或短信提醒，可在报告库查看
                 </div>
 
-                <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                    <button onclick="closeConfirmGenerateModal()"
-                        style="padding: 10px 24px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        取消
+                <div style="display: flex; gap: 12px; justify-content: space-between; align-items: center;">
+                    <!-- 左侧：充值按钮（积分不足时显示） -->
+                    <button id="rechargeFromModalBtn" onclick="openRechargeModal(); closeConfirmGenerateModal();"
+                        style="padding: 10px 24px; border: none; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; display: none;">
+                        💳 去充值
                     </button>
-                    <button id="confirmGenerateBtn" onclick="confirmGenerate()"
-                        style="padding: 10px 24px; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
-                        确认生成
-                    </button>
+
+                    <!-- 右侧：取消和确认按钮 -->
+                    <div style="display: flex; gap: 12px; margin-left: auto;">
+                        <button onclick="closeConfirmGenerateModal()"
+                            style="padding: 10px 24px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); border-radius: 6px; cursor: pointer; font-size: 14px;">
+                            取消
+                        </button>
+                        <button id="confirmGenerateBtn" onclick="confirmGenerate()"
+                            style="padding: 10px 24px; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+                            确认生成
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1710,6 +1895,31 @@
                 return false;
             }
             return true;
+        }
+
+        // 充值提示功能
+        function showRechargeHint() {
+            const hint = document.getElementById('rechargeHint');
+            const rechargeBtn = document.querySelector('.recharge-btn');
+
+            hint.classList.add('show');
+            rechargeBtn.classList.add('highlight');
+
+            // 5秒后自动隐藏提示（但保持按钮高亮）
+            setTimeout(() => {
+                hint.classList.remove('show');
+            }, 5000);
+        }
+
+        function closeRechargeHint() {
+            const hint = document.getElementById('rechargeHint');
+            const rechargeBtn = document.querySelector('.recharge-btn');
+
+            hint.classList.remove('show');
+            rechargeBtn.classList.remove('highlight');
+
+            // 记录用户已关闭提示
+            localStorage.setItem('recharge_hint_closed', 'true');
         }
 
         // 初始化
@@ -1833,6 +2043,12 @@
                 const user = await response.json();
                 document.getElementById('username').textContent = user.username;
                 document.getElementById('quotaBadge').textContent = `剩余积分: ${user.remaining_credits}`;
+
+                // ⭐ 检查是否显示充值提示（积分为0且用户未关闭过提示）
+                const rechargeHintClosed = localStorage.getItem('recharge_hint_closed');
+                if (user.remaining_credits === 0 && !rechargeHintClosed) {
+                    setTimeout(() => showRechargeHint(), 800);
+                }
 
                 // ⭐ 检查积分是否足够（至少需要100积分才能使用）
                 const MIN_CREDITS_REQUIRED = 100;
@@ -3015,6 +3231,8 @@
 
                 // 检查积分是否足够
                 const confirmBtn = document.getElementById('confirmGenerateBtn');
+                const rechargeBtn = document.getElementById('rechargeFromModalBtn');
+
                 if (currentCredits < creditsToDeduct) {
                     // 积分不足，禁用确认按钮
                     document.getElementById('currentCredits').style.color = '#d9534f';
@@ -3023,6 +3241,12 @@
                     confirmBtn.style.opacity = '0.5';
                     confirmBtn.style.cursor = 'not-allowed';
                     confirmBtn.textContent = `积分不足，需要 ${creditsToDeduct} 积分`;
+
+                    // ⭐ 显示充值按钮
+                    rechargeBtn.style.display = 'block';
+
+                    // ⭐ 在聊天界面添加"提交任务"按钮（用户充值后可点击）
+                    addSubmitTaskButton(influencerCount, creditsToDeduct);
                 } else {
                     // 积分充足
                     document.getElementById('currentCredits').style.color = 'var(--primary-color)';
@@ -3031,6 +3255,12 @@
                     confirmBtn.style.opacity = '1';
                     confirmBtn.style.cursor = 'pointer';
                     confirmBtn.textContent = '确认生成';
+
+                    // ⭐ 隐藏充值按钮
+                    rechargeBtn.style.display = 'none';
+
+                    // ⭐ 移除"提交任务"按钮（如果存在）
+                    removeSubmitTaskButton();
                 }
 
                 // 保存待确认的数据
@@ -3049,6 +3279,94 @@
         function closeConfirmGenerateModal() {
             document.getElementById('confirmGenerateModal').classList.remove('show');
             pendingGenerateData = null;
+        }
+
+        // ⭐ 在聊天界面添加"提交任务"按钮（积分不足时使用）
+        function addSubmitTaskButton(influencerCount, creditsNeeded) {
+            // 移除旧按钮（如果存在）
+            removeSubmitTaskButton();
+
+            const messagesDiv = document.getElementById('chatMessages');
+
+            // 创建按钮容器
+            const buttonContainer = document.createElement('div');
+            buttonContainer.id = 'submitTaskButtonContainer';
+            buttonContainer.style.cssText = 'padding: 16px; margin: 16px; background: linear-gradient(135deg, #fff3cd 0%, #ffe8a1 100%); border: 2px solid #ffc107; border-radius: 12px; text-align: center; box-shadow: 0 4px 12px rgba(255, 193, 7, 0.2);';
+
+            buttonContainer.innerHTML = `
+                <div style="margin-bottom: 12px;">
+                    <p style="margin: 0 0 8px 0; color: #856404; font-size: 16px; font-weight: 600;">
+                        ⚠️ 积分不足，任务待提交
+                    </p>
+                    <p style="margin: 0; color: #856404; font-size: 14px;">
+                        需要 <strong>${creditsNeeded}</strong> 积分（${influencerCount} 个达人 × 100 积分/个）<br>
+                        <span style="font-size: 13px;">请先充值积分，然后点击下方按钮提交任务</span>
+                    </p>
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                    <button onclick="openRechargeModal()"
+                        style="padding: 12px 24px; border: none; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3); transition: transform 0.2s;"
+                        onmouseover="this.style.transform='translateY(-2px)'"
+                        onmouseout="this.style.transform='translateY(0)'">
+                        💳 立即充值
+                    </button>
+                    <button onclick="retrySubmitTask()"
+                        style="padding: 12px 24px; border: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3); transition: transform 0.2s;"
+                        onmouseover="this.style.transform='translateY(-2px)'"
+                        onmouseout="this.style.transform='translateY(0)'">
+                        🚀 提交任务
+                    </button>
+                </div>
+                <p style="margin: 12px 0 0 0; color: #856404; font-size: 12px;">
+                    💡 充值后点击"提交任务"按钮，系统会重新检查积分并弹出确认窗口
+                </p>
+            `;
+
+            messagesDiv.appendChild(buttonContainer);
+
+            // 滚动到底部
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            console.log(`✅ 已添加"提交任务"按钮 (需要${creditsNeeded}积分)`);
+        }
+
+        // ⭐ 移除"提交任务"按钮
+        function removeSubmitTaskButton() {
+            const existingButton = document.getElementById('submitTaskButtonContainer');
+            if (existingButton) {
+                existingButton.remove();
+                console.log('🗑️ 已移除"提交任务"按钮');
+            }
+        }
+
+        // ⭐ 重新尝试提交任务（充值后点击）
+        async function retrySubmitTask() {
+            console.log('🔄 用户点击"提交任务"，重新检查积分...');
+
+            try {
+                // 1. 刷新用户积分信息
+                await loadUserInfo();
+                console.log('✅ 积分信息已刷新');
+
+                // 2. 重新触发确认弹窗（会自动检查积分）
+                if (pendingGenerateData) {
+                    // 直接调用 handleConfirmGenerate 重新处理
+                    await handleConfirmGenerate(pendingGenerateData);
+                } else {
+                    // ⭐ 修改：如果 pendingGenerateData 丢失，自动发送"确认"给 Agent
+                    console.log('⚠️ pendingGenerateData 已丢失，自动发送"确认"触发任务提交');
+
+                    // 移除提交任务按钮
+                    removeSubmitTaskButton();
+
+                    // 自动发送"确认"消息给 Agent
+                    sendMessage('确认');
+                }
+
+            } catch (error) {
+                console.error('❌ 重新提交任务失败:', error);
+                alert('刷新积分失败，请稍后重试');
+            }
         }
 
         // 确认生成报告
@@ -3916,13 +4234,13 @@
                     <td style="padding: 12px; font-size: 12px;">${new Date(order.created_at).toLocaleString('zh-CN')}</td>
                     <td style="padding: 12px; text-align: center;">
                         ${isPending && !expired ?
-                            `<div style="display: flex; gap: 8px; justify-content: center;">
+                        `<div style="display: flex; gap: 8px; justify-content: center;">
                                 <button onclick="repayOrder('${order.order_id}')" style="padding: 6px 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">去付款</button>
                                 <button onclick="cancelOrder('${order.order_id}', '${order.order_no}')" style="padding: 6px 12px; background: #94a3b8; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">取消</button>
                             </div>` :
-                          order.payment_status === 'paid' && !order.refund_status ?
+                        order.payment_status === 'paid' && !order.refund_status ?
                             `<button onclick="openRefundModal('${order.order_id}', '${order.order_no}')" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">申请退款</button>` :
-                          '-'}
+                            '-'}
                     </td>
                 </tr>
             `}).join('');

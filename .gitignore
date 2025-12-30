@@ -1,5 +1,5 @@
 # Ignore specified folders
-categories/
+certs/
 docs/
 influencer/
 output/
@@ -60,4 +60,4 @@ certs/
 .DS_Store
 Thumbs.db
 nul
-.env
+

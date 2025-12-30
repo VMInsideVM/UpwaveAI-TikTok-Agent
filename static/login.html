@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/logo.png" type="image/png">
     <title>登录 - TikTok 达人推荐系统</title>
     <style>
         * {
@@ -36,6 +38,7 @@
                 opacity: 0;
                 transform: translateY(-20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -190,7 +193,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .btn-text {
@@ -217,6 +222,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="login-container">
         <div class="logo">
@@ -229,13 +235,15 @@
         <form id="loginForm">
             <div class="form-group">
                 <label for="identifier">手机号 / 用户名</label>
-                <input type="text" id="identifier" name="identifier" required autocomplete="username" placeholder="请输入手机号或用户名">
+                <input type="text" id="identifier" name="identifier" required autocomplete="username"
+                    placeholder="请输入手机号或用户名">
             </div>
 
             <div class="form-group">
                 <label for="password">密码</label>
                 <div class="password-toggle">
-                    <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="请输入密码">
+                    <input type="password" id="password" name="password" required autocomplete="current-password"
+                        placeholder="请输入密码">
                     <span class="password-toggle-icon" onclick="togglePassword()">👁️</span>
                 </div>
                 <div class="forgot-password">
@@ -370,4 +378,5 @@
         });
     </script>
 </body>
+
 </html>

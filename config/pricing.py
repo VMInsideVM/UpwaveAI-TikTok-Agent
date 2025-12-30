@@ -4,25 +4,19 @@ Credit Recharge Pricing Configuration
 """
 
 # 充值套餐定义
+# 计算规则：100积分可获得9个达人推荐（Tier1:4个、Tier2:3个、Tier3:2个）
 CREDIT_TIERS = {
-    "tier_test": {
-        "id": "tier_test",
-        "price_yuan": 1,
-        "price_fen": 100,  # 支付接口使用分为单位
-        "credits": 100,
-        "name": "测试套餐",
-        "description": "仅供测试使用",
-        "popular": False,
-        "test_only": True  # 标记为测试套餐
-    },
     "tier_299": {
         "id": "tier_299",
         "price_yuan": 299,
         "price_fen": 29900,
         "credits": 1000,
         "name": "基础套餐",
-        "description": "适合个人用户",
-        "popular": False
+        "description": "适合初次尝试的用户",
+        "popular": False,
+        "search_count": 10,
+        "influencers_per_search": 9,
+        "total_influencers": 90
     },
     "tier_599": {
         "id": "tier_599",
@@ -30,8 +24,11 @@ CREDIT_TIERS = {
         "price_fen": 59900,
         "credits": 2000,
         "name": "标准套餐",
-        "description": "最受欢迎",
-        "popular": True
+        "description": "性价比之选，最受欢迎",
+        "popular": True,
+        "search_count": 20,
+        "influencers_per_search": 9,
+        "total_influencers": 180
     },
     "tier_999": {
         "id": "tier_999",
@@ -39,8 +36,11 @@ CREDIT_TIERS = {
         "price_fen": 99900,
         "credits": 4000,
         "name": "专业套餐",
-        "description": "适合企业用户",
-        "popular": False
+        "description": "专业用户首选，海量推荐",
+        "popular": False,
+        "search_count": 40,
+        "influencers_per_search": 9,
+        "total_influencers": 360
     },
     "tier_1799": {
         "id": "tier_1799",
@@ -48,8 +48,11 @@ CREDIT_TIERS = {
         "price_fen": 179900,
         "credits": 8000,
         "name": "企业套餐",
-        "description": "最大优惠",
-        "popular": False
+        "description": "企业级服务，批量推荐",
+        "popular": False,
+        "search_count": 80,
+        "influencers_per_search": 9,
+        "total_influencers": 720
     }
 }
 
