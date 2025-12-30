@@ -214,7 +214,7 @@ async def get_dashboard_charts(
     获取仪表盘图表数据
     """
     from datetime import timedelta
-    from sqlalchemy import func, cast, Date
+    from sqlalchemy import func
 
     # 生成日期范围
     end_date = datetime.utcnow().date()
@@ -226,16 +226,16 @@ async def get_dashboard_charts(
     
     # 1. 每日新注册用户
     new_users_query = db.query(
-        cast(User.created_at, Date).label('date'),
+        func.date(User.created_at).label('date'),
         func.count(User.user_id).label('count')
     ).filter(
         User.created_at >= start_date
     ).group_by(
-        cast(User.created_at, Date)
+        func.date(User.created_at)
     ).all()
     
     new_users_map = {row.date: row.count for row in new_users_query}
-    new_users_data = [new_users_map.get(d, 0) for d in date_range]
+    new_users_data = [new_users_map.get(d_label, 0) for d_label in date_labels]
 
     # 2. 总用户数曲线 (累积)
     # 先获取 start_date 之前的总用户数
@@ -245,35 +245,35 @@ async def get_dashboard_charts(
     
     total_users_data = []
     current_total = base_count
-    for d in date_range:
-        current_total += new_users_map.get(d, 0)
+    for d_label in date_labels:
+        current_total += new_users_map.get(d_label, 0)
         total_users_data.append(current_total)
 
     # 3. 每日 Token 消耗
     token_usage_query = db.query(
-        cast(TokenUsage.created_at, Date).label('date'),
+        func.date(TokenUsage.created_at).label('date'),
         func.sum(TokenUsage.total_tokens).label('count')
     ).filter(
         TokenUsage.created_at >= start_date
     ).group_by(
-        cast(TokenUsage.created_at, Date)
+        func.date(TokenUsage.created_at)
     ).all()
     
     token_usage_map = {row.date: (row.count or 0) for row in token_usage_query}
-    token_usage_data = [token_usage_map.get(d, 0) for d in date_range]
+    token_usage_data = [token_usage_map.get(d_label, 0) for d_label in date_labels]
 
     # 4. 每日生成的报告
     reports_query = db.query(
-        cast(Report.created_at, Date).label('date'),
+        func.date(Report.created_at).label('date'),
         func.count(Report.report_id).label('count')
     ).filter(
         Report.created_at >= start_date
     ).group_by(
-        cast(Report.created_at, Date)
+        func.date(Report.created_at)
     ).all()
     
     reports_map = {row.date: row.count for row in reports_query}
-    reports_data = [reports_map.get(d, 0) for d in date_range]
+    reports_data = [reports_map.get(d_label, 0) for d_label in date_labels]
 
     return {
         "dates": date_labels,

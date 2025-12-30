@@ -209,11 +209,11 @@ class TikTokInfluencerReportAgent:
                 print(f"❌ 评分失败: {score_result.get('error')}")
                 return None
 
-            # 推荐层级: Tier 1 (4x) + Tier 2 (3x) + Tier 3 (2x) = 9x
-            total_needed = target_count * 9  # 总共需要 9 倍的达人
+            # 推荐层级: Tier 1 (1x) + Tier 2 (2x) + Tier 3 (3x) = 6x
+            total_needed = target_count * 6  # 总共需要 6 倍的达人
             ranked_influencers = score_result['ranked_influencers'][:total_needed]
             print(f"✓ 评分完成,Top {len(ranked_influencers)}达人:")
-            for i, inf in enumerate(ranked_influencers[:5], 1):
+            for i, inf in enumerate(ranked_influencers[:3], 1):
                 print(f"  #{i}: {inf['nickname']} - {inf['total_score']:.1f}分")
             print()
             update_progress(40)
@@ -269,7 +269,7 @@ class TikTokInfluencerReportAgent:
 
             # Step 5: Generate visualizations (80%-90%)
             # 为 Tier 1 的所有达人生成可视化图表
-            tier1_count = min(target_count * 4, len(ranked_influencers))
+            tier1_count = min(target_count * 1, len(ranked_influencers))
             print(f"📈 步骤5: 生成可视化图表 (为前 {tier1_count} 个达人)...")
             charts_generated = 0
             for i, inf in enumerate(ranked_influencers[:tier1_count], 1):
@@ -337,12 +337,12 @@ class TikTokInfluencerReportAgent:
         return f"""
 <ul>
     <li><strong>分析达人数:</strong> {len(influencers)}个</li>
-    <li><strong>推荐层级:</strong> Tier 1 ({target_count * 4}个) + Tier 2 ({target_count * 3}个) + Tier 3 ({target_count * 2}个)</li>
+    <li><strong>推荐层级:</strong> Tier 1 ({target_count * 1}个) + Tier 2 ({target_count * 2}个) + Tier 3 ({target_count * 3}个)</li>
     <li><strong>Top 3平均分:</strong> {avg_score:.1f}/100</li>
     <li><strong>产品类目:</strong> {preferences.get('product_category', '未知')}</li>
     <li><strong>目标受众:</strong> {preferences.get('target_audience', {}).get('gender', 'all')}性,
         年龄{", ".join(preferences.get('target_audience', {}).get('age_range', []))}</li>
-    <li><strong>核心洞察:</strong> Top {target_count * 4}达人在{", ".join(preferences.get('priority_metrics', [])[:2])}维度表现优异,建议优先合作</li>
+    <li><strong>核心洞察:</strong> Top {target_count * 1}达人在{", ".join(preferences.get('priority_metrics', [])[:2])}维度表现优异,建议优先合作</li>
 </ul>
 """
 
@@ -414,7 +414,7 @@ class TikTokInfluencerReportAgent:
                 report_title=user_query[:100],
                 generation_time=generation_time,
                 total_influencers=len(data.get('recommended_influencers', [])),
-                recommended_count=target_count * 9,  # 4x + 3x + 2x = 9x
+                recommended_count=target_count * 6,  # 1x + 2x + 3x = 6x
                 executive_summary=data.get('executive_summary', ''),
                 influencer_sections=influencer_sections_html,
                 comparison_content=comparison_html
@@ -440,10 +440,10 @@ class TikTokInfluencerReportAgent:
 
         html_parts = []
 
-        # 新的层级分配: Tier 1 (4x) + Tier 2 (3x) + Tier 3 (2x)
-        tier1_count = target_count * 4
-        tier2_count = target_count * 3
-        tier3_count = target_count * 2
+        # 新的层级分配: Tier 1 (1x) + Tier 2 (2x) + Tier 3 (3x)
+        tier1_count = target_count * 1
+        tier2_count = target_count * 2
+        tier3_count = target_count * 3
 
         # Tier 1: Top 4x influencers (首选推荐)
         tier1 = influencers[:tier1_count]
