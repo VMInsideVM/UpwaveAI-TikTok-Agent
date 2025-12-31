@@ -1155,7 +1155,7 @@ async def websocket_endpoint(
 
 # ==================== 启动函数 ====================
 
-def start_server(host: str = "127.0.0.1", port: int = 8001):
+def start_server(host: str = "0.0.0.0", port: int = 8001):
     """启动聊天机器人服务器"""
     print("\n🎯 欢迎使用 TikTok 达人推荐智能助手 🎯")
     print("API 服务启动中...\n")
