@@ -2262,7 +2262,7 @@
         // WebSocket 连接
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}?token=${accessToken}`;
+            const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/ws/${sessionId}?token=${accessToken}`;
 
             websocket = new WebSocket(wsUrl);
 
