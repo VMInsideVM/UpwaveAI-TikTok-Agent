@@ -1831,7 +1831,17 @@
     </div>
 
     <script>
-        const API_BASE_URL = window.location.origin;
+                // === 全局配置：自动检测部署路径 ===
+        const BASE_PATH = (() => {
+            const path = window.location.pathname;
+            if (path.startsWith('/agent/')) return '/agent';
+            return '';
+        })();
+        const API_BASE_URL = window.location.origin + BASE_PATH;
+        const getFullPath = (p) => BASE_PATH + (p.startsWith('/') ? p : '/' + p);
+        const navigateTo = (p) => window.location.href = getFullPath(p);
+        // =========================================
+
         let sessionId = null;
         let websocket = null;
         let isConnected = false;
@@ -1849,7 +1859,7 @@
         // 带认证的请求封装
         async function fetchWithAuth(url, options = {}) {
             if (!accessToken) {
-                window.location.href = '/login.html';
+                navigateTo('/login.html');
                 throw new Error('未登录');
             }
 
@@ -1878,7 +1888,7 @@
             if (response.status === 401) {
                 // Token 过期或无效
                 localStorage.removeItem('access_token');
-                window.location.href = '/login.html';
+                navigateTo('/login.html');
                 throw new Error('认证过期，请重新登录');
             }
 
@@ -1888,7 +1898,7 @@
         // 检查登录状态
         function checkAuth() {
             if (!accessToken) {
-                window.location.href = '/login.html';
+                navigateTo('/login.html');
                 return false;
             }
             return true;
@@ -2661,7 +2671,7 @@
         // 退出登录
         function logout() {
             localStorage.clear();
-            window.location.href = '/login.html';
+            navigateTo('/login.html');
         }
 
         // 加载聊天历史
