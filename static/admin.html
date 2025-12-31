@@ -1165,7 +1165,7 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'http://127.0.0.1:8001';
+        const API_BASE_URL = window.location.origin;
         let currentTab = 'overview';
         let accessToken = localStorage.getItem('access_token');
 
@@ -1704,7 +1704,7 @@
         // 加载任务队列
         async function loadTasks() {
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/admin/tasks');
+                const response = await fetch(`${API_BASE_URL}/api/admin/tasks`);
                 const data = await response.json();
 
                 if (!data.success) {
@@ -1809,7 +1809,7 @@
             }
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/admin/tasks/stop', {
+                const response = await fetch(`${API_BASE_URL}/api/admin/tasks/stop`, {
                     method: 'POST'
                 });
                 const data = await response.json();
