@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Hank\\AppData\\Roaming\\npm\\node_modules\\rins_hooks\\hooks\\code-formatter\\index.js\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Hank\\AppData\\Roaming\\npm\\node_modules\\rins_hooks\\hooks\\notification\\index.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
