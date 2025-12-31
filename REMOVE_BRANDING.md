@@ -14,7 +14,7 @@
 <div class="footer">
     <p>本报告由 AI 智能分析系统生成</p>
     <p style="margin-top: 10px;">
-        <a href="https://github.com/yourusername/fastmoss_MVP">FastMoss Influencer Analysis System</a>
+        <a href="https://github.com/yourusername/UpwaveAI-TikTok-Agent">UpwaveAI TikTok Agent</a>
     </p>
     <p style="margin-top: 5px; font-size: 12px;">
         数据来源: FastMoss | 分析模型: Qwen3-VL-30B

@@ -427,7 +427,7 @@ for chart in charts[:2]:
 ### 路径结构说明
 
 ```
-fastmoss_MVP/
+UpwaveAI-TikTok-Agent/
 ├── output/
 │   ├── reports/
 │   │   └── report_20251105_123914.html  ← 报告在这里
@@ -524,7 +524,7 @@ report_path = agent.generate_report(
 **为什么不用绝对路径?**
 ```html
 <!-- ❌ 绝对路径不可移植 -->
-<iframe src='file:///C:/Users/Hank/fastmoss_MVP/output/charts/xxx.html'>
+<iframe src='file:///C:/Users/Hank/UpwaveAI-TikTok-Agent/output/charts/xxx.html'>
 
 <!-- ✅ 相对路径可移植 -->
 <iframe src='../charts/xxx.html'>

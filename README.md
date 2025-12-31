@@ -14,7 +14,7 @@
 ## 🏗️ 项目结构
 
 ```
-fastmoss_MVP/
+UpwaveAI-TikTok-Agent/
 ├── agent.py                 # Agent 主控制器
 ├── agent_tools.py           # LangChain 工具封装
 ├── category_matcher.py      # 商品分类智能匹配

@@ -50,7 +50,7 @@ python chatbot_api.py
 ## 📂 新增文件
 
 ```
-fastmoss_MVP/
+UpwaveAI-TikTok-Agent/
 ├── chatbot_api.py          # 聊天机器人 API 服务（端口 8001）
 ├── session_manager.py      # 会话管理模块（多用户隔离）
 ├── start_chatbot.py        # 聊天机器人启动脚本

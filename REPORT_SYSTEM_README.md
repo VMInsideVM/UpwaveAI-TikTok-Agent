@@ -383,7 +383,7 @@ visualizer = InfluencerVisualizer(output_dir="custom/charts/path")
 ## 📁 项目文件结构
 
 ```
-fastmoss_MVP/
+UpwaveAI-TikTok-Agent/
 ├── influencer/                  # 达人详细数据(JSON)
 │   ├── 7166823863484089387.json
 │   ├── 3673475.json

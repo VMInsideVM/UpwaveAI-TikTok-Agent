@@ -220,7 +220,7 @@ curl http://127.0.0.1:8001/api/auth/me \
 ## 📂 项目文件结构
 
 ```
-fastmoss_MVP/
+UpwaveAI-TikTok-Agent/
 ├── database/
 │   ├── __init__.py
 │   ├── models.py          ✅ ORM 模型

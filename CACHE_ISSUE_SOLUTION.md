@@ -86,7 +86,7 @@ sys.dont_write_bytecode = True
 
 项目中的缓存文件：
 ```
-fastmoss_MVP/
+UpwaveAI-TikTok-Agent/
 ├── __pycache__/
 ├── api/__pycache__/
 ├── auth/__pycache__/
