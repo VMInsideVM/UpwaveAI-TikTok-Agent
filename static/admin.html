@@ -1201,7 +1201,7 @@
             const isAdmin = localStorage.getItem('is_admin') === 'true';
             if (!isAdmin) {
                 alert('需要管理员权限');
-                window.location.href = '/';
+                navigateTo('/');
                 return false;
             }
 
