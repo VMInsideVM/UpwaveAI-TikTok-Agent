@@ -1,3 +1,23 @@
+#!/bin/bash
+
+echo "=========================================="
+echo "🔧 更新主服务器 Nginx 配置"
+echo "=========================================="
+echo ""
+
+echo "📝 修复内容："
+echo "  - 移除 rewrite + break 组合"
+echo "  - 使用 proxy_pass 直接指定目标路径"
+echo "  - 添加完整的 proxy headers"
+echo ""
+
+echo "1️⃣ 备份当前配置..."
+cp /etc/nginx/sites-enabled/upwaveai.com /etc/nginx/sites-enabled/upwaveai.com.backup.$(date +%Y%m%d_%H%M%S)
+echo "   ✅ 备份完成"
+echo ""
+
+echo "2️⃣ 更新配置文件..."
+cat > /etc/nginx/sites-enabled/upwaveai.com << 'EOF'
 # HTTP 重定向到 HTTPS
 server {
     listen 80;
@@ -34,8 +54,8 @@ server {
     gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
 
     # ==================== TikTok Agent 反向代理 ====================
-    # 静态资源（优先级最高 - 使用 ^~ 阻止正则匹配）
-    location ^~ /agent/static/ {
+    # 静态资源（优先级最高）
+    location /agent/static/ {
         proxy_pass http://111.228.61.201:8001/static/;
 
         proxy_set_header Host $host;
@@ -100,8 +120,8 @@ server {
     }
 
 
-    # Agent 主应用（前端页面 - 使用 ^~ 阻止正则匹配）
-    location ^~ /agent/ {
+    # Agent 主应用（前端页面）
+    location /agent/ {
         proxy_pass http://111.228.61.201:8001/;
 
         proxy_http_version 1.1;
@@ -158,3 +178,62 @@ server {
         proxy_cache_bypass $http_upgrade;
     }
 }
+EOF
+echo "   ✅ 配置文件已更新"
+echo ""
+
+echo "3️⃣ 测试 Nginx 配置..."
+nginx -t
+if [ $? -eq 0 ]; then
+    echo "   ✅ 配置测试通过"
+    echo ""
+
+    echo "4️⃣ 重载 Nginx..."
+    systemctl reload nginx
+    echo "   ✅ Nginx 已重载"
+    echo ""
+
+    echo "5️⃣ 测试静态资源访问..."
+    echo ""
+
+    echo "   测试 logo.png..."
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://upwaveai.com/agent/static/logo.png)
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo "   ✅ logo.png - HTTP $HTTP_CODE"
+    else
+        echo "   ❌ logo.png - HTTP $HTTP_CODE"
+    fi
+
+    echo "   测试 alipay_payment.png..."
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://upwaveai.com/agent/static/alipay_payment.png)
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo "   ✅ alipay_payment.png - HTTP $HTTP_CODE"
+    else
+        echo "   ❌ alipay_payment.png - HTTP $HTTP_CODE"
+    fi
+
+    echo "   测试 wechat_payment.png..."
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://upwaveai.com/agent/static/wechat_payment.png)
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo "   ✅ wechat_payment.png - HTTP $HTTP_CODE"
+    else
+        echo "   ❌ wechat_payment.png - HTTP $HTTP_CODE"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo "✅ 更新完成！"
+    echo "=========================================="
+    echo ""
+    echo "💡 下一步："
+    echo "   1. 清除浏览器缓存"
+    echo "   2. 访问 https://upwaveai.com/agent/"
+    echo "   3. 检查图片是否正常显示"
+    echo ""
+else
+    echo "   ❌ 配置测试失败，请检查错误信息"
+    echo ""
+    echo "恢复备份："
+    echo "   cp /etc/nginx/sites-enabled/upwaveai.com.backup.* /etc/nginx/sites-enabled/upwaveai.com"
+    exit 1
+fi
