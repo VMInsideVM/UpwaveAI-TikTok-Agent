@@ -18,6 +18,9 @@ from background.report_queue import report_queue
 
 router = APIRouter(prefix="/api/reports", tags=["报告"])
 
+# 从环境变量读取部署配置
+BASE_PATH = os.getenv("BASE_PATH", "")  # 例如: "/agent" 或 ""
+
 
 # ==================== Pydantic Models ====================
 
@@ -360,13 +363,13 @@ async def view_report(
         )
 
     # 将绝对路径转换为静态文件URL
-    # 例如: output/reports/20251212_204820/report.html -> /reports/20251212_204820/report.html
+    # 例如: output/reports/20251212_204820/report.html -> /agent/reports/20251212_204820/report.html
     try:
         # 提取相对于 output/reports/ 的路径
         reports_base = "output/reports"
         if reports_base in report.report_path:
             relative_path = report.report_path.split(reports_base)[1].replace("\\", "/")
-            static_url = f"/reports{relative_path}"
+            static_url = f"{BASE_PATH}/reports{relative_path}"
 
             print(f"📄 重定向到报告: {static_url}")
 

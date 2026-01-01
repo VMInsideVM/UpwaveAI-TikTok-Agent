@@ -7,6 +7,7 @@ import asyncio
 import threading
 import uuid
 import re
+import os
 from typing import Dict, List, Optional
 from datetime import datetime, timezone, timedelta
 import json
@@ -19,6 +20,10 @@ from sqlalchemy import update
 
 # 东八区时区
 CHINA_TZ = timezone(timedelta(hours=8))
+
+# 从环境变量读取部署配置
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8001")  # 例如: "https://upwaveai.com"
+BASE_PATH = os.getenv("BASE_PATH", "")  # 例如: "/agent" 或 ""
 
 
 class BackgroundTaskQueue:
@@ -797,11 +802,11 @@ class BackgroundTaskQueue:
             # ⭐ 构建报告访问URL（使用会话ID和报告ID）
             if session_id and report_id:
                 # 指向聊天界面的报告详情
-                report_url = f"http://127.0.0.1:8001/?session={session_id}#report-{report_id}"
+                report_url = f"{BASE_URL}{BASE_PATH}/?session={session_id}#report-{report_id}"
             else:
                 # 后备方案：直接链接HTML文件
                 report_filename = os.path.basename(report_path)
-                report_url = f"http://127.0.0.1:8001/reports/{report_filename}"
+                report_url = f"{BASE_URL}{BASE_PATH}/reports/{report_filename}"
 
             # 1. 发送短信通知
             if phone:
