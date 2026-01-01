@@ -295,17 +295,24 @@ async def stream_agent_response(agent: TikTokInfluencerAgent, user_input: str, w
                 print(f"  - agent: {agent}")
 
                 if agent:
+                    # 调试：打印 current_params 的完整内容
+                    if hasattr(agent, 'current_params'):
+                        print(f"🔍 Agent.current_params 完整内容: {agent.current_params}")
+
                     # 方法 1: 从 current_params 获取（优先）
                     if hasattr(agent, 'current_params') and agent.current_params:
                         target_count = agent.current_params.get('target_count')
+                        print(f"🔍 从 current_params 获取的 target_count 值: {target_count} (类型: {type(target_count)})")
                         if target_count:
                             influencer_count = target_count
                             print(f"✅ 从 Agent.current_params 获取目标达人数: {influencer_count}")
 
                     # 方法 2: 从 target_influencer_count 属性获取（备用）
-                    if not influencer_count and hasattr(agent, 'target_influencer_count') and agent.target_influencer_count:
-                        influencer_count = agent.target_influencer_count
-                        print(f"✅ 从 Agent.target_influencer_count 获取目标达人数: {influencer_count}")
+                    if not influencer_count and hasattr(agent, 'target_influencer_count'):
+                        print(f"🔍 Agent.target_influencer_count 值: {agent.target_influencer_count} (类型: {type(agent.target_influencer_count)})")
+                        if agent.target_influencer_count:
+                            influencer_count = agent.target_influencer_count
+                            print(f"✅ 从 Agent.target_influencer_count 获取目标达人数: {influencer_count}")
 
                 # 如果仍然没有获取到，使用默认值 10
                 if not influencer_count:
