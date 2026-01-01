@@ -551,30 +551,29 @@ async def check_and_login_async(max_retries: int = 1, skip_cache: bool = False) 
         if not skip_cache:
             last_login = _login_state.get("last_login_time")
             last_check = _login_state.get("last_check_time")
-            
+
             if last_login and _login_state.get("is_logged_in"):
-                # 检查登录是否过期（24小时）
-                if not is_login_expired(last_login, hours=24):
-                    time_since_check = (datetime.now() - (last_check or datetime.min)).total_seconds()
-                    
-                    # --- 核心优化：10 分钟静默冷却期 ---
-                    # 如果 10 分钟内刚检查过，且未过期，直接静默返回
-                    if time_since_check < 600:
-                        return {
-                            "is_logged_in": True,
-                            "status": "cached_silent",
-                            "message": "在静默期内，跳过检查"
-                        }
-                    
-                    time_remaining = 24 - (datetime.now() - last_login).total_seconds() / 3600
-                    print(f"  ✅ [登录检查] 使用内存缓存的登录状态（剩余 {time_remaining:.1f} 小时）")
-                    _login_state["last_check_time"] = datetime.now()
-                    
+                # 不再检查过期时间，登录状态永久有效
+                time_since_check = (datetime.now() - (last_check or datetime.min)).total_seconds()
+
+                # --- 核心优化：10 分钟静默冷却期 ---
+                # 如果 10 分钟内刚检查过，直接静默返回
+                if time_since_check < 600:
                     return {
                         "is_logged_in": True,
-                        "status": "cached",
-                        "message": f"使用缓存的登录状态（剩余 {time_remaining:.1f} 小时）"
+                        "status": "cached_silent",
+                        "message": "在静默期内，跳过检查"
                     }
+
+                hours_since_login = (datetime.now() - last_login).total_seconds() / 3600
+                print(f"  ✅ [登录检查] 使用内存缓存的登录状态（已登录 {hours_since_login:.1f} 小时）")
+                _login_state["last_check_time"] = datetime.now()
+
+                return {
+                    "is_logged_in": True,
+                    "status": "cached",
+                    "message": f"使用缓存的登录状态（已登录 {hours_since_login:.1f} 小时）"
+                }
 
         print("\n🔐 [登录检查] 开始检查登录状态...")
 
@@ -596,43 +595,25 @@ async def check_and_login_async(max_retries: int = 1, skip_cache: bool = False) 
                 if not login_button:
                     print("     ✓ 未找到登录按钮 → 已登录")
 
-                    # 检查登录是否过期（24小时）
-                    if last_login_time and not is_login_expired(last_login_time, hours=24):
-                        # 登录未过期，直接返回已登录状态
-                        time_remaining = 24 - (datetime.now() - last_login_time).total_seconds() / 3600
-                        print(f"  ✅ 登录未过期，剩余有效时间: {time_remaining:.1f} 小时")
-                        print("  ℹ️ 保持当前登录状态，无需重新登录")
+                    # 不再检查过期时间，登录状态永久有效
+                    if last_login_time:
+                        hours_since_login = (datetime.now() - last_login_time).total_seconds() / 3600
+                        print(f"  ✅ 当前已登录（已登录 {hours_since_login:.1f} 小时）")
+                    else:
+                        print(f"  ✅ 当前已登录")
+                    print("  ℹ️ 保持当前登录状态，无需重新登录")
 
-                        # 更新缓存
-                        _login_state["is_logged_in"] = True
-                        _login_state["last_check_time"] = datetime.now()
+                    # 更新缓存
+                    _login_state["is_logged_in"] = True
+                    _login_state["last_check_time"] = datetime.now()
+                    if last_login_time:
                         _login_state["last_login_time"] = last_login_time
 
-                        return {
-                            "is_logged_in": True,
-                            "status": "already_logged_in",
-                            "message": f"当前已登录（剩余 {time_remaining:.1f} 小时）"
-                        }
-                    else:
-                        # 登录已过期或没有登录记录，需要重新登录
-                        if last_login_time:
-                            print(f"  ⚠️ 登录已过期（超过24小时），需要重新登录")
-                        else:
-                            print(f"  ⚠️ 未找到登录记录，需要重新登录")
-                        print("  ℹ️ 检测到已登录状态,先退出登录再重新登录")
-
-                        # 退出登录
-                        if await _logout_async():
-                            print("  ⏳ 等待5秒后重新登录...")
-                            await asyncio.sleep(5)
-                            # 重新检查登录按钮是否出现
-                            print("  🔄 重新检查登录按钮...")
-                            login_button = await _page.query_selector(LOGIN_SELECTORS["login_button"])
-                            if not login_button:
-                                raise Exception("退出登录后仍未检测到登录按钮")
-                        else:
-                            print("  ⚠️ 退出登录失败")
-                            raise Exception("退出登录失败")
+                    return {
+                        "is_logged_in": True,
+                        "status": "already_logged_in",
+                        "message": "当前已登录"
+                    }
 
                 print("     ✗ 找到登录按钮 → 未登录")
                 print("  ℹ️ 开始自动登录...")
