@@ -814,7 +814,7 @@ class TikTokInfluencerReportAgent:
 <div class="chart-wrapper">
     <h4>{'雷达图' if 'radar' in chart_name else '销售漏斗' if 'funnel' in chart_name else '受众画像' if 'pyramid' in chart_name else '品类分布' if ('pie' in chart_name or 'category' in chart_name) else '互动趋势' if 'trend' in chart_name else '成长质量' if 'growth' in chart_name else chart_name}</h4>
     <div style="width:100%; height:550px;">
-        <iframe src='{relative_chart_path}' style="width:100%; height:100%; border:none;"></iframe>
+        <iframe src='{relative_chart_path}' loading="lazy" style="width:100%; height:100%; border:none;"></iframe>
     </div>
     <div style="margin-top:10px; font-size:14px; color:#666;">
         <strong>洞察:</strong> {' | '.join(insights[:3]) if insights else '详见图表'}
@@ -882,7 +882,7 @@ class TikTokInfluencerReportAgent:
             for chart_path, insights in key_charts:
                 charts_html += f'''
 <div class="chart-wrapper">
-    <iframe src='{chart_path}' style="width:100%; height:450px; border:none;"></iframe>
+    <iframe src='{chart_path}' loading="lazy" style="width:100%; height:450px; border:none;"></iframe>
     <p style="font-size:13px; color:#666;">{insights[0] if insights else ''}</p>
 </div>
 '''
