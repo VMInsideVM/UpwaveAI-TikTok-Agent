@@ -6,18 +6,6 @@ Credit Recharge Pricing Configuration
 # 充值套餐定义
 # 计算规则：100积分可获得6个达人推荐（Tier1:1个、Tier2:2个、Tier3:3个）
 CREDIT_TIERS = {
-    "tier_test": {
-        "id": "tier_test",
-        "price_yuan": 1,
-        "price_fen": 100,
-        "credits": 100,
-        "name": "测试套餐",
-        "description": "仅供测试使用",
-        "popular": False,
-        "search_count": 1,
-        "influencers_per_search": 6,
-        "total_influencers": 6
-    },
     "tier_299": {
         "id": "tier_299",
         "price_yuan": 299,
