@@ -71,6 +71,18 @@ class TikTokInfluencerAgent:
         # 设置全局 agent 实例，供工具访问
         set_agent_instance(self)
 
+        # 🔥 方案B: 初始化 LangGraph 工作流 (完全替换)
+        self.url_workflow = None
+        try:
+            from url_build_workflow import create_url_build_workflow
+            self.url_workflow = create_url_build_workflow(self, debug=False)
+            print("✅ LangGraph URL 构建工作流已启用")
+        except Exception as e:
+            print(f"⚠️ LangGraph 工作流初始化失败: {e}")
+            print("   将使用降级方案 (WorkflowEnforcer)")
+            import traceback
+            traceback.print_exc()
+
     def _set_context_for_tools(self):
         """为需要 user_id/session_id 的工具设置上下文"""
         for tool in self.tools:
@@ -401,6 +413,99 @@ class TikTokInfluencerAgent:
 (你可以一次性告诉我所有信息,也可以逐步回答~)
 """
 
+    def _should_use_workflow(self) -> bool:
+        """
+        判断是否应该使用 LangGraph 工作流
+
+        当检测到用户已经提供了所有必要参数,即将构建 URL 时,使用工作流
+
+        Returns:
+            bool: True 如果应该使用工作流
+        """
+        # 检查是否已收集足够的参数
+        required_keys = ['country_name', 'product_name', 'target_influencer_count']
+        has_all_required = all(
+            self.current_params.get(key) for key in required_keys
+        )
+
+        # 检查是否还未构建 URL
+        url_not_built = not self.current_url
+
+        # 检查是否还未确认参数
+        params_not_confirmed = not self.params_confirmed
+
+        should_use = has_all_required and url_not_built and params_not_confirmed
+
+        if should_use:
+            print("[Agent] 🔥 触发 LangGraph 工作流")
+            print(f"  - 参数已收集: {list(self.current_params.keys())}")
+            print(f"  - URL 未构建: {url_not_built}")
+            print(f"  - 参数未确认: {params_not_confirmed}")
+
+        return should_use
+
+    def _run_with_workflow(self) -> str:
+        """
+        使用 LangGraph 工作流执行 build_url → review_params
+
+        Returns:
+            str: 应该展示给用户的内容 (review_parameters 的输出)
+        """
+        print("[Agent] 🚀 使用 LangGraph 工作流执行...")
+
+        try:
+            # 执行工作流
+            result = self.url_workflow.execute(
+                params=self.current_params,
+                product_name=self.current_params.get('product_name', '未知'),
+                target_count=self.current_params.get('target_influencer_count', 0),
+                category_info=self.current_params.get('category_info')
+            )
+
+            # 更新 agent 状态
+            self.current_url = result.get('url', '')
+            print(f"[Agent]   - URL 已构建: {self.current_url[:80]}...")
+
+            # 提取用户输出
+            user_output = self.url_workflow.get_user_output(result)
+
+            # 更新对话历史 (添加工作流的输出)
+            from langchain_core.messages import AIMessage
+            self.chat_history.append(AIMessage(content=user_output))
+
+            print("[Agent] ✅ 工作流执行完成")
+            return user_output
+
+        except Exception as e:
+            print(f"[Agent] ❌ 工作流执行失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # 降级回原有逻辑
+            print("[Agent] ⚠️ 降级到原有 Agent 执行逻辑")
+            config = {}
+            if hasattr(self, 'callbacks') and self.callbacks:
+                config['callbacks'] = self.callbacks
+
+            result = self.agent.invoke({
+                "messages": self.chat_history
+            }, config=config)
+
+            if "messages" in result and len(result["messages"]) > 0:
+                messages = result["messages"]
+                self.chat_history = messages
+
+                ai_responses = []
+                for msg in messages:
+                    if hasattr(msg, 'type') and msg.type == 'ai':
+                        if hasattr(msg, 'content') and msg.content:
+                            ai_responses.append(msg.content)
+
+                if ai_responses:
+                    return ai_responses[-1] if ai_responses[-1] else "正在处理中..."
+
+            return "抱歉,处理请求时出现问题。请重试。"
+
     def run(self, user_input: str) -> str:
         """
         运行 Agent 处理用户输入
@@ -415,6 +520,10 @@ class TikTokInfluencerAgent:
             # 将用户输入添加到历史记录
             from langchain_core.messages import HumanMessage
             self.chat_history.append(HumanMessage(content=user_input))
+
+            # 🔥 方案B: 检查是否需要使用 LangGraph 工作流拦截
+            if self.url_workflow and self._should_use_workflow():
+                return self._run_with_workflow()
 
             # LangChain 1.0 的 agent 返回的是 CompiledStateGraph
             # 需要调用 invoke 方法，传入完整的对话历史
