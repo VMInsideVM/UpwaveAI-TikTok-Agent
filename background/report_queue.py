@@ -199,6 +199,23 @@ class ReportQueue:
                 progress_callback  # progress_callback
             )
 
+            # Check if report generation was successful
+            if not report_path:
+                print(f"❌ 报告生成返回空路径: {report_id}")
+                # Update status to failed
+                await self._update_status(
+                    report_id, 
+                    "failed", 
+                    error="报告生成过程中发生错误，未返回有效文件路径"
+                )
+                
+                # Refund credits
+                credits_to_refund = task_data.get("credits_deducted", 0)
+                if credits_to_refund > 0:
+                    await self._refund_user_credits(task_data["user_id"], credits_to_refund)
+                
+                return
+
             # 更新数据库中的报告路径和状态
             with get_db_context() as db:
                 report = db.query(Report).filter(Report.report_id == report_id).first()
@@ -359,8 +376,24 @@ class ReportQueue:
         with get_db_context() as db:
             usage = db.query(UserUsage).filter(UserUsage.user_id == user_id).first()
             if usage and usage.used_credits >= credits_amount:
+                before_credits = usage.remaining_credits
                 usage.used_credits -= credits_amount
                 db.commit()
+                
+                # Add history record
+                from database.models import CreditHistory
+                history = CreditHistory(
+                    user_id=user_id,
+                    change_type='refund',
+                    amount=credits_amount,
+                    before_credits=before_credits,
+                    after_credits=usage.remaining_credits,
+                    reason="报告生成失败退款",
+                    meta_data={"report_id": self._current_task}
+                )
+                db.add(history)
+                db.commit()
+                
                 print(f"♻️ 用户 {user_id} 积分已退还: {credits_amount} 积分, 剩余: {usage.remaining_credits}/{usage.total_credits}")
 
     def get_task_status(self, report_id: str) -> Optional[dict]:

@@ -59,8 +59,14 @@ class InfluencerScorer:
         """
         try:
             # Extract key metrics
-            stats_info = influencer_data.get('api_responses', {}).get('getStatInfo', {})
-            author_index = influencer_data.get('api_responses', {}).get('authorIndex', {})
+            api_resp = influencer_data.get('api_responses', {}) or {}
+            if isinstance(api_resp, list): api_resp = {}
+            
+            stats_info = api_resp.get('getStatInfo', {}) or {}
+            if isinstance(stats_info, list): stats_info = {}
+            
+            author_index = api_resp.get('authorIndex', {}) or {}
+            if isinstance(author_index, list): author_index = {}
 
             # Parse interaction rate (remove %)
             interaction_rate_str = stats_info.get('aweme_avg_interaction_rate', '0%')
@@ -130,8 +136,14 @@ class InfluencerScorer:
             {score: float, reasoning: str, metrics: dict}
         """
         try:
-            stats_info = influencer_data.get('api_responses', {}).get('getStatInfo', {})
-            cargo_summary = influencer_data.get('api_responses', {}).get('cargoSummary', {})
+            api_resp = influencer_data.get('api_responses', {}) or {}
+            if isinstance(api_resp, list): api_resp = {}
+
+            stats_info = api_resp.get('getStatInfo', {}) or {}
+            if isinstance(stats_info, list): stats_info = {}
+
+            cargo_summary = api_resp.get('cargoSummary', {}) or {}
+            if isinstance(cargo_summary, list): cargo_summary = {}
 
             # Extract GPM metrics
             max_gpm = stats_info.get('aweme_max_gpm', 0)
@@ -210,8 +222,14 @@ class InfluencerScorer:
             {score: float, reasoning: str, metrics: dict}
         """
         try:
-            fans_portrait = influencer_data.get('api_responses', {}).get('fansPortrait', {})
-            base_info = influencer_data.get('api_responses', {}).get('baseInfo', {})
+            api_resp = influencer_data.get('api_responses', {}) or {}
+            if isinstance(api_resp, list): api_resp = {}
+
+            fans_portrait = api_resp.get('fansPortrait', {}) or {}
+            if isinstance(fans_portrait, list): fans_portrait = {}
+            
+            base_info = api_resp.get('baseInfo', {}) or {}
+            if isinstance(base_info, list): base_info = {}
 
             # Gender matching
             gender_dist = fans_portrait.get('follower_genders', [])
@@ -294,8 +312,14 @@ class InfluencerScorer:
             {score: float, reasoning: str, metrics: dict}
         """
         try:
-            author_index = influencer_data.get('api_responses', {}).get('authorIndex', {})
-            datalist = influencer_data.get('api_responses', {}).get('datalist', {})
+            api_resp = influencer_data.get('api_responses', {}) or {}
+            if isinstance(api_resp, list): api_resp = {}
+
+            author_index = api_resp.get('authorIndex', {}) or {}
+            if isinstance(author_index, list): author_index = {}
+            
+            datalist = api_resp.get('datalist', {}) or {}
+            if isinstance(datalist, list): datalist = {}
 
             # Parse growth rates (remove %)
             follower_growth_str = author_index.get('follower_28_count_rate', '0%')
@@ -378,8 +402,14 @@ class InfluencerScorer:
             {score: float, reasoning: str, metrics: dict}
         """
         try:
-            author_index = influencer_data.get('api_responses', {}).get('authorIndex', {})
-            datalist = influencer_data.get('api_responses', {}).get('datalist', {})
+            api_resp = influencer_data.get('api_responses', {}) or {}
+            if isinstance(api_resp, list): api_resp = {}
+
+            author_index = api_resp.get('authorIndex', {}) or {}
+            if isinstance(author_index, list): author_index = {}
+            
+            datalist = api_resp.get('datalist', {}) or {}
+            if isinstance(datalist, list): datalist = {}
 
             # Posting frequency (28 days)
             video_count_28 = author_index.get('aweme_28_count', 0)
@@ -535,7 +565,11 @@ def score_influencer(influencer_data: Dict,
     result = scorer.calculate_total_score(dimension_scores, custom_weights)
 
     # Add influencer metadata
-    base_info = influencer_data.get('api_responses', {}).get('baseInfo', {})
+    api_resp = influencer_data.get('api_responses', {}) or {}
+    if isinstance(api_resp, list): api_resp = {}
+    
+    base_info = api_resp.get('baseInfo', {}) or {}
+    if isinstance(base_info, list): base_info = {}
     result.update({
         "influencer_id": base_info.get('uid', 'unknown'),
         "nickname": base_info.get('nickname', 'Unknown'),
