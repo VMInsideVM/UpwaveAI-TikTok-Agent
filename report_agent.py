@@ -268,16 +268,16 @@ class TikTokInfluencerReportAgent:
             self.viz_tool = DataVisualizationTool(output_dir=charts_dir)
 
             # Step 5: Generate visualizations (80%-90%)
-            # 为 Tier 1 的所有达人生成可视化图表
-            tier1_count = min(target_count * 1, len(ranked_influencers))
-            print(f"📈 步骤5: 生成可视化图表 (为前 {tier1_count} 个达人)...")
+            # 🔥 修复: 为所有达人 (Tier1 + Tier2 + Tier3) 生成可视化图表
+            total_influencers = len(ranked_influencers)
+            print(f"📈 步骤5: 生成可视化图表 (为所有 {total_influencers} 个达人)...")
             charts_generated = 0
-            for i, inf in enumerate(ranked_influencers[:tier1_count], 1):
-                # 计算进度 (80% + 10% * (i-1)/tier1_count，因为第i个正在生成，前i-1个已完成)
-                current_progress = 80 + int(10 * (i - 1) / tier1_count)
+            for i, inf in enumerate(ranked_influencers, 1):
+                # 计算进度 (80% + 10% * (i-1)/total_influencers)
+                current_progress = 80 + int(10 * (i - 1) / total_influencers)
                 update_progress(current_progress)
 
-                print(f"  生成图表 {i}/{tier1_count}: {inf['nickname']}...", end=' ')
+                print(f"  生成图表 {i}/{total_influencers}: {inf['nickname']}...", end=' ')
 
                 viz_result = json.loads(self.viz_tool._run(
                     influencer_id=inf['influencer_id'],

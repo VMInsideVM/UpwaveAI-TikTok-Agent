@@ -664,14 +664,26 @@ async def view_task_queue(
     """
     查看当前报告生成队列状态
     """
-    queue_info = report_queue.get_all_tasks()
+    try:
+        queue_info = report_queue.get_all_tasks()
 
-    return {
-        "current_task": queue_info["current_task"],
-        "queue_size": queue_info["queue_size"],
-        "is_processing": queue_info["is_processing"],
-        "tasks": queue_info["all_statuses"]
-    }
+        return {
+            "success": True,
+            "current_task": queue_info["current_task"],
+            "queue_size": queue_info["queue_size"],
+            "is_processing": queue_info["is_processing"],
+            "tasks": queue_info["all_statuses"]
+        }
+    except Exception as e:
+        # 返回错误信息而不是抛出异常，避免前端显示混乱
+        return {
+            "success": False,
+            "error": f"获取任务队列失败: {str(e)}",
+            "current_task": None,
+            "queue_size": 0,
+            "is_processing": False,
+            "tasks": []
+        }
 
 
 # ==================== Invitation Codes ====================

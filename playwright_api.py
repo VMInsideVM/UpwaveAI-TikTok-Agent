@@ -166,6 +166,8 @@ class ProcessInfluencerListRequest(BaseModel):
     """处理达人列表的请求参数"""
     json_file_path: str = Field(..., description="导出的 JSON 文件路径")
     cache_days: int = Field(3, ge=1, le=30, description="缓存有效天数（1-30天，默认3天）")
+    target_count: Optional[int] = Field(None, description="目标成功达人数量（启用替换机制时使用）")
+    enable_replacement: bool = Field(True, description="是否启用失败替换机制（默认 True）")
 
 class HealthResponse(BaseModel):
     """健康检查响应"""
@@ -1085,10 +1087,12 @@ async def process_influencer_list_endpoint(req: ProcessInfluencerListRequest):
         if not os.path.exists(req.json_file_path):
             raise HTTPException(status_code=404, detail=f"文件不存在: {req.json_file_path}")
 
-        # 调用批量处理函数
+        # 调用批量处理函数（支持失败替换机制）
         result = await process_influencer_list_async(
             json_file_path=req.json_file_path,
-            cache_days=req.cache_days
+            cache_days=req.cache_days,
+            target_count=req.target_count,
+            enable_replacement=req.enable_replacement
         )
 
         if not result.get("success"):
@@ -1168,22 +1172,28 @@ async def process_influencer_list_stream_endpoint(
                 if cached_path:
                     cached_count += 1
                 else:
-                    # 重新爬取
+                    # 重新爬取（带重试机制）
                     request_start = datetime.now()  # ⭐ 记录单次请求开始时间
                     try:
-                        # 内部不再重复检查登录
-                        result = await fetch_influencer_detail_async(influencer_id, check_login=False)
+                        # 🔥 使用带重试的函数，最多重试2次
+                        result = await fetch_influencer_detail_with_retry(influencer_id, check_login=False, max_retries=2)
                         if result["success"]:
                             fetched_count += 1
                             api_request_count += 1
                             # ⭐ 累计实际请求耗时
                             api_request_time += (datetime.now() - request_start).total_seconds()
+                            # 如果有重试，记录日志
+                            if result.get("retries", 0) > 0:
+                                print(f"   ⚠️ 达人 {influencer_id} 经过 {result['retries']} 次重试后成功")
                         else:
+                            # 重试2次后仍失败，标记为不可用
                             failed_ids.append(influencer_id)
                             failed_count += 1
+                            print(f"   ❌ 达人 {influencer_id} 重试 {result.get('retries', 0)} 次后仍失败: {result.get('error', 'Unknown')}")
                     except Exception as e:
                         failed_ids.append(influencer_id)
                         failed_count += 1
+                        print(f"   ❌ 达人 {influencer_id} 处理异常: {str(e)}")
 
                     # 间隔延迟
                     if idx < total_count:
@@ -1311,21 +1321,32 @@ async def get_max_page_number_async() -> int:
         return 1
 
 
-async def process_influencer_list_async(json_file_path: str, cache_days: int) -> Dict[str, Any]:
+async def process_influencer_list_async(
+    json_file_path: str,
+    cache_days: int,
+    target_count: Optional[int] = None,
+    enable_replacement: bool = True
+) -> Dict[str, Any]:
     """
-    批量处理导出的 JSON 文件，获取达人详细数据
+    批量处理导出的 JSON 文件，获取达人详细数据（支持失败替换机制）
 
     Args:
         json_file_path: 导出的 JSON 文件路径
         cache_days: 缓存有效天数
+        target_count: 目标成功达人数量（如果指定，则启用替换机制）
+        enable_replacement: 是否启用失败替换机制（默认 True）
 
     Returns:
-        Dict: 包含处理统计信息的结果字典
+        Dict: 包含处理统计信息和最终可用达人ID列表的结果字典
     """
     try:
         print(f"📊 开始批量处理达人列表...")
         print(f"   - 文件路径: {json_file_path}")
         print(f"   - 缓存有效期: {cache_days} 天")
+        if target_count:
+            print(f"   - 目标成功数量: {target_count}")
+        if enable_replacement:
+            print(f"   - 失败替换机制: 已启用")
 
         # 读取 JSON 文件
         if not os.path.exists(json_file_path):
@@ -1348,14 +1369,20 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
             }
 
         print(f"   - 商品名称: {product_name}")
-        print(f"   - 达人总数: {total_count}")
+        print(f"   - 可用达人总数: {total_count}")
         print()
+
+        # 🔥 如果未指定target_count，则处理所有达人
+        if not target_count:
+            target_count = total_count
+            enable_replacement = False  # 没有目标数量时不启用替换
 
         # 统计信息
         cached_count = 0
         fetched_count = 0
         failed_count = 0
         failed_ids = []
+        successful_ids = []  # 🔥 新增：成功的达人ID列表
 
         start_time = datetime.now()
 
@@ -1369,35 +1396,61 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
                 "message": f"登录失效，无法开始批量任务: {login_result.get('message')}"
             }
 
-        # 遍历每个 data-row-key（顺序处理）
-        for idx, influencer_id in enumerate(data_row_keys, 1):
-            print(f"[{idx}/{total_count}] 处理达人 ID: {influencer_id}")
+        # 🔥 核心处理逻辑：处理达人直到达到目标数量
+        idx = 0  # 当前处理的索引
+        while len(successful_ids) < target_count and idx < len(data_row_keys):
+            influencer_id = data_row_keys[idx]
+            current_progress = len(successful_ids) + 1
+            total_progress = min(target_count, total_count)
+
+            print(f"[{current_progress}/{total_progress}] 处理达人 ID: {influencer_id}")
 
             # 检查缓存
             cached_path = check_influencer_cache(influencer_id, cache_days)
             if cached_path:
                 print(f"   ✓ 使用缓存: {cached_path}")
                 cached_count += 1
+                successful_ids.append(influencer_id)
+                idx += 1
                 continue
 
-            # 重新爬取
+            # 重新爬取（带重试机制）
             try:
-                # 内部不重复检查登录
-                result = await fetch_influencer_detail_async(influencer_id, check_login=False)
+                # 🔥 使用带重试的函数，最多重试2次
+                result = await fetch_influencer_detail_with_retry(influencer_id, check_login=False, max_retries=2)
                 if result["success"]:
                     fetched_count += 1
-                    print(f"   ✅ 成功获取并保存")
+                    successful_ids.append(influencer_id)
+                    # 如果有重试，记录日志
+                    if result.get("retries", 0) > 0:
+                        print(f"   ✅ 成功获取并保存（经过 {result['retries']} 次重试）")
+                    else:
+                        print(f"   ✅ 成功获取并保存")
                 else:
+                    # 🔥 重试2次后仍失败
                     failed_ids.append(influencer_id)
                     failed_count += 1
-                    print(f"   ❌ 失败: {result['message']}")
+                    print(f"   ❌ 重试 {result.get('retries', 0)} 次后仍失败: {result.get('error', result.get('message', 'Unknown'))}")
+
+                    # 🔥 如果启用替换且还有备用达人，则尝试从备用池获取
+                    if enable_replacement and (idx + 1) < len(data_row_keys):
+                        remaining_backups = total_count - (idx + 1)
+                        print(f"   🔄 尝试使用备用达人（剩余备用: {remaining_backups}）")
+                        # 不增加 successful_ids，继续下一个达人（作为替换）
+
             except Exception as e:
-                print(f"   ❌ 异常: {e}")
+                print(f"   ❌ 处理异常: {e}")
                 failed_ids.append(influencer_id)
                 failed_count += 1
+                # 同样尝试替换
+                if enable_replacement and (idx + 1) < len(data_row_keys):
+                    remaining_backups = total_count - (idx + 1)
+                    print(f"   🔄 尝试使用备用达人（剩余备用: {remaining_backups}）")
+
+            idx += 1
 
             # 间隔延迟（避免频繁请求，防止反爬）
-            if idx < total_count:  # 不是最后一个才延迟
+            if idx < len(data_row_keys):
                 await asyncio.sleep(2)
 
         end_time = datetime.now()
@@ -1406,21 +1459,40 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
 
         print()
         print(f"✅ 批量处理完成!")
-        print(f"   - 总数: {total_count}")
+        print(f"   - 成功达人数: {len(successful_ids)} / {target_count}")
         print(f"   - 使用缓存: {cached_count}")
         print(f"   - 重新获取: {fetched_count}")
         print(f"   - 失败: {failed_count}")
+        if enable_replacement:
+            print(f"   - 已替换: {failed_count} 个失败达人")
         print(f"   - 耗时: {elapsed_str}")
+
+        # 🔥 更新JSON文件，移除失败的达人，保留成功的达人
+        if enable_replacement and failed_count > 0:
+            data["data_row_keys"] = successful_ids
+            data["total_count"] = len(successful_ids)
+            data["processing_stats"] = {
+                "original_count": total_count,
+                "failed_count": failed_count,
+                "replaced_count": failed_count,
+                "final_count": len(successful_ids)
+            }
+            with open(json_file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"   📝 已更新 JSON 文件，移除 {failed_count} 个失败达人")
 
         return {
             "success": True,
             "total_count": total_count,
+            "successful_count": len(successful_ids),
+            "successful_ids": successful_ids,  # 🔥 返回成功的ID列表
             "cached_count": cached_count,
             "fetched_count": fetched_count,
             "failed_count": failed_count,
+            "replaced_count": failed_count if enable_replacement else 0,
             "failed_ids": failed_ids,
             "elapsed_time": elapsed_str,
-            "message": f"处理完成：{cached_count} 个使用缓存，{fetched_count} 个重新获取，{failed_count} 个失败"
+            "message": f"处理完成：{len(successful_ids)} 个成功，{cached_count} 个使用缓存，{fetched_count} 个重新获取，{failed_count} 个失败{'（已替换）' if enable_replacement and failed_count > 0 else ''}"
         }
 
     except json.JSONDecodeError:
@@ -1435,6 +1507,76 @@ async def process_influencer_list_async(json_file_path: str, cache_days: int) ->
             "success": False,
             "message": f"批量处理失败: {str(e)}"
         }
+
+
+async def fetch_influencer_detail_with_retry(
+    influencer_id: str,
+    check_login: bool = True,
+    max_retries: int = 2
+) -> Dict[str, Any]:
+    """
+    🔥 带重试机制的达人详细数据获取函数
+
+    Args:
+        influencer_id: 达人 ID (data-row-key)
+        check_login: 是否在执行前检查登录（默认 True）
+        max_retries: 最大重试次数（默认 2 次）
+
+    Returns:
+        Dict: 包含以下字段的结果字典:
+            - success (bool): 是否成功
+            - message (str): 结果消息
+            - file_path (str, optional): JSON 文件路径
+            - retries (int): 实际重试次数
+            - error (str, optional): 错误详情
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            if attempt > 0:
+                print(f"   🔄 重试第 {attempt}/{max_retries} 次...")
+                # 重试前等待一下
+                await asyncio.sleep(2)
+
+            result = await fetch_influencer_detail_async(influencer_id, check_login)
+
+            if result.get("success"):
+                if attempt > 0:
+                    print(f"   ✅ 重试成功!")
+                result["retries"] = attempt
+                return result
+            else:
+                # 失败但未到最大重试次数
+                if attempt < max_retries:
+                    error_msg = result.get("message", "未知错误")
+                    print(f"   ⚠️ 第 {attempt + 1} 次尝试失败: {error_msg}")
+                    continue
+                else:
+                    # 已达最大重试次数
+                    print(f"   ❌ 达到最大重试次数 ({max_retries}),标记为失败")
+                    result["retries"] = attempt
+                    result["error"] = f"重试 {max_retries} 次后仍失败"
+                    return result
+
+        except Exception as e:
+            print(f"   ❌ 爬取过程异常: {e}")
+            if attempt < max_retries:
+                print(f"   🔄 将进行重试...")
+                continue
+            else:
+                return {
+                    "success": False,
+                    "message": f"重试 {max_retries} 次后仍失败",
+                    "retries": attempt,
+                    "error": str(e)
+                }
+
+    # 不应该到这里
+    return {
+        "success": False,
+        "message": "未知错误",
+        "retries": max_retries,
+        "error": "逻辑错误"
+    }
 
 
 async def fetch_influencer_detail_async(influencer_id: str, check_login: bool = True) -> Dict[str, Any]:
@@ -1591,12 +1733,19 @@ async def fetch_influencer_detail_async(influencer_id: str, check_login: bool = 
 
         # 下拉菜单处理函数
         async def process_dropdown_menu(section_name, index):
-            """处理下拉菜单，点击所有选项以触发API请求"""
+            """
+            处理下拉菜单，点击所有选项以触发API请求
+
+            Raises:
+                Exception: 如果处理菜单失败,抛出异常供上层重试
+            """
             try:
                 # 查找下拉菜单选择器
                 selector_div = await _page.query_selector(f'div.flex.justify-between.items-center:has-text("{section_name}") div.ant-select-selector')
                 if not selector_div:
-                    return
+                    error_msg = f"未找到{section_name}菜单"
+                    print(f"   ⚠️ {error_msg}")
+                    raise Exception(error_msg)
 
                 # 点击展开
                 await selector_div.click()
@@ -1621,10 +1770,16 @@ async def fetch_influencer_detail_async(influencer_id: str, check_login: bool = 
                             child_divs = await dropdown_holder.locator('> div').all()
                     except Exception as e:
                         print(f"   ⚠️ 点击第{i+1}个选项时出错: {e}")
+                        # 🔥 如果是关键错误,抛出异常
+                        if "timeout" in str(e).lower() or "navigation" in str(e).lower():
+                            raise
                         continue
 
             except Exception as e:
-                print(f"   ⚠️ 处理{section_name}菜单时出错: {e}")
+                error_msg = f"处理{section_name}菜单时出错: {e}"
+                print(f"   ❌ {error_msg}")
+                # 🔥 抛出异常供上层重试
+                raise Exception(error_msg)
 
         # 处理两个下拉菜单
         await process_dropdown_menu("近期数据", 0)
