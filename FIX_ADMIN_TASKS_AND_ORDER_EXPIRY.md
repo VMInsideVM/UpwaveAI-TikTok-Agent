@@ -30,10 +30,13 @@ async function loadTasks() {
 
 **同样修改**: `stopCurrentTask()` 函数 (Line 1835)
 
-#### 修改 2: 后端添加 success 字段 (api/admin.py)
+#### 修改 2: 后端添加 success 字段和前端需要的数据 (api/admin.py)
 
-**文件**: [api/admin.py](api/admin.py:660-686)
+**文件**: [api/admin.py](api/admin.py:660-694)
 
+**问题**: 前端期望 `queued_tasks` 和 `queue_length`，但后端返回 `tasks` 和 `queue_size`
+
+**修复**:
 ```python
 @router.get("/tasks")
 async def view_task_queue(
@@ -43,19 +46,27 @@ async def view_task_queue(
     try:
         queue_info = report_queue.get_all_tasks()
 
+        # 🔥 过滤出排队中的任务
+        all_statuses = queue_info.get("all_statuses", [])
+        queued_tasks = [task for task in all_statuses if task.get("status") == "queued"]
+
         return {
-            "success": True,  # ✅ 添加
+            "success": True,  # ✅ 添加 success 字段
             "current_task": queue_info["current_task"],
             "queue_size": queue_info["queue_size"],
+            "queue_length": len(queued_tasks),  # ✅ 添加 queue_length
+            "queued_tasks": queued_tasks,  # ✅ 添加 queued_tasks
             "is_processing": queue_info["is_processing"],
-            "tasks": queue_info["all_statuses"]
+            "tasks": all_statuses  # 保留原字段用于兼容
         }
     except Exception as e:
         return {
-            "success": False,  # ✅ 错误时返回
+            "success": False,
             "error": f"获取任务队列失败: {str(e)}",
             "current_task": None,
             "queue_size": 0,
+            "queue_length": 0,  # ✅ 错误时也返回
+            "queued_tasks": [],  # ✅ 错误时也返回
             "is_processing": False,
             "tasks": []
         }

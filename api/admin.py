@@ -667,12 +667,18 @@ async def view_task_queue(
     try:
         queue_info = report_queue.get_all_tasks()
 
+        # 过滤出排队中的任务
+        all_statuses = queue_info.get("all_statuses", [])
+        queued_tasks = [task for task in all_statuses if task.get("status") == "queued"]
+
         return {
             "success": True,
             "current_task": queue_info["current_task"],
             "queue_size": queue_info["queue_size"],
+            "queue_length": len(queued_tasks),  # 添加 queue_length
+            "queued_tasks": queued_tasks,  # 添加 queued_tasks
             "is_processing": queue_info["is_processing"],
-            "tasks": queue_info["all_statuses"]
+            "tasks": all_statuses  # 保留原字段用于兼容
         }
     except Exception as e:
         # 返回错误信息而不是抛出异常，避免前端显示混乱
@@ -681,6 +687,8 @@ async def view_task_queue(
             "error": f"获取任务队列失败: {str(e)}",
             "current_task": None,
             "queue_size": 0,
+            "queue_length": 0,
+            "queued_tasks": [],
             "is_processing": False,
             "tasks": []
         }
