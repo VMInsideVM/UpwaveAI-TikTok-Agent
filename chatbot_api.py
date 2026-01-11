@@ -42,6 +42,9 @@ from utils.security import content_moderator, get_client_ip, rate_limiter
 from services.security_service import security_service
 from config.pricing import MAX_ROUNDS_PER_SESSION
 
+# 导入订单超时检查服务
+from services.order_expiry_service import order_expiry_service
+
 # 创建 FastAPI 应用
 app = FastAPI(
     title="TikTok达人推荐Agent",
@@ -86,6 +89,30 @@ if os.path.exists(reports_dir):
     print(f"✅ 报告静态文件服务已启动: /reports -> {reports_dir}")
 else:
     print(f"⚠️ 报告目录不存在，将在生成报告时创建: {reports_dir}")
+
+
+# ==================== 应用生命周期事件 ====================
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时执行"""
+    print("🚀 应用启动中...")
+
+    # 启动订单超时检查服务
+    await order_expiry_service.start()
+
+    print("✅ 应用启动完成")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时执行"""
+    print("⏹️  应用关闭中...")
+
+    # 停止订单超时检查服务
+    await order_expiry_service.stop()
+
+    print("✅ 应用已关闭")
 
 
 # ==================== 辅助函数 ====================
