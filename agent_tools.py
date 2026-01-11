@@ -19,7 +19,8 @@ import json
 # 导入现有函数（非 Playwright 相关）
 from main import (
     build_complete_url,
-    get_sort_suffix
+    get_sort_suffix,
+    COUNTRY_OPTIONS
 )
 from agent_category_classifier import ProductCategoryClassifierV3
 import re
@@ -226,6 +227,17 @@ class BuildURLTool(BaseTool):
     ) -> str:
         """执行 URL 构建"""
         try:
+            # 验证国家是否支持
+            if country_name not in COUNTRY_OPTIONS:
+                supported_countries = [c for c in COUNTRY_OPTIONS.keys() if c != '全部']
+                return (
+                    f"❌ 不支持的国家/地区: {country_name}\n\n"
+                    f"我们目前支持的国家/地区包括:\n"
+                    f"- 全部\n"
+                    f"- {'、'.join(supported_countries)}\n\n"
+                    f"请从以上列表中选择一个国家/地区。"
+                )
+
             # 🔍 调试日志：打印接收到的达人数量参数
             print(f"🔍 BuildURLTool 接收到的 target_influencer_count: {target_influencer_count}")
 
