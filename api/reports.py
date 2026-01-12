@@ -3,23 +3,27 @@ Reports API Endpoints
 报告管理 API 端点
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import json
+from passlib.context import CryptContext
 
 from database.connection import get_db
 from database.models import Report, User, UserUsage, ChatSession, CreditHistory
-from auth.dependencies import get_current_user, get_current_admin_user, get_user_from_token_param
+from auth.dependencies import get_current_user, get_current_admin_user, get_user_from_token_param, get_user_or_shared_access
 from background.report_queue import report_queue
 
 router = APIRouter(prefix="/api/reports", tags=["报告"])
 
 # 从环境变量读取部署配置
 BASE_PATH = os.getenv("BASE_PATH", "")  # 例如: "/agent" 或 ""
+
+# 密码加密上下文
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ==================== Pydantic Models ====================
@@ -60,6 +64,31 @@ class ReportStatusResponse(BaseModel):
     scraping_eta: Optional[int]
     report_progress: int
     report_eta: Optional[int]
+
+
+class ReportShareSettingInput(BaseModel):
+    """报告分享设置请求"""
+    share_mode: str = Field(..., description="分享模式: private/public/password")
+    password: Optional[str] = Field(None, description="密码（仅password模式需要）")
+    expires_in_days: Optional[int] = Field(None, description="过期天数: 7/30/None(永久)")
+
+    @validator('share_mode')
+    def validate_share_mode(cls, v):
+        if v not in ["private", "public", "password"]:
+            raise ValueError('share_mode必须是: private, public, 或 password')
+        return v
+
+    @validator('password')
+    def validate_password(cls, v, values):
+        if values.get('share_mode') == 'password':
+            if not v or len(v) < 6:
+                raise ValueError('密码长度至少为6位')
+        return v
+
+
+class SharedReportAccessInput(BaseModel):
+    """分享报告访问请求"""
+    password: Optional[str] = Field(None, description="密码（password模式需要）")
 
 
 # ==================== API Endpoints ====================
@@ -322,7 +351,7 @@ async def list_user_reports(
 async def view_report(
     report_id: str,
     token: Optional[str] = None,
-    current_user: User = Depends(get_user_from_token_param),
+    current_user = Depends(get_user_or_shared_access),
     db: Session = Depends(get_db)
 ):
     """
@@ -331,7 +360,10 @@ async def view_report(
     支持通过 URL 参数传递 token（用于在新窗口打开）
     也支持通过 Authorization 头传递 token
 
-    只有报告所有者或管理员可以访问
+    支持以下访问方式：
+    1. 报告所有者
+    2. 管理员
+    3. 分享访问（通过分享令牌）
     """
     report = db.query(Report).filter(Report.report_id == report_id).first()
 
@@ -341,8 +373,23 @@ async def view_report(
             detail="报告不存在"
         )
 
-    # 访问控制
-    if report.user_id != current_user.user_id and not current_user.is_admin:
+    # 访问控制（增强版）
+    is_shared_access = hasattr(current_user, 'report_id')
+
+    # 1. 管理员：无条件访问
+    if hasattr(current_user, 'is_admin') and current_user.is_admin:
+        pass  # 允许访问
+
+    # 2. 报告所有者：无条件访问
+    elif hasattr(current_user, 'user_id') and current_user.user_id and report.user_id == current_user.user_id:
+        pass  # 允许访问
+
+    # 3. 分享访问：检查令牌中的 report_id
+    elif is_shared_access and current_user.report_id == report_id:
+        pass  # 允许访问
+
+    # 4. 其他情况：拒绝访问
+    else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权访问此报告"
@@ -361,6 +408,31 @@ async def view_report(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="报告文件不存在"
         )
+
+    # 如果是分享访问，添加水印
+    if is_shared_access:
+        try:
+            with open(report.report_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+
+            watermark = f"""
+    <div class="report-watermark" style="position: fixed; bottom: 10px; right: 10px; opacity: 0.5; font-size: 12px; color: #999; z-index: 9999;">
+        报告所有者: {report.user.username}
+    </div>
+    """
+
+            # 在 </body> 前插入水印
+            if '</body>' in html_content:
+                html_content = html_content.replace('</body>', f'{watermark}</body>')
+            else:
+                html_content += watermark
+
+            return HTMLResponse(content=html_content)
+
+        except Exception as e:
+            print(f"❌ 添加水印失败: {e}")
+            # 降级：直接返回文件
+            return FileResponse(report.report_path, media_type="text/html")
 
     # 将绝对路径转换为静态文件URL
     # 例如: output/reports/20251212_204820/report.html -> /agent/reports/20251212_204820/report.html
@@ -532,3 +604,208 @@ async def delete_report(
     db.commit()
 
     return {"message": "报告已删除"}
+
+
+# ==================== 报告分享功能 API ====================
+
+@router.post("/{report_id}/share/settings")
+async def update_share_settings(
+    report_id: str,
+    settings: ReportShareSettingInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    更新报告分享设置
+
+    - 仅报告所有者可以修改分享设置
+    - 支持三种模式: private, public, password
+    - password 模式需要提供密码
+    - 支持设置过期时间
+    """
+    report = db.query(Report).filter(Report.report_id == report_id).first()
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="报告不存在"
+        )
+
+    # 权限检查：仅所有者可以修改
+    if report.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权修改此报告的分享设置"
+        )
+
+    # password 模式必须提供密码
+    if settings.share_mode == "password" and not settings.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="密码保护模式需要提供密码"
+        )
+
+    # 更新分享设置
+    report.share_mode = settings.share_mode
+    report.share_created_at = datetime.now()
+
+    # 设置密码（加密存储）
+    if settings.share_mode == "password":
+        report.share_password = pwd_context.hash(settings.password)
+    else:
+        report.share_password = None
+
+    # 设置过期时间
+    if settings.expires_in_days:
+        report.share_expires_at = datetime.now() + timedelta(days=settings.expires_in_days)
+    else:
+        report.share_expires_at = None
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "分享设置已更新",
+        "share_mode": report.share_mode,
+        "share_url": f"/shared/{report_id}",
+        "expires_at": report.share_expires_at.isoformat() if report.share_expires_at else None
+    }
+
+
+@router.get("/{report_id}/share/settings")
+async def get_share_settings(
+    report_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取报告分享设置（仅所有者可查看）
+    """
+    report = db.query(Report).filter(Report.report_id == report_id).first()
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="报告不存在"
+        )
+
+    if report.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权查看此报告的分享设置"
+        )
+
+    return {
+        "success": True,
+        "share_mode": report.share_mode,
+        "has_password": bool(report.share_password),
+        "expires_at": report.share_expires_at.isoformat() if report.share_expires_at else None,
+        "share_url": f"/shared/{report_id}",
+        "is_expired": report.share_expires_at < datetime.now() if report.share_expires_at else False
+    }
+
+
+@router.post("/{report_id}/shared")
+async def access_shared_report(
+    report_id: str,
+    access_input: SharedReportAccessInput,
+    db: Session = Depends(get_db)
+):
+    """
+    访问分享的报告
+
+    - 无需登录
+    - 根据分享模式验证访问权限
+    - 返回报告访问令牌（短期有效）
+    """
+    report = db.query(Report).filter(Report.report_id == report_id).first()
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="报告不存在"
+        )
+
+    # 检查报告状态
+    if report.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="报告尚未完成"
+        )
+
+    # 检查分享模式
+    if report.share_mode == "private":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="此报告未分享"
+        )
+
+    # 检查过期时间
+    if report.share_expires_at and report.share_expires_at < datetime.now():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="分享链接已过期"
+        )
+
+    # password 模式验证密码
+    if report.share_mode == "password":
+        if not access_input.password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="需要密码"
+            )
+
+        if not pwd_context.verify(access_input.password, report.share_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="密码错误"
+            )
+
+    # 生成短期访问令牌（1小时有效）
+    from auth.dependencies import create_access_token
+
+    access_token = create_access_token(
+        data={
+            "report_id": report_id,
+            "access_type": "shared",
+            "share_mode": report.share_mode
+        },
+        expires_delta=timedelta(hours=1)
+    )
+
+    return {
+        "success": True,
+        "access_token": access_token,
+        "report_url": f"/api/reports/{report_id}/view?token={access_token}",
+        "owner_username": report.user.username  # 用于水印
+    }
+
+
+@router.get("/{report_id}/shared/preview")
+async def preview_shared_report(
+    report_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    预览分享报告信息（无需密码）
+
+    - 返回报告标题、创建时间等基本信息
+    - 不返回报告内容
+    """
+    report = db.query(Report).filter(Report.report_id == report_id).first()
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="报告不存在"
+        )
+
+    return {
+        "success": True,
+        "title": report.title,
+        "created_at": report.created_at.isoformat(),
+        "share_mode": report.share_mode,
+        "requires_password": report.share_mode == "password",
+        "is_expired": report.share_expires_at < datetime.now() if report.share_expires_at else False,
+        "owner_username": report.user.username
+    }

@@ -494,6 +494,16 @@ async def admin_page():
         return HTMLResponse(content="<h1>404 - 管理后台页面不存在</h1>", status_code=404)
 
 
+@app.get("/shared/{report_id}", response_class=HTMLResponse)
+async def shared_report_page(report_id: str):
+    """返回分享报告访问页面"""
+    try:
+        with open("static/shared.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>404 - 分享页面不存在</h1>", status_code=404)
+
+
 @app.get("/api/health")
 async def health_check():
     """健康检查"""

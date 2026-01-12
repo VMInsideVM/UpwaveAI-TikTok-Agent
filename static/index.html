@@ -706,14 +706,52 @@
             padding: 20px;
             background: var(--sidebar-bg);
             border-radius: 12px;
-            cursor: pointer;
             transition: all 0.2s;
             border: 2px solid transparent;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
         }
 
         .report-card:hover {
             border-color: var(--primary-color);
             transform: translateY(-2px);
+        }
+
+        .report-card-content {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .report-card-actions {
+            display: flex;
+            gap: 8px;
+            margin-left: 12px;
+        }
+
+        .report-action-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .report-action-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        .report-action-btn.share-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
 
         .report-card-title {
@@ -1327,6 +1365,150 @@
                 right: 20px;
             }
         }
+
+        /* ==================== 分享设置模态框样式 ==================== */
+        .share-form .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-color);
+            font-size: 14px;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .form-hint {
+            display: block;
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+
+        .form-hint.success {
+            color: #10b981;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: flex-start;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .radio-label:hover {
+            border-color: var(--primary-color);
+            background: rgba(79, 70, 229, 0.02);
+        }
+
+        .radio-label input[type="radio"] {
+            margin-top: 2px;
+            margin-right: 12px;
+            cursor: pointer;
+        }
+
+        .radio-label input[type="radio"]:checked + .radio-text {
+            color: var(--primary-color);
+        }
+
+        .radio-text {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .radio-text small {
+            color: #6b7280;
+            font-size: 12px;
+        }
+
+        .share-url-container {
+            display: flex;
+            gap: 8px;
+        }
+
+        .share-url-container .form-input {
+            flex: 1;
+        }
+
+        .copy-btn {
+            padding: 10px 16px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #5b21b6;
+            transform: scale(1.05);
+        }
+
+        .copy-btn:active {
+            transform: scale(0.95);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5b21b6;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
     </style>
     <!-- QRCode.js for generating QR codes -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -1737,6 +1919,79 @@
         </div>
     </div>
 
+    <!-- 报告分享设置模态框 -->
+    <div id="shareModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">🔗 分享报告</h3>
+                <button class="modal-close" onclick="closeShareModal()">×</button>
+            </div>
+            <div class="modal-body" style="padding: 24px;">
+                <div class="share-form">
+                    <!-- 分享模式选择 -->
+                    <div class="form-group">
+                        <label class="form-label">分享模式</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="shareMode" value="private" checked onchange="updateShareUI()">
+                                <span class="radio-text">
+                                    <strong>🔒 不公开</strong>
+                                    <small>仅自己和管理员可见</small>
+                                </span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="shareMode" value="public" onchange="updateShareUI()">
+                                <span class="radio-text">
+                                    <strong>🌐 完全公开</strong>
+                                    <small>任何人都可以通过链接访问</small>
+                                </span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="shareMode" value="password" onchange="updateShareUI()">
+                                <span class="radio-text">
+                                    <strong>🔑 密码保护</strong>
+                                    <small>需要密码才能访问</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 密码设置 (仅密码模式) -->
+                    <div id="passwordField" class="form-group" style="display: none;">
+                        <label class="form-label">访问密码</label>
+                        <input type="password" id="sharePassword" class="form-input" placeholder="设置访问密码（最少6位）" minlength="6">
+                        <small class="form-hint">访客需要输入此密码才能查看报告</small>
+                    </div>
+
+                    <!-- 过期时间 -->
+                    <div id="expiryField" class="form-group" style="display: none;">
+                        <label class="form-label">过期时间</label>
+                        <select id="expiryDays" class="form-select">
+                            <option value="">永久有效</option>
+                            <option value="7">7天后过期</option>
+                            <option value="30">30天后过期</option>
+                        </select>
+                    </div>
+
+                    <!-- 分享链接显示 -->
+                    <div id="shareUrlDisplay" class="form-group" style="display: none;">
+                        <label class="form-label">分享链接</label>
+                        <div class="share-url-container">
+                            <input type="text" id="shareUrl" class="form-input" readonly>
+                            <button class="copy-btn" onclick="copyShareUrl()" title="复制链接">📋</button>
+                        </div>
+                        <small class="form-hint success">✓ 分享链接已生成，点击复制按钮</small>
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="margin-top: 24px;">
+                    <button class="btn btn-primary" onclick="saveShareSettings()">保存设置</button>
+                    <button class="btn btn-secondary" onclick="closeShareModal()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 积分历史模态框 -->
     <div id="creditHistoryModal" class="modal">
         <div class="modal-content" style="max-width: 900px;">
@@ -1877,7 +2132,94 @@
         let isWaitingForResponse = false;    // 是否在等待agent回复（用户发送消息后等待回复）
         let isDeletingSession = false;       // 是否正在删除会话（删除时跳过警告）
 
-        // 带认证的请求封装
+        // ==================== Token 自动刷新机制 ====================
+        let tokenRefreshTimer = null;
+        let isRefreshingToken = false;
+
+        // 刷新 Access Token
+        async function refreshAccessToken() {
+            if (isRefreshingToken) {
+                console.log('⏳ Token 刷新正在进行中，跳过重复请求');
+                return false;
+            }
+
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) {
+                console.log('❌ 没有 Refresh Token，无法刷新');
+                return false;
+            }
+
+            try {
+                isRefreshingToken = true;
+                console.log('🔄 开始刷新 Access Token...');
+
+                const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('刷新 Token 失败');
+                }
+
+                const data = await response.json();
+                console.log('✅ Token 刷新成功');
+
+                // 更新存储的 Token
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                accessToken = data.access_token;
+
+                // 重新设置自动刷新定时器
+                scheduleTokenRefresh();
+
+                return true;
+
+            } catch (error) {
+                console.error('❌ 刷新 Token 失败:', error);
+
+                // 刷新失败，清除所有 Token 并跳转到登录页
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('user_id');
+                localStorage.removeItem('username');
+                localStorage.removeItem('is_admin');
+
+                alert('登录已过期，请重新登录');
+                navigateTo('/login.html');
+
+                return false;
+
+            } finally {
+                isRefreshingToken = false;
+            }
+        }
+
+        // 设置 Token 自动刷新定时器
+        function scheduleTokenRefresh() {
+            // 清除现有定时器
+            if (tokenRefreshTimer) {
+                clearTimeout(tokenRefreshTimer);
+            }
+
+            // Access Token 有效期为 24 小时（1440 分钟）
+            // 我们在过期前 30 分钟刷新（即 23.5 小时后）
+            const refreshInterval = (1440 - 30) * 60 * 1000; // 23.5 小时，单位：毫秒
+
+            console.log(`⏰ 设置 Token 自动刷新定时器: ${(refreshInterval / 1000 / 60 / 60).toFixed(1)} 小时后刷新`);
+
+            tokenRefreshTimer = setTimeout(async () => {
+                console.log('⏰ Token 自动刷新定时器触发');
+                await refreshAccessToken();
+            }, refreshInterval);
+        }
+
+        // 带认证的请求封装（增强版，支持自动刷新）
         async function fetchWithAuth(url, options = {}) {
             if (!accessToken) {
                 navigateTo('/login.html');
@@ -1904,11 +2246,27 @@
                 url = API_BASE_URL + url;
             }
 
-            const response = await fetch(url, config);
+            let response = await fetch(url, config);
 
-            if (response.status === 401) {
-                // Token 过期或无效
+            // 如果收到 401 错误，尝试刷新 Token 后重试
+            if (response.status === 401 && !isRefreshingToken) {
+                console.log('⚠️ 收到 401 错误，尝试刷新 Token...');
+
+                const refreshSuccess = await refreshAccessToken();
+
+                if (refreshSuccess) {
+                    // Token 刷新成功，使用新 Token 重试请求
+                    console.log('🔄 使用新 Token 重试请求...');
+                    config.headers['Authorization'] = `Bearer ${accessToken}`;
+                    response = await fetch(url, config);
+                } else {
+                    // 刷新失败，已在 refreshAccessToken 中处理跳转
+                    throw new Error('认证过期，请重新登录');
+                }
+            } else if (response.status === 401) {
+                // 如果正在刷新 Token 时还收到 401，说明 Token 已彻底失效
                 localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
                 navigateTo('/login.html');
                 throw new Error('认证过期，请重新登录');
             }
@@ -1953,6 +2311,10 @@
         // 初始化
         async function init() {
             if (!checkAuth()) return;
+
+            // 启动 Token 自动刷新定时器
+            scheduleTokenRefresh();
+            console.log('✅ Token 自动刷新机制已启动');
 
             // 应用主题
             document.documentElement.setAttribute('data-theme', currentTheme);
@@ -3528,13 +3890,22 @@
                             ` : '';
 
                     return `
-                                <div class="report-card" onclick="openReport('${report.report_id}')">
-                                    <div class="report-card-title">${report.title}</div>
-                                    <div class="report-card-status status-${report.status}">
-                                        ${statusMap[report.status] || report.status}
+                                <div class="report-card">
+                                    <div class="report-card-content" onclick="openReport('${report.report_id}')">
+                                        <div class="report-card-title">${report.title}</div>
+                                        <div class="report-card-status status-${report.status}">
+                                            ${statusMap[report.status] || report.status}
+                                        </div>
+                                        ${dualProgressHTML}
+                                        <div class="report-card-time">${new Date(report.created_at).toLocaleString('zh-CN')}</div>
                                     </div>
-                                    ${dualProgressHTML}
-                                    <div class="report-card-time">${new Date(report.created_at).toLocaleString('zh-CN')}</div>
+                                    ${report.status === 'completed' ? `
+                                        <div class="report-card-actions">
+                                            <button class="report-action-btn share-btn" onclick="event.stopPropagation(); openShareSettings('${report.report_id}')" title="分享报告">
+                                                🔗
+                                            </button>
+                                        </div>
+                                    ` : ''}
                                 </div>
                             `;
                 }).join('')}
@@ -3601,6 +3972,246 @@
             } catch (error) {
                 console.error('❌ 打开报告失败:', error);
                 alert(`无法打开报告: ${error.message || '未知错误'}`);
+            }
+        }
+
+        // ==================== 报告分享功能 ====================
+
+        // 当前分享的报告ID
+        let currentShareReportId = null;
+
+        // 打开分享设置模态框
+        async function openShareSettings(reportId) {
+            try {
+                console.log('🔗 打开分享设置:', reportId);
+                currentShareReportId = reportId;
+
+                // 获取当前分享设置
+                const response = await fetch(`${API_BASE_URL}/api/reports/${reportId}/share/settings`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取分享设置失败');
+                }
+
+                const data = await response.json();
+                console.log('当前分享设置:', data);
+
+                // 填充表单
+                const modal = document.getElementById('shareModal');
+                const modeRadios = modal.querySelectorAll('input[name="shareMode"]');
+
+                // 设置分享模式
+                modeRadios.forEach(radio => {
+                    radio.checked = radio.value === data.share_mode;
+                });
+
+                // 设置过期时间
+                const expirySelect = document.getElementById('expiryDays');
+                if (data.expires_at) {
+                    // 计算剩余天数
+                    const expiresDate = new Date(data.expires_at);
+                    const now = new Date();
+                    const remainingDays = Math.ceil((expiresDate - now) / (1000 * 60 * 60 * 24));
+
+                    if (remainingDays <= 7) {
+                        expirySelect.value = '7';
+                    } else if (remainingDays <= 30) {
+                        expirySelect.value = '30';
+                    } else {
+                        expirySelect.value = '';
+                    }
+                } else {
+                    expirySelect.value = '';
+                }
+
+                // 如果已经有分享链接,显示它
+                if (data.share_url && data.share_mode !== 'private') {
+                    document.getElementById('shareUrl').value = data.share_url;
+                    document.getElementById('shareUrlDisplay').style.display = 'block';
+                }
+
+                // 更新UI显示
+                updateShareUI();
+
+                // 显示模态框
+                modal.style.display = 'flex';
+
+            } catch (error) {
+                console.error('❌ 打开分享设置失败:', error);
+                alert(`无法打开分享设置: ${error.message || '未知错误'}`);
+            }
+        }
+
+        // 关闭分享设置模态框
+        function closeShareModal() {
+            const modal = document.getElementById('shareModal');
+            modal.style.display = 'none';
+
+            // 重置表单
+            const modeRadios = modal.querySelectorAll('input[name="shareMode"]');
+            modeRadios.forEach(radio => {
+                radio.checked = radio.value === 'private';
+            });
+
+            document.getElementById('sharePassword').value = '';
+            document.getElementById('expiryDays').value = '';
+            document.getElementById('shareUrl').value = '';
+            document.getElementById('shareUrlDisplay').style.display = 'none';
+
+            currentShareReportId = null;
+            updateShareUI();
+        }
+
+        // 更新分享UI显示
+        function updateShareUI() {
+            const modal = document.getElementById('shareModal');
+            const selectedMode = modal.querySelector('input[name="shareMode"]:checked')?.value || 'private';
+
+            const passwordField = document.getElementById('passwordField');
+            const expiryField = document.getElementById('expiryField');
+
+            // 根据选择的模式显示/隐藏字段
+            if (selectedMode === 'private') {
+                // 不公开模式：隐藏所有可选字段
+                passwordField.style.display = 'none';
+                expiryField.style.display = 'none';
+            } else if (selectedMode === 'public') {
+                // 公开模式：隐藏密码,显示过期时间
+                passwordField.style.display = 'none';
+                expiryField.style.display = 'block';
+            } else if (selectedMode === 'password') {
+                // 密码模式：显示密码和过期时间
+                passwordField.style.display = 'block';
+                expiryField.style.display = 'block';
+            }
+        }
+
+        // 保存分享设置
+        async function saveShareSettings() {
+            if (!currentShareReportId) {
+                alert('数据异常，请重新操作');
+                return;
+            }
+
+            try {
+                const modal = document.getElementById('shareModal');
+                const selectedMode = modal.querySelector('input[name="shareMode"]:checked')?.value;
+
+                if (!selectedMode) {
+                    alert('请选择分享模式');
+                    return;
+                }
+
+                // 构建请求数据
+                const requestData = {
+                    share_mode: selectedMode
+                };
+
+                // 密码模式验证
+                if (selectedMode === 'password') {
+                    const password = document.getElementById('sharePassword').value.trim();
+                    if (!password) {
+                        alert('请设置访问密码');
+                        return;
+                    }
+                    if (password.length < 6) {
+                        alert('密码至少需要6位');
+                        return;
+                    }
+                    requestData.password = password;
+                }
+
+                // 过期时间（仅公开和密码模式）
+                if (selectedMode === 'public' || selectedMode === 'password') {
+                    const expiryDays = document.getElementById('expiryDays').value;
+                    if (expiryDays) {
+                        requestData.expires_in_days = parseInt(expiryDays);
+                    }
+                }
+
+                console.log('💾 保存分享设置:', requestData);
+
+                // 发送请求
+                const response = await fetch(`${API_BASE_URL}/api/reports/${currentShareReportId}/share/settings`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || '保存分享设置失败');
+                }
+
+                const data = await response.json();
+                console.log('✅ 分享设置已保存:', data);
+
+                // 如果是公开或密码模式,显示分享链接
+                if (data.share_url && selectedMode !== 'private') {
+                    document.getElementById('shareUrl').value = data.share_url;
+                    document.getElementById('shareUrlDisplay').style.display = 'block';
+
+                    // 提示成功
+                    alert('✓ 分享设置已保存！\n分享链接已生成，您可以复制分享给他人。');
+                } else {
+                    alert('✓ 分享设置已保存！\n报告已设为不公开。');
+
+                    // 关闭模态框
+                    closeShareModal();
+                }
+
+            } catch (error) {
+                console.error('❌ 保存分享设置失败:', error);
+                alert(`保存失败: ${error.message || '未知错误'}`);
+            }
+        }
+
+        // 复制分享链接
+        async function copyShareUrl() {
+            const shareUrlInput = document.getElementById('shareUrl');
+            const url = shareUrlInput.value;
+
+            if (!url) {
+                alert('分享链接为空');
+                return;
+            }
+
+            try {
+                // 使用 Clipboard API 复制
+                await navigator.clipboard.writeText(url);
+
+                // 视觉反馈
+                const copyBtn = document.querySelector('.copy-btn');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '✓';
+                copyBtn.style.background = '#10b981';
+
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                    copyBtn.style.background = '';
+                }, 2000);
+
+                console.log('✅ 分享链接已复制:', url);
+
+            } catch (error) {
+                // 降级方案：使用旧的 execCommand 方法
+                shareUrlInput.select();
+                shareUrlInput.setSelectionRange(0, 99999); // 移动端兼容
+
+                try {
+                    document.execCommand('copy');
+                    alert('✓ 链接已复制到剪贴板');
+                } catch (err) {
+                    console.error('❌ 复制失败:', err);
+                    alert('复制失败，请手动复制链接');
+                }
             }
         }
 

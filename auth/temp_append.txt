@@ -1,0 +1,80 @@
+
+
+async def get_user_or_shared_access(
+    token: Optional[str] = None,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+):
+    """
+    获取当前用户或分享访问令牌
+
+    - 支持正常用户认证
+    - 支持分享访问令牌
+    - 用于报告查看端点
+
+    Returns:
+        User or SharedAccessUser: 用户对象或分享访问伪对象
+    """
+    # 优先从 Authorization 头获取令牌
+    access_token = None
+    if credentials:
+        access_token = credentials.credentials
+    elif token:
+        access_token = token
+
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="需要认证",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 解码令牌
+    payload = decode_token(access_token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 检查是否是分享访问令牌
+    if payload.get("access_type") == "shared":
+        # 创建伪用户对象用于分享访问
+        class SharedAccessUser:
+            def __init__(self, report_id, share_mode):
+                self.report_id = report_id
+                self.share_mode = share_mode
+                self.is_admin = False
+                self.user_id = None
+
+        return SharedAccessUser(
+            report_id=payload.get("report_id"),
+            share_mode=payload.get("share_mode")
+        )
+    else:
+        # 正常用户认证
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="令牌类型错误",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="令牌中缺少用户信息",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户不存在",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        return user

@@ -251,6 +251,13 @@ class Report(Base):
     error_message = Column(Text)
     meta_data = Column(JSON)  # 其他元数据（如产品名称、达人数量等）
 
+    # 分享配置
+    share_mode = Column(String(20), default="private", nullable=False, index=True)
+    # private(不公开), public(完全公开), password(密码保护)
+    share_password = Column(String(128))  # 分享密码（加密存储）
+    share_expires_at = Column(DateTime, index=True)  # 分享过期时间
+    share_created_at = Column(DateTime)  # 分享创建时间
+
     # Relationships
     user = relationship("User", back_populates="reports")
     session = relationship("ChatSession", back_populates="report")
