@@ -410,3 +410,48 @@ python <module_name>.py
 ## Supported Countries
 
 US, ID, GB, VN, TH, MY, PH, ES, MX, DE, FR, IT, BR, JP (plus "全部" for all countries)
+
+## Git Commit Message Convention
+
+**IMPORTANT**: Whenever you modify project files, automatically generate a standardized git commit message at the end of your response.
+
+### Format
+
+```
+📝 Suggested commit:
+git commit -m "type(scope): description"
+```
+
+### Commit Types
+
+- `feat`: 新功能 (new feature)
+- `fix`: 修复bug (bug fix)
+- `docs`: 文档更新 (documentation update)
+- `style`: 代码格式调整 (code style/formatting)
+- `refactor`: 重构 (refactoring)
+- `test`: 测试相关 (testing)
+- `chore`: 构建/工具相关 (build/tooling)
+
+### Examples
+
+```bash
+# New feature
+git commit -m "feat(share): add report sharing functionality with password protection"
+
+# Bug fix
+git commit -m "fix(api): resolve BASE_PATH issue in shared report page"
+
+# Documentation
+git commit -m "docs(readme): update deployment instructions"
+
+# Refactoring
+git commit -m "refactor(auth): simplify token refresh logic"
+```
+
+### Guidelines
+
+1. **Type**: Use lowercase, one of the types above
+2. **Scope**: Optional, indicates the affected module (e.g., share, api, auth, db)
+3. **Description**: Brief summary in English or Chinese, lowercase first letter
+4. **Length**: Keep under 72 characters
+5. **Present tense**: Use "add" not "added", "fix" not "fixed"

@@ -217,11 +217,23 @@
     <div class="watermark" id="watermark"></div>
 
     <script>
-        const reportId = window.location.pathname.split('/').pop();
+        // 从 URL 中提取 report_id 和 base_path
+        const pathParts = window.location.pathname.split('/');
+        const reportId = pathParts[pathParts.length - 1];
+
+        // 检测 BASE_PATH (如果路径包含 /agent/shared/，则 BASE_PATH 是 /agent)
+        let BASE_PATH = '';
+        const sharedIndex = pathParts.indexOf('shared');
+        if (sharedIndex > 1) {
+            BASE_PATH = pathParts.slice(1, sharedIndex).join('/');
+            if (BASE_PATH) {
+                BASE_PATH = '/' + BASE_PATH;
+            }
+        }
 
         async function loadPreview() {
             try {
-                const response = await fetch(`/api/reports/${reportId}/shared/preview`);
+                const response = await fetch(`${BASE_PATH}/api/reports/${reportId}/shared/preview`);
                 const data = await response.json();
 
                 document.getElementById('loading').style.display = 'none';
@@ -266,7 +278,7 @@
             }
 
             try {
-                const response = await fetch(`/api/reports/${reportId}/shared`, {
+                const response = await fetch(`${BASE_PATH}/api/reports/${reportId}/shared`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password: password || null })
