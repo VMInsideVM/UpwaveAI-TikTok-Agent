@@ -781,7 +781,7 @@ async def access_shared_report(
     return {
         "success": True,
         "access_token": access_token,
-        "report_url": f"/api/reports/{report_id}/view?token={access_token}",
+        "report_url": f"{BASE_PATH}/api/reports/{report_id}/view?token={access_token}",
         "owner_username": report.user.username  # 用于水印
     }
 

@@ -422,6 +422,8 @@ US, ID, GB, VN, TH, MY, PH, ES, MX, DE, FR, IT, BR, JP (plus "全部" for all co
 type(scope): description
 ```
 
+**Note**: Only provide the commit message itself (without `git commit -m` wrapper or quotes).
+
 ### Commit Types
 
 - `feat`: 新功能 (new feature)
@@ -434,18 +436,18 @@ type(scope): description
 
 ### Examples
 
-```bash
+```
 # New feature
-git commit -m "feat(share): add report sharing functionality with password protection"
+feat(share): add report sharing functionality with password protection
 
 # Bug fix
-git commit -m "fix(api): resolve BASE_PATH issue in shared report page"
+fix(api): resolve BASE_PATH issue in shared report page
 
 # Documentation
-git commit -m "docs(readme): update deployment instructions"
+docs(readme): update deployment instructions
 
 # Refactoring
-git commit -m "refactor(auth): simplify token refresh logic"
+refactor(auth): simplify token refresh logic
 ```
 
 ### Guidelines
