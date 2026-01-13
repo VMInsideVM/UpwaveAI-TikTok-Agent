@@ -28,6 +28,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.pyc
+*.pyo
 
 # Virtual Environment
 venv/

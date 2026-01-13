@@ -345,9 +345,13 @@ class TikTokInfluencerAgent:
 10. submit_search_task - 提交后台搜索任务（必须在 confirm_scraping 之后调用）
 11. process_influencer_detail - 批量获取达人详细数据（已废弃，请使用 submit_search_task）"""
 
+        # 🔧 绑定工具到 LLM，使用非严格模式以兼容 DeepSeek/Qwen 模型
+        # 这些模型有时返回字符串化的 JSON 参数而不是字典
+        llm_with_tools = self.llm.bind_tools(self.tools, strict=False)
+
         # 使用 LangChain 1.0 的 create_agent (重命名为 langchain_create_agent 避免冲突)
         agent = langchain_create_agent(
-            self.llm,  # 位置参数
+            llm_with_tools,  # 使用已绑定工具的 LLM
             self.tools,  # 位置参数
             system_prompt=system_prompt,
             debug=False  # 关闭调试模式（用于生产环境）

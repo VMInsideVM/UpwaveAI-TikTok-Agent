@@ -2135,6 +2135,7 @@
         // ==================== Token 自动刷新机制 ====================
         let tokenRefreshTimer = null;
         let isRefreshingToken = false;
+        let lastTokenRefreshTime = null; // 记录上次刷新时间（用于移动端恢复检测）
 
         // 刷新 Access Token
         async function refreshAccessToken() {
@@ -2174,6 +2175,10 @@
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('refresh_token', data.refresh_token);
                 accessToken = data.access_token;
+
+                // 记录刷新时间（用于移动端页面恢复时检测）
+                lastTokenRefreshTime = Date.now();
+                localStorage.setItem('last_token_refresh_time', lastTokenRefreshTime.toString());
 
                 // 重新设置自动刷新定时器
                 scheduleTokenRefresh();
@@ -2218,6 +2223,60 @@
                 await refreshAccessToken();
             }, refreshInterval);
         }
+
+        // 检查 Token 是否需要刷新（用于移动端页面恢复）
+        async function checkAndRefreshToken() {
+            const lastRefreshTime = localStorage.getItem('last_token_refresh_time');
+
+            if (!lastRefreshTime) {
+                // 没有记录，立即刷新
+                console.log('📱 页面恢复：没有刷新记录，立即刷新 Token');
+                await refreshAccessToken();
+                return;
+            }
+
+            const timeSinceLastRefresh = Date.now() - parseInt(lastRefreshTime);
+            const hoursElapsed = timeSinceLastRefresh / (1000 * 60 * 60);
+
+            // 如果距离上次刷新超过 23 小时，立即刷新
+            if (hoursElapsed >= 23) {
+                console.log(`📱 页面恢复：距上次刷新已 ${hoursElapsed.toFixed(1)} 小时，立即刷新 Token`);
+                await refreshAccessToken();
+            } else {
+                console.log(`📱 页面恢复：距上次刷新仅 ${hoursElapsed.toFixed(1)} 小时，Token 仍然有效`);
+            }
+        }
+
+        // 监听页面可见性变化（移动端友好）
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') {
+                console.log('📱 页面恢复前台，检查 Token 状态...');
+                await checkAndRefreshToken();
+
+                // 重新连接 WebSocket（如果已断开）
+                if (sessionId && !isConnected) {
+                    console.log('📱 重新连接 WebSocket...');
+                    connectWebSocket();
+                }
+            } else {
+                console.log('📱 页面进入后台，定时器将暂停');
+            }
+        });
+
+        // 监听页面恢复事件（iOS Safari 特殊处理）
+        window.addEventListener('pageshow', async (event) => {
+            if (event.persisted) {
+                // 页面从往返缓存（bfcache）恢复
+                console.log('📱 页面从缓存恢复（iOS Safari），检查 Token 状态...');
+                await checkAndRefreshToken();
+
+                // 重新连接 WebSocket
+                if (sessionId && !isConnected) {
+                    console.log('📱 重新连接 WebSocket...');
+                    connectWebSocket();
+                }
+            }
+        });
 
         // 带认证的请求封装（增强版，支持自动刷新）
         async function fetchWithAuth(url, options = {}) {
@@ -2312,6 +2371,14 @@
         async function init() {
             if (!checkAuth()) return;
 
+            // 初始化刷新时间记录（如果没有则记录当前时间）
+            if (!localStorage.getItem('last_token_refresh_time')) {
+                lastTokenRefreshTime = Date.now();
+                localStorage.setItem('last_token_refresh_time', lastTokenRefreshTime.toString());
+            } else {
+                lastTokenRefreshTime = parseInt(localStorage.getItem('last_token_refresh_time'));
+            }
+
             // 启动 Token 自动刷新定时器
             scheduleTokenRefresh();
             console.log('✅ Token 自动刷新机制已启动');
@@ -2332,11 +2399,7 @@
             if (savedSessionId) {
                 // 验证会话是否仍然有效
                 try {
-                    const response = await fetch(`${API_BASE_URL}/api/sessions/${savedSessionId}/status`, {
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`
-                        }
-                    });
+                    const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${savedSessionId}/status`);
 
                     if (response.ok) {
                         // 会话有效，恢复它
@@ -2363,11 +2426,7 @@
                         // ⭐ 新增：检查是否为历史会话
                         // 规则：恢复的会话如果不是最新会话,则标记为历史会话
                         try {
-                            const sessionsResponse = await fetch(`${API_BASE_URL}/api/sessions?limit=1`, {
-                                headers: {
-                                    'Authorization': `Bearer ${accessToken}`
-                                }
-                            });
+                            const sessionsResponse = await fetchWithAuth(`${API_BASE_URL}/api/sessions?limit=1`);
 
                             if (sessionsResponse.ok) {
                                 const sessionsData = await sessionsResponse.json();
@@ -2419,17 +2478,8 @@
         // 加载用户信息
         async function loadUserInfo() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
-
-                if (response.status === 401) {
-                    logout();
-                    return;
-                }
-
+                // ✅ 使用 fetchWithAuth 支持自动刷新 Token
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/auth/me`);
                 const user = await response.json();
                 document.getElementById('username').textContent = user.username;
                 document.getElementById('quotaBadge').textContent = `剩余积分: ${user.remaining_credits}`;
@@ -2473,9 +2523,7 @@
 
             try {
                 // 1. 检查会话是否有消息（通过获取会话状态）
-                const statusResponse = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/status`, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
-                });
+                const statusResponse = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${sessionId}/status`);
 
                 if (statusResponse.ok) {
                     const statusData = await statusResponse.json();
@@ -2484,9 +2532,7 @@
                 }
 
                 // 2. 检查是否有进行中的报告（queued 或 generating）
-                const reportsResponse = await fetch(`${API_BASE_URL}/api/reports`, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
-                });
+                const reportsResponse = await fetchWithAuth(`${API_BASE_URL}/api/reports`);
 
                 if (reportsResponse.ok) {
                     const reportsData = await reportsResponse.json();
@@ -2619,10 +2665,10 @@
         // 创建会话
         async function createSession() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+                // ✅ 使用 fetchWithAuth 支持自动刷新
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
                     }
                 });
@@ -3061,11 +3107,7 @@
         async function loadChatHistory() {
             try {
                 console.log('🔄 正在加载聊天历史...');
-                const response = await fetch(`${API_BASE_URL}/api/sessions`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions`);
 
                 const data = await response.json();  // ⭐ 修复：获取完整响应
                 const sessions = data.sessions || [];  // ⭐ 修复：提取 sessions 数组
@@ -3142,12 +3184,11 @@
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
-                // 2. 创建新会话
-                const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+                // 2. 创建新会话（✅ 使用 fetchWithAuth）
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
+                        'Content-Type': 'application/json'
                     }
                 });
 
@@ -3242,11 +3283,7 @@
                 localStorage.setItem('sessionId', sessionId);
 
                 // 3. 获取会话历史消息
-                const response = await fetch(`${API_BASE_URL}/api/sessions/${sid}/status`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${sid}/status`);
 
                 if (!response.ok) {
                     throw new Error('获取会话历史失败');
@@ -3343,11 +3380,7 @@
             // ⭐ 获取该会话关联的报告数量
             let relatedReportsCount = 0;
             try {
-                const reportsResponse = await fetch(`${API_BASE_URL}/api/sessions/${sid}/reports`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+                const reportsResponse = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${sid}/reports`);
 
                 if (reportsResponse.ok) {
                     const reportsData = await reportsResponse.json();
@@ -3381,11 +3414,9 @@
             try {
                 console.log('🗑️ 删除会话:', sid);
 
-                const response = await fetch(`${API_BASE_URL}/api/sessions/${sid}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
+                // ✅ 使用 fetchWithAuth 支持自动刷新
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${sid}`, {
+                    method: 'DELETE'
                 });
 
                 if (!response.ok) {
@@ -3405,11 +3436,7 @@
                     console.log('📝 删除的是当前会话');
 
                     // 获取其他可用会话
-                    const response = await fetch(`${API_BASE_URL}/api/sessions`, {
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`
-                        }
-                    });
+                    const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions`);
 
                     const data = await response.json();
                     const remainingSessions = data.sessions || [];
@@ -3498,11 +3525,11 @@
             try {
                 console.log('✏️ 重命名会话:', sid, '新标题:', newTitle);
 
-                const response = await fetch(`${API_BASE_URL}/api/sessions/${sid}`, {
+                // ✅ 使用 fetchWithAuth 支持自动刷新
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${sid}`, {
                     method: 'PATCH',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ title: newTitle })
                 });
@@ -3551,18 +3578,8 @@
         // 打开确认生成报告弹窗
         async function openConfirmGenerateModal(data) {
             try {
-                // 获取最新的用户积分信息
-                const userResponse = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
-
-                if (!userResponse.ok) {
-                    alert('获取用户信息失败，请重新登录');
-                    return;
-                }
-
+                // ✅ 获取最新的用户积分信息（使用 fetchWithAuth 支持自动刷新 Token）
+                const userResponse = await fetchWithAuth(`${API_BASE_URL}/api/auth/me`);
                 const user = await userResponse.json();
                 const currentCredits = user.remaining_credits;
 
@@ -3778,11 +3795,7 @@
         // 加载报告
         async function loadReports() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/reports`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/reports`);
 
                 const data = await response.json();
                 const reports = data.reports || data;  // 兼容不同的返回格式
@@ -3940,11 +3953,7 @@
                 console.log('📄 打开报告:', reportId);
 
                 // 先获取报告详情
-                const response = await fetch(`${API_BASE_URL}/api/reports/${reportId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/reports/${reportId}`);
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
@@ -3987,11 +3996,7 @@
                 currentShareReportId = reportId;
 
                 // 获取当前分享设置
-                const response = await fetch(`${API_BASE_URL}/api/reports/${reportId}/share/settings`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/reports/${reportId}/share/settings`);
 
                 if (!response.ok) {
                     throw new Error('获取分享设置失败');
@@ -4135,11 +4140,10 @@
 
                 console.log('💾 保存分享设置:', requestData);
 
-                // 发送请求
-                const response = await fetch(`${API_BASE_URL}/api/reports/${currentShareReportId}/share/settings`, {
+                // 发送请求（✅ 使用 fetchWithAuth 支持自动刷新）
+                const response = await fetchWithAuth(`${API_BASE_URL}/api/reports/${currentShareReportId}/share/settings`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(requestData)
