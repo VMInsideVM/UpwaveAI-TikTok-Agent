@@ -2127,7 +2127,7 @@
             // 设置分享图标路径
             const shareModalIcon = document.getElementById('shareModalIcon');
             if (shareModalIcon) {
-                shareModalIcon.src = `${BASE_PATH}/share.svg`;
+                shareModalIcon.src = `${BASE_PATH}/static/share.svg`;
             }
         });
         // =========================================
@@ -3929,7 +3929,7 @@
                                     ${report.status === 'completed' ? `
                                         <div class="report-card-actions">
                                             <button class="report-action-btn share-btn" onclick="event.stopPropagation(); openShareSettings('${report.report_id}')" title="分享报告">
-                                                <img src="${BASE_PATH}/share.svg" alt="分享" style="width: 18px; height: 18px; vertical-align: middle;">
+                                                <img src="${BASE_PATH}/static/share.svg" alt="分享" style="width: 18px; height: 18px; vertical-align: middle;">
                                             </button>
                                         </div>
                                     ` : ''}
