@@ -20,10 +20,16 @@ from background.report_queue import report_queue
 router = APIRouter(prefix="/api/reports", tags=["报告"])
 
 # 从环境变量读取部署配置
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8001")  # 例如: "https://upwaveai.com"
 BASE_PATH = os.getenv("BASE_PATH", "")  # 例如: "/agent" 或 ""
 
 # 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def generate_share_url(report_id):
+    """生成完整的分享 URL"""
+    return f"{BASE_URL}{BASE_PATH}/shared/{report_id}"
 
 
 # ==================== Pydantic Models ====================
@@ -667,7 +673,7 @@ async def update_share_settings(
         "success": True,
         "message": "分享设置已更新",
         "share_mode": report.share_mode,
-        "share_url": f"/shared/{report_id}",
+        "share_url": generate_share_url(report_id),
         "expires_at": report.share_expires_at.isoformat() if report.share_expires_at else None
     }
 
@@ -700,7 +706,7 @@ async def get_share_settings(
         "share_mode": report.share_mode,
         "has_password": bool(report.share_password),
         "expires_at": report.share_expires_at.isoformat() if report.share_expires_at else None,
-        "share_url": f"/shared/{report_id}",
+        "share_url": generate_share_url(report_id),
         "is_expired": report.share_expires_at < datetime.now() if report.share_expires_at else False
     }
 
