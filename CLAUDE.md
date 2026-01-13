@@ -419,7 +419,7 @@ US, ID, GB, VN, TH, MY, PH, ES, MX, DE, FR, IT, BR, JP (plus "全部" for all co
 
 ```
 📝 Suggested commit:
-git commit -m "type(scope): description"
+type(scope): description
 ```
 
 ### Commit Types

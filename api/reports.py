@@ -15,6 +15,7 @@ from passlib.context import CryptContext
 from database.connection import get_db
 from database.models import Report, User, UserUsage, ChatSession, CreditHistory
 from auth.dependencies import get_current_user, get_current_admin_user, get_user_from_token_param, get_user_or_shared_access
+from auth.security import create_access_token
 from background.report_queue import report_queue
 
 router = APIRouter(prefix="/api/reports", tags=["报告"])
@@ -768,8 +769,6 @@ async def access_shared_report(
             )
 
     # 生成短期访问令牌（1小时有效）
-    from auth.dependencies import create_access_token
-
     access_token = create_access_token(
         data={
             "report_id": report_id,
