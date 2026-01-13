@@ -9,7 +9,7 @@ import sqlite3
 import os
 import sys
 
-def check_database(db_path: str = "chatbot.db"):
+def check_database(db_path="chatbot.db"):
     """检查数据库结构"""
     print("=" * 60)
     print("🔍 数据库结构诊断")

@@ -8,9 +8,12 @@
 import sqlite3
 import os
 
-def migrate_database(db_path: str = "chatbot.db"):
+def migrate_database(db_path="chatbot.db"):
     """
     为 reports 表添加分享功能相关字段
+
+    Args:
+        db_path: 数据库文件路径，默认为 chatbot.db
 
     新增字段:
     - share_mode: 分享模式 (private/public/password)
@@ -99,7 +102,7 @@ def migrate_database(db_path: str = "chatbot.db"):
         return False
 
 
-def verify_migration(db_path: str = "chatbot.db"):
+def verify_migration(db_path="chatbot.db"):
     """验证迁移是否成功"""
     print(f"\n🔍 验证迁移结果...")
 
