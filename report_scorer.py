@@ -11,6 +11,77 @@ from typing import Dict, List, Any, Optional
 import json
 
 
+def safe_parse_percentage(value: Any, default: float = 0.0) -> float:
+    """
+    Safely parse percentage string to float, handling special cases.
+
+    Args:
+        value: Value to parse (string like "12.5%", or "-", or None)
+        default: Default value if parsing fails
+
+    Returns:
+        float: Parsed percentage as decimal (e.g., 0.125 for "12.5%")
+
+    Examples:
+        >>> safe_parse_percentage("12.5%")
+        0.125
+        >>> safe_parse_percentage("-")
+        0.0
+        >>> safe_parse_percentage(None)
+        0.0
+        >>> safe_parse_percentage("")
+        0.0
+    """
+    # Handle None, empty string, or "-" (missing data indicator)
+    if value is None or value == '' or value == '-':
+        return default
+
+    # If already a number, return as-is
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    # Parse string percentage
+    try:
+        value_str = str(value).strip()
+        # Remove % sign if present
+        if value_str.endswith('%'):
+            value_str = value_str[:-1]
+        return float(value_str) / 100.0
+    except (ValueError, AttributeError):
+        return default
+
+
+def safe_parse_number(value: Any, default: float = 0.0) -> float:
+    """
+    Safely parse any value to float, handling special cases.
+
+    Args:
+        value: Value to parse
+        default: Default value if parsing fails
+
+    Returns:
+        float: Parsed number
+
+    Examples:
+        >>> safe_parse_number("123.45")
+        123.45
+        >>> safe_parse_number("-")
+        0.0
+        >>> safe_parse_number(None)
+        0.0
+    """
+    if value is None or value == '' or value == '-':
+        return default
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    try:
+        return float(str(value).strip())
+    except (ValueError, AttributeError):
+        return default
+
+
 class InfluencerScorer:
     """
     Multi-dimensional scoring engine for TikTok influencers.
@@ -68,16 +139,19 @@ class InfluencerScorer:
             author_index = api_resp.get('authorIndex', {}) or {}
             if isinstance(author_index, list): author_index = {}
 
-            # Parse interaction rate (remove %)
+            # Parse interaction rate (safely handle "-" and missing data)
             interaction_rate_str = stats_info.get('aweme_avg_interaction_rate', '0%')
-            interaction_rate = float(interaction_rate_str.strip('%')) / 100
+            interaction_rate = safe_parse_percentage(interaction_rate_str, default=0.0)
 
-            # Parse pop rate (viral video rate)
+            # Parse pop rate (viral video rate) - safely handle "-" and missing data
             pop_rate_str = stats_info.get('aweme_pop_rate', '0%')
-            pop_rate = float(pop_rate_str.strip('%')) / 100
+            pop_rate = safe_parse_percentage(pop_rate_str, default=0.0)
 
-            # Recent interaction count
-            recent_interaction = author_index.get('video_28_avg_interaction_count', 0)
+            # Recent interaction count (safely handle "-" and missing data)
+            recent_interaction = safe_parse_number(
+                author_index.get('video_28_avg_interaction_count', 0),
+                default=0
+            )
 
             # Scoring logic
             # Base score: 20% interaction rate = 100 points
@@ -145,17 +219,17 @@ class InfluencerScorer:
             cargo_summary = api_resp.get('cargoSummary', {}) or {}
             if isinstance(cargo_summary, list): cargo_summary = {}
 
-            # Extract GPM metrics
-            max_gpm = stats_info.get('aweme_max_gpm', 0)
-            min_gpm = stats_info.get('aweme_min_gpm', 0)
+            # Extract GPM metrics (safely handle "-" and missing data)
+            max_gpm = safe_parse_number(stats_info.get('aweme_max_gpm', 0), default=0)
+            min_gpm = safe_parse_number(stats_info.get('aweme_min_gpm', 0), default=0)
 
-            # Sales metrics
-            total_sales = stats_info.get('goods_sale_amount', 0)
-            per_customer = cargo_summary.get('per_customer_amount', 0)
+            # Sales metrics (safely handle "-" and missing data)
+            total_sales = safe_parse_number(stats_info.get('goods_sale_amount', 0), default=0)
+            per_customer = safe_parse_number(cargo_summary.get('per_customer_amount', 0), default=0)
 
-            # Video sales metrics
-            video_avg_sale = cargo_summary.get('video_avg_sale_amount', 0)
-            video_avg_sold = cargo_summary.get('video_avg_sold_count', 0)
+            # Video sales metrics (safely handle "-" and missing data)
+            video_avg_sale = safe_parse_number(cargo_summary.get('video_avg_sale_amount', 0), default=0)
+            video_avg_sold = safe_parse_number(cargo_summary.get('video_avg_sold_count', 0), default=0)
 
             # Scoring logic
             # GPM Score: 30 GPM = 100 points
@@ -321,12 +395,13 @@ class InfluencerScorer:
             datalist = api_resp.get('datalist', {}) or {}
             if isinstance(datalist, list): datalist = {}
 
-            # Parse growth rates (remove %)
+            # Parse growth rates (safely handle "-" and missing data)
+            # Note: These are already percentages, not decimal (e.g., "2.5%" = 2.5, not 0.025)
             follower_growth_str = author_index.get('follower_28_count_rate', '0%')
-            follower_growth = float(follower_growth_str.strip('%'))
+            follower_growth = safe_parse_percentage(follower_growth_str, default=0.0) * 100  # Convert back to percentage
 
             rank_change_str = author_index.get('category_rank_rate', '0%')
-            rank_change = float(rank_change_str.strip('%'))
+            rank_change = safe_parse_percentage(rank_change_str, default=0.0) * 100  # Convert back to percentage
 
             # Analyze time-series if available
             follower_data = datalist.get('follower', {}).get('list', [])
@@ -411,8 +486,8 @@ class InfluencerScorer:
             datalist = api_resp.get('datalist', {}) or {}
             if isinstance(datalist, list): datalist = {}
 
-            # Posting frequency (28 days)
-            video_count_28 = author_index.get('aweme_28_count', 0)
+            # Posting frequency (28 days) - safely handle "-" and missing data
+            video_count_28 = safe_parse_number(author_index.get('aweme_28_count', 0), default=0)
             posting_frequency = video_count_28 / 28.0
 
             # Ideal frequency: 1-3 videos per day

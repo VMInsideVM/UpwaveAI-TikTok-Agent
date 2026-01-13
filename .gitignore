@@ -5,7 +5,7 @@ influencer/
 output/
 report_templates/
 browser_data/
-
+.shared/
 
 # Python
 __pycache__/
@@ -64,4 +64,7 @@ certs/
 .DS_Store
 Thumbs.db
 nul
+
+# Temporary files
+tmpclaude-*-cwd
 

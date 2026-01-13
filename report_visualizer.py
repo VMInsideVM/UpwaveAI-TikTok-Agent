@@ -509,13 +509,13 @@ class InfluencerVisualizer:
             else:
                 insights.append("增长曲线自然,无异常峰值")
 
-            # Add additional metrics if available
-            if author_idx.get('follower_28_count_rate'):
-                growth_rate = author_idx['follower_28_count_rate']
+            # Add additional metrics if available (skip if "-" or missing)
+            growth_rate = author_idx.get('follower_28_count_rate')
+            if growth_rate and growth_rate != '-':
                 insights.append(f"28天增长率: {growth_rate}")
 
-            if stat_info.get('aweme_pop_rate'):
-                pop_rate = stat_info['aweme_pop_rate']
+            pop_rate = stat_info.get('aweme_pop_rate')
+            if pop_rate and pop_rate != '-':
                 insights.append(f"爆款率: {pop_rate}")
 
             return {
