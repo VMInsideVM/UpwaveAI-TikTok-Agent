@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 数据库迁移：为 reports 表添加分享功能字段
 运行此脚本以升级 VPS 上的数据库结构
@@ -6,7 +7,6 @@
 
 import sqlite3
 import os
-from datetime import datetime
 
 def migrate_database(db_path: str = "chatbot.db"):
     """
