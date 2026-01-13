@@ -430,19 +430,30 @@ async def view_report(
                 # 提取报告目录名 (例如: 20251212_204820)
                 report_dir = report.report_path.split(reports_base)[1].split('/')[1].split('\\')[0]
 
-                # 替换 src="charts/ 为 src="/agent/reports/{report_dir}/charts/
+                print(f"📊 修复图表路径: report_dir={report_dir}, BASE_PATH={BASE_PATH}")
+
+                # 替换 iframe src='./charts/ 为绝对路径（支持单引号和双引号）
                 html_content = re.sub(
-                    r'src="charts/',
-                    f'src="{BASE_PATH}/reports/{report_dir}/charts/',
+                    r'(<iframe[^>]*\s+src=["\'])\.?/charts/',
+                    f'\\1{BASE_PATH}/reports/{report_dir}/charts/',
                     html_content
                 )
 
-                # 替换 src='charts/ 为 src='/agent/reports/{report_dir}/charts/
+                # 替换 img src='./charts/ 为绝对路径（支持单引号和双引号）
                 html_content = re.sub(
-                    r"src='charts/",
-                    f"src='{BASE_PATH}/reports/{report_dir}/charts/",
+                    r'(<img[^>]*\s+src=["\'])\.?/charts/',
+                    f'\\1{BASE_PATH}/reports/{report_dir}/charts/',
                     html_content
                 )
+
+                # 打印替换后的示例
+                import re as re_module
+                chart_srcs = re_module.findall(r'(iframe|img)[^>]*src=["\'][^"\']*charts/[^"\']*["\']', html_content)
+                if chart_srcs:
+                    print(f"📊 找到 {len(chart_srcs)} 个图表引用")
+                    print(f"📊 示例: {chart_srcs[0] if chart_srcs else ''}")
+                else:
+                    print("⚠️ 没有找到图表路径")
 
             watermark = f"""
     <div class="report-watermark" style="position: fixed; bottom: 10px; right: 10px; opacity: 0.5; font-size: 12px; color: #999; z-index: 9999;">
