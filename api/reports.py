@@ -10,6 +10,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import os
 import json
+import re
 from passlib.context import CryptContext
 
 from database.connection import get_db
@@ -416,11 +417,32 @@ async def view_report(
             detail="报告文件不存在"
         )
 
-    # 如果是分享访问，添加水印
+    # 如果是分享访问，添加水印并修复资源路径
     if is_shared_access:
         try:
             with open(report.report_path, 'r', encoding='utf-8') as f:
                 html_content = f.read()
+
+            # 修复图表等资源的相对路径，添加 BASE_PATH 前缀
+            # 例如: charts/xxx.png -> /agent/reports/20251212_204820/charts/xxx.png
+            reports_base = "output/reports"
+            if reports_base in report.report_path:
+                # 提取报告目录名 (例如: 20251212_204820)
+                report_dir = report.report_path.split(reports_base)[1].split('/')[1].split('\\')[0]
+
+                # 替换 src="charts/ 为 src="/agent/reports/{report_dir}/charts/
+                html_content = re.sub(
+                    r'src="charts/',
+                    f'src="{BASE_PATH}/reports/{report_dir}/charts/',
+                    html_content
+                )
+
+                # 替换 src='charts/ 为 src='/agent/reports/{report_dir}/charts/
+                html_content = re.sub(
+                    r"src='charts/",
+                    f"src='{BASE_PATH}/reports/{report_dir}/charts/",
+                    html_content
+                )
 
             watermark = f"""
     <div class="report-watermark" style="position: fixed; bottom: 10px; right: 10px; opacity: 0.5; font-size: 12px; color: #999; z-index: 9999;">

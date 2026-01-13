@@ -1923,7 +1923,10 @@
     <div id="shareModal" class="modal">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
-                <h3 class="modal-title">🔗 分享报告</h3>
+                <h3 class="modal-title">
+                    <img src="share.svg" alt="分享" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;">
+                    分享报告
+                </h3>
                 <button class="modal-close" onclick="closeShareModal()">×</button>
             </div>
             <div class="modal-body" style="padding: 24px;">
@@ -3915,7 +3918,7 @@
                                     ${report.status === 'completed' ? `
                                         <div class="report-card-actions">
                                             <button class="report-action-btn share-btn" onclick="event.stopPropagation(); openShareSettings('${report.report_id}')" title="分享报告">
-                                                🔗
+                                                <img src="share.svg" alt="分享" style="width: 18px; height: 18px; vertical-align: middle;">
                                             </button>
                                         </div>
                                     ` : ''}
