@@ -727,19 +727,12 @@ class TikTokInfluencerReportAgent:
         dim_scores = inf.get('dimension_scores', {})
         charts = inf.get('charts', [])
 
-        # Determine detail level based on tier
-        if tier == 1:
-            # Full detailed analysis for Tier 1
-            return self._generate_full_analysis(inf, dim_scores, charts)
-        elif tier == 2:
-            # Medium analysis for Tier 2
-            return self._generate_medium_analysis(inf, dim_scores, charts)
-        else:
-            # Brief analysis for Tier 3
-            return self._generate_brief_analysis(inf, dim_scores)
+        # All tiers now get full analysis with complete data visualization
+        # Only difference is the recommendation emphasis level
+        return self._generate_full_analysis(inf, dim_scores, charts, tier)
 
-    def _generate_full_analysis(self, inf: Dict, dim_scores: Dict, charts: List) -> str:
-        """Generate full detailed analysis for Tier 1."""
+    def _generate_full_analysis(self, inf: Dict, dim_scores: Dict, charts: List, tier: int = 1) -> str:
+        """Generate full detailed analysis with complete visualization for all tiers."""
         # Extract detailed metrics
         engagement_data = dim_scores.get('engagement', {})
         sales_data = dim_scores.get('sales', {})
@@ -773,17 +766,40 @@ class TikTokInfluencerReportAgent:
         if not weaknesses:
             weaknesses.append("无明显短板,各项指标发展均衡")
 
-        # Generate recommendation reasoning
+        # Generate recommendation reasoning (adjusted by tier)
         total_score = inf.get('total_score', 0)
-        if total_score >= 80:
-            rec_level = "强烈推荐"
-            rec_reason = f"综合得分{total_score:.1f}分,在所有维度都表现优异,是理想的合作对象。"
-        elif total_score >= 70:
-            rec_level = "推荐"
-            rec_reason = f"综合得分{total_score:.1f}分,多数维度表现良好,具有较高合作价值。"
+
+        # Adjust recommendation level based on tier
+        if tier == 1:
+            # Tier 1: Top recommendation
+            if total_score >= 80:
+                rec_level = "⭐️ 强烈推荐 (首选)"
+                rec_reason = f"综合得分{total_score:.1f}分,在所有维度都表现优异,是最理想的合作对象。"
+            elif total_score >= 70:
+                rec_level = "⭐️ 推荐 (首选)"
+                rec_reason = f"综合得分{total_score:.1f}分,多数维度表现良好,是优先考虑的合作伙伴。"
+            else:
+                rec_level = "✓ 推荐 (首选)"
+                rec_reason = f"综合得分{total_score:.1f}分,在关键维度有优势,推荐优先合作。"
+        elif tier == 2:
+            # Tier 2: Alternative recommendation
+            if total_score >= 80:
+                rec_level = "强烈推荐 (备选)"
+                rec_reason = f"综合得分{total_score:.1f}分,表现优异,是可靠的备选方案。"
+            elif total_score >= 70:
+                rec_level = "推荐 (备选)"
+                rec_reason = f"综合得分{total_score:.1f}分,表现良好,适合作为备选合作对象。"
+            else:
+                rec_level = "可考虑 (备选)"
+                rec_reason = f"综合得分{total_score:.1f}分,可作为补充备选方案。"
         else:
-            rec_level = "可考虑"
-            rec_reason = f"综合得分{total_score:.1f}分,在某些特定维度有优势,可根据具体需求评估。"
+            # Tier 3: Supplementary recommendation
+            if total_score >= 70:
+                rec_level = "可考虑 (候补)"
+                rec_reason = f"综合得分{total_score:.1f}分,作为候补方案,在特定场景下可能适合。"
+            else:
+                rec_level = "备用选项"
+                rec_reason = f"综合得分{total_score:.1f}分,可在必要时作为补充选择。"
 
         # Add insights from top 2 strengths
         top_strengths = inf.get('strengths', [])[:2]
@@ -858,74 +874,6 @@ class TikTokInfluencerReportAgent:
     </div>
 """
 
-    def _generate_medium_analysis(self, inf: Dict, dim_scores: Dict, charts: List) -> str:
-        """Generate medium analysis for Tier 2."""
-        # Similar to full but shorter
-        strengths = inf.get('strengths', ['综合表现良好'])[:3]
-        weaknesses = inf.get('weaknesses', ['无明显短板'])[:2]
-
-        # Select 1-2 key charts (use relative paths)
-        key_charts = []
-        for chart in charts[:2]:
-            chart_path = chart.get('file_path', '')
-            if chart_path.endswith('.html') and os.path.exists(chart_path):
-                try:
-                    chart_filename = os.path.basename(chart_path)
-                    relative_chart_path = f"./charts/{chart_filename}"
-                    key_charts.append((relative_chart_path, chart.get('insights', [])))
-                except:
-                    pass
-
-        charts_html = ""
-        if key_charts:
-            charts_html = '<div class="content-section"><h3>📊 关键数据</h3><div class="charts-container">'
-            for chart_path, insights in key_charts:
-                charts_html += f'''
-<div class="chart-wrapper">
-    <iframe src='{chart_path}' loading="lazy" style="width:100%; height:450px; border:none;"></iframe>
-    <p style="font-size:13px; color:#666;">{insights[0] if insights else ''}</p>
-</div>
-'''
-            charts_html += '</div></div>'
-
-        return f"""
-    <div class="card-content-grid">
-        <div class="content-section">
-            <h3>核心优势</h3>
-            <ul class="strengths-list">
-                {"".join(f"<li>{s}</li>" for s in strengths)}
-            </ul>
-        </div>
-
-        <div class="content-section">
-            <h3>注意事项</h3>
-            <ul class="weaknesses-list">
-                {"".join(f"<li>{w}</li>" for w in weaknesses)}
-            </ul>
-        </div>
-    </div>
-
-    {charts_html}
-
-    <div class="content-section">
-        <h3>推荐理由</h3>
-        <p>{self._generate_simple_recommendation(inf, dim_scores)}</p>
-    </div>
-"""
-
-    def _generate_brief_analysis(self, inf: Dict, dim_scores: Dict) -> str:
-        """Generate brief analysis for Tier 3."""
-        strengths = inf.get('strengths', ['综合表现'])[:2]
-        rec = self._generate_simple_recommendation(inf, dim_scores)
-
-        return f"""
-    <div class="content-section">
-        <div style="background:#f8f9fa; padding:15px; border-radius:8px;">
-            <p><strong>优势:</strong> {', '.join(strengths)}</p>
-            <p style="margin-top:8px;"><strong>推荐:</strong> {rec}</p>
-        </div>
-    </div>
-"""
 
     def _generate_collaboration_tips(self, inf: Dict, dim_scores: Dict) -> str:
         """Generate comprehensive collaboration tips based on strengths."""
@@ -1045,37 +993,6 @@ class TikTokInfluencerReportAgent:
         tips.append("</li>")
 
         return "".join(tips)
-
-    def _generate_simple_recommendation(self, inf: Dict, dim_scores: Dict) -> str:
-        """Generate simple recommendation text."""
-        total_score = inf.get('total_score', 0)
-
-        # Find top 2 dimensions
-        dims = []
-        for name, data in dim_scores.items():
-            score = data.get('score', 0)
-            if score >= 60:
-                dims.append((name, score))
-        dims.sort(key=lambda x: x[1], reverse=True)
-
-        top_dims = [self._translate_dim(d[0]) for d in dims[:2]]
-
-        if total_score >= 70:
-            return f"综合得分{total_score:.1f}分,在{'/'.join(top_dims) if top_dims else '多个维度'}表现出色,值得优先考虑合作。"
-        else:
-            return f"综合得分{total_score:.1f}分,适合特定场景下的备选合作,可根据预算和需求灵活安排。"
-
-    def _translate_dim(self, dim_key: str) -> str:
-        """Translate dimension key to Chinese."""
-        translations = {
-            'engagement': '互动能力',
-            'sales': '带货能力',
-            'audience_match': '受众匹配',
-            'content_fit': '内容契合',
-            'growth': '成长潜力',
-            'stability': '稳定性'
-        }
-        return translations.get(dim_key, dim_key)
 
     def _build_comparison_section(self, comparison_data: Dict,
                                   influencers: List[Dict]) -> str:
