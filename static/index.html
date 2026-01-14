@@ -965,6 +965,161 @@
             margin-bottom: 10px;
         }
 
+        /* 欢迎引导卡片容器 */
+        .welcome-guide {
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 48px 32px;
+            animation: fadeIn 400ms ease-out;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .welcome-guide-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .welcome-guide-header h2 {
+            font-family: var(--font-display);
+            font-size: 28px;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            letter-spacing: -0.02em;
+        }
+
+        .welcome-guide-header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+
+        .welcome-guide-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            width: 100%;
+        }
+
+        .welcome-guide-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            transition: all var(--duration-fast) var(--ease-standard);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .welcome-guide-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-md);
+            border-color: var(--gold-soft);
+        }
+
+        [data-theme="dark"] .welcome-guide-card {
+            background: var(--bg-card);
+            border-color: var(--gold-faint);
+        }
+
+        [data-theme="dark"] .welcome-guide-card:hover {
+            border-color: var(--gold-soft);
+        }
+
+        .welcome-guide-card-icon {
+            width: 52px;
+            height: 52px;
+            background: var(--tiffany-glow);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            margin-bottom: 18px;
+        }
+
+        [data-theme="dark"] .welcome-guide-card-icon {
+            background: rgba(129, 216, 207, 0.15);
+        }
+
+        .welcome-guide-card-title {
+            font-family: var(--font-display);
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 14px;
+        }
+
+        .welcome-guide-card-content {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+
+        .welcome-guide-card-content ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .welcome-guide-card-content li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .welcome-guide-card-content li::before {
+            content: "•";
+            position: absolute;
+            left: 6px;
+            color: var(--tiffany);
+        }
+
+        .welcome-guide-start {
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        .welcome-guide-start p {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+
+        .welcome-guide-start strong {
+            color: var(--tiffany);
+            font-weight: 600;
+            font-size: 17px;
+        }
+
+        /* 响应式布局 */
+        @media (max-width: 1000px) {
+            .welcome-guide-cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .welcome-guide {
+                padding: 32px 24px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .welcome-guide-cards {
+                grid-template-columns: 1fr;
+            }
+
+            .welcome-guide-header h2 {
+                font-size: 22px;
+            }
+
+            .welcome-guide {
+                padding: 24px 16px;
+            }
+
+            .welcome-guide-start {
+                margin-top: 28px;
+            }
+        }
+
         .message {
             margin-bottom: var(--spacing-xl);
             display: flex;
@@ -1548,13 +1703,14 @@
         }
 
         .confirm-dialog-btn.confirm {
-            background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-secondary) 100%);
-            color: white;
+            background: var(--tiffany);
+            color: var(--bg-card);
         }
 
         .confirm-dialog-btn.confirm:hover {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+            background: var(--tiffany-hover);
+            box-shadow: 0 4px 12px var(--tiffany-glow);
         }
 
         .confirm-dialog-btn.danger {
@@ -2566,7 +2722,7 @@
         <div class="chat-area">
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-message">
-                    <h2>🎯 欢迎使用 TikTok 达人推荐智能助手 🎯</h2>
+                    <h2>🎯 TikTok 达人推荐智能助手</h2>
                     <p>正在初始化，请稍候...</p>
                 </div>
             </div>
@@ -3557,26 +3713,41 @@
                         await updateSessionStatus();
 
                         // ⭐ 新增：检查是否为历史会话
-                        // 规则：恢复的会话如果不是最新会话,则标记为历史会话
+                        // 规则：恢复的会话如果不是最新会话且有消息，则标记为历史会话
                         try {
-                            const sessionsResponse = await fetchWithAuth(`${API_BASE_URL}/api/sessions?limit=1`);
+                            // 先检查当前会话是否有消息
+                            const currentSessionResponse = await fetchWithAuth(`${API_BASE_URL}/api/sessions/${sessionId}`);
+                            const currentSessionData = currentSessionResponse.ok ? await currentSessionResponse.json() : null;
+                            const currentSessionHasMessages = currentSessionData?.message_count > 0;
 
-                            if (sessionsResponse.ok) {
-                                const sessionsData = await sessionsResponse.json();
-                                const latestSession = sessionsData.sessions?.[0];
+                            // 如果当前会话是空的（没有消息），不需要标记为历史会话
+                            if (!currentSessionHasMessages) {
+                                console.log('📝 当前会话为空会话，保持正常状态');
+                                isHistorySession = false;
+                                const banner = document.getElementById('historyBanner');
+                                if (banner) banner.classList.remove('show');
+                            } else {
+                                // 当前会话有消息，检查是否为最新会话
+                                const sessionsResponse = await fetchWithAuth(`${API_BASE_URL}/api/sessions?limit=1`);
 
-                                if (latestSession && latestSession.session_id !== sessionId) {
-                                    // 恢复的不是最新会话,标记为历史会话
-                                    isHistorySession = true;
-                                    console.log('📜 恢复的会话为历史会话，启用只读模式');
+                                if (sessionsResponse.ok) {
+                                    const sessionsData = await sessionsResponse.json();
+                                    const latestSession = sessionsData.sessions?.[0];
 
-                                    // 显示悬浮历史会话横幅
-                                    const banner = document.getElementById('historyBanner');
-                                    if (banner) banner.classList.add('show');
-                                } else {
-                                    // 是最新会话，隐藏横幅
-                                    const banner = document.getElementById('historyBanner');
-                                    if (banner) banner.classList.remove('show');
+                                    if (latestSession && latestSession.session_id !== sessionId) {
+                                        // 恢复的不是最新会话,标记为历史会话
+                                        isHistorySession = true;
+                                        console.log('📜 恢复的会话为历史会话，启用只读模式');
+
+                                        // 显示悬浮历史会话横幅
+                                        const banner = document.getElementById('historyBanner');
+                                        if (banner) banner.classList.add('show');
+                                    } else {
+                                        // 是最新会话，隐藏横幅
+                                        isHistorySession = false;
+                                        const banner = document.getElementById('historyBanner');
+                                        if (banner) banner.classList.remove('show');
+                                    }
                                 }
                             }
                         } catch (error) {
@@ -3872,7 +4043,7 @@
                     // 如果正在加载历史会话，不要清空聊天记录
                     if (!isLoadingHistory) {
                         document.getElementById('chatMessages').innerHTML = '';
-                        addMessage(content, false);
+                        showWelcomeGuide();
                     } else {
                         console.log('⏭️ 跳过 welcome 消息（正在加载历史会话）');
                     }
@@ -3921,6 +4092,76 @@
                     openConfirmGenerateModal(data.data || {});
                     break;
             }
+        }
+
+        // 显示欢迎引导卡片
+        function showWelcomeGuide() {
+            const messagesDiv = document.getElementById('chatMessages');
+
+            const welcomeHTML = `
+                <div class="welcome-guide">
+                    <div class="welcome-guide-header">
+                        <h2>🎯 TikTok 达人推荐智能助手</h2>
+                        <p>帮你快速找到最适合推广商品的 TikTok 达人</p>
+                    </div>
+
+                    <div class="welcome-guide-cards">
+                        <div class="welcome-guide-card">
+                            <div class="welcome-guide-card-icon">📦</div>
+                            <div class="welcome-guide-card-title">商品与地区</div>
+                            <div class="welcome-guide-card-content">
+                                <ul>
+                                    <li>商品名称（必填）</li>
+                                    <li>目标国家/地区</li>
+                                    <li>需要的达人数量</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="welcome-guide-card">
+                            <div class="welcome-guide-card-icon">👥</div>
+                            <div class="welcome-guide-card-title">达人筛选</div>
+                            <div class="welcome-guide-card-content">
+                                <ul>
+                                    <li>粉丝数范围</li>
+                                    <li>认证/联盟达人</li>
+                                    <li>近期涨粉达人</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="welcome-guide-card">
+                            <div class="welcome-guide-card-icon">📊</div>
+                            <div class="welcome-guide-card-title">推广渠道</div>
+                            <div class="welcome-guide-card-content">
+                                <ul>
+                                    <li>短视频带货</li>
+                                    <li>直播带货</li>
+                                    <li>不限制渠道</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="welcome-guide-card">
+                            <div class="welcome-guide-card-icon">🎯</div>
+                            <div class="welcome-guide-card-title">粉丝画像</div>
+                            <div class="welcome-guide-card-content">
+                                <ul>
+                                    <li>性别偏好</li>
+                                    <li>年龄段分布</li>
+                                    <li>联系方式要求</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="welcome-guide-start">
+                        <p>请告诉我 <strong>你要推广什么商品？</strong></p>
+                    </div>
+                </div>
+            `;
+
+            messagesDiv.innerHTML = welcomeHTML;
         }
 
         // 添加消息
@@ -4448,8 +4689,8 @@
                 // 6. 重新连接 WebSocket
                 connectWebSocket();
 
-                // ⭐ 7. 显示欢迎消息（手动添加，因为WebSocket重连可能不会触发welcome事件）
-                addMessage('👋 你好！我是达人推荐助手。\n请告诉我您的商品名称或需求，我将为您寻找最匹配的带货达人。', false);
+                // ⭐ 7. 显示欢迎引导卡片（手动添加，因为WebSocket重连可能不会触发welcome事件）
+                showWelcomeGuide();
 
                 // ⭐ 8. 重置状态
                 hasActiveConversation = false;
