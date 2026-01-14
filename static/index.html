@@ -4107,7 +4107,7 @@
                 <div class="welcome-guide">
                     <div class="welcome-guide-header">
                         <h2>
-                            <img src="/static/logo.png" alt="Logo" style="width: 32px; height: 32px; vertical-align: middle; margin-right: 8px; margin-top: -4px;">
+                            <img src="${BASE_PATH}/static/logo.png" alt="Logo" style="width: 32px; height: 32px; vertical-align: middle; margin-right: 8px; margin-top: -4px;">
                             TikTok 达人推荐智能助手
                         </h2>
                         <p>帮你快速找到最适合推广商品的 TikTok 达人</p>
@@ -4185,7 +4185,7 @@
                 avatar.textContent = '👤';
             } else {
                 const logoImg = document.createElement('img');
-                logoImg.src = '/static/logo.png';
+                logoImg.src = `${BASE_PATH}/static/logo.png`;
                 logoImg.alt = 'Bot';
                 logoImg.style.width = '24px';
                 logoImg.style.height = '24px';
@@ -4239,7 +4239,7 @@
             avatar.className = 'message-avatar';
 
             const logoImg = document.createElement('img');
-            logoImg.src = '/static/logo.png';
+            logoImg.src = `${BASE_PATH}/static/logo.png`;
             logoImg.alt = 'Bot';
             logoImg.style.width = '24px';
             logoImg.style.height = '24px';
@@ -4288,7 +4288,7 @@
             typingDiv.className = 'message bot';
             typingDiv.innerHTML = `
                 <div class="message-avatar">
-                    <img src="/static/logo.png" alt="Bot" style="width: 24px; height: 24px;">
+                    <img src="${BASE_PATH}/static/logo.png" alt="Bot" style="width: 24px; height: 24px;">
                 </div>
                 <div class="message-content">
                     <div class="typing-indicator">
