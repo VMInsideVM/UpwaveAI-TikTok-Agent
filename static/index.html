@@ -1268,6 +1268,197 @@
             color: var(--dark-text-primary);
         }
 
+        /* 确认浮窗样式 */
+        .confirm-dialog {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .confirm-dialog.show {
+            display: flex;
+        }
+
+        .confirm-dialog-content {
+            background: var(--bg-primary);
+            border-radius: var(--radius-xl);
+            padding: 0;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: var(--shadow-xl);
+            animation: slideUp 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+            overflow: hidden;
+        }
+
+        [data-theme="dark"] .confirm-dialog-content {
+            background: var(--dark-bg-elevated);
+        }
+
+        .confirm-dialog-header {
+            padding: 20px 24px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .confirm-dialog-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .confirm-dialog-icon.warning {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #d97706;
+        }
+
+        .confirm-dialog-icon.danger {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #dc2626;
+        }
+
+        .confirm-dialog-icon.info {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            color: #2563eb;
+        }
+
+        [data-theme="dark"] .confirm-dialog-icon.warning {
+            background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
+            color: #fbbf24;
+        }
+
+        [data-theme="dark"] .confirm-dialog-icon.danger {
+            background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+            color: #f87171;
+        }
+
+        [data-theme="dark"] .confirm-dialog-icon.info {
+            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+            color: #60a5fa;
+        }
+
+        .confirm-dialog-title {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+        }
+
+        [data-theme="dark"] .confirm-dialog-title {
+            color: var(--dark-text-primary);
+        }
+
+        .confirm-dialog-body {
+            padding: 0 24px 20px;
+        }
+
+        .confirm-dialog-message {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--slate-600);
+            white-space: pre-line;
+        }
+
+        [data-theme="dark"] .confirm-dialog-message {
+            color: var(--dark-text-secondary);
+        }
+
+        .confirm-dialog-tip {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: var(--slate-50);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            color: var(--slate-500);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        [data-theme="dark"] .confirm-dialog-tip {
+            background: var(--dark-bg-secondary);
+            color: var(--dark-text-muted);
+        }
+
+        .confirm-dialog-footer {
+            padding: 16px 24px;
+            background: var(--slate-50);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .confirm-dialog-footer {
+            background: var(--dark-bg-secondary);
+            border-top-color: var(--dark-border);
+        }
+
+        .confirm-dialog-btn {
+            padding: 10px 20px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--duration-fast) var(--ease-standard);
+            border: none;
+        }
+
+        .confirm-dialog-btn.cancel {
+            background: var(--bg-secondary);
+            color: var(--slate-600);
+            border: 1px solid var(--border-color);
+        }
+
+        .confirm-dialog-btn.cancel:hover {
+            background: var(--slate-200);
+        }
+
+        [data-theme="dark"] .confirm-dialog-btn.cancel {
+            background: var(--dark-bg-tertiary);
+            color: var(--dark-text-secondary);
+            border-color: var(--dark-border);
+        }
+
+        [data-theme="dark"] .confirm-dialog-btn.cancel:hover {
+            background: var(--dark-bg-elevated);
+        }
+
+        .confirm-dialog-btn.confirm {
+            background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-secondary) 100%);
+            color: white;
+        }
+
+        .confirm-dialog-btn.confirm:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+        }
+
+        .confirm-dialog-btn.danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .confirm-dialog-btn.danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
         .reports-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -2819,6 +3010,27 @@
         </div>
     </div>
 
+    <!-- 通用确认浮窗 -->
+    <div id="confirmDialog" class="confirm-dialog">
+        <div class="confirm-dialog-content">
+            <div class="confirm-dialog-header">
+                <div id="confirmDialogIcon" class="confirm-dialog-icon warning">⚠️</div>
+                <h3 id="confirmDialogTitle" class="confirm-dialog-title">确认操作</h3>
+            </div>
+            <div class="confirm-dialog-body">
+                <p id="confirmDialogMessage" class="confirm-dialog-message"></p>
+                <div id="confirmDialogTip" class="confirm-dialog-tip" style="display: none;">
+                    <span>💡</span>
+                    <span id="confirmDialogTipText"></span>
+                </div>
+            </div>
+            <div class="confirm-dialog-footer">
+                <button id="confirmDialogCancelBtn" class="confirm-dialog-btn cancel">取消</button>
+                <button id="confirmDialogConfirmBtn" class="confirm-dialog-btn confirm">确定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 生成报告确认弹窗 -->
     <div id="confirmGenerateModal" class="modal">
         <div class="modal-content" style="max-width: 500px;">
@@ -3946,17 +4158,104 @@
             }
         }
 
+        /**
+         * 显示自定义确认浮窗
+         * @param {Object} options 配置选项
+         * @param {string} options.title - 标题
+         * @param {string} options.message - 消息内容
+         * @param {string} options.tip - 提示文字（可选）
+         * @param {string} options.type - 类型：'warning' | 'danger' | 'info'，默认 'warning'
+         * @param {string} options.confirmText - 确认按钮文字，默认 '确定'
+         * @param {string} options.cancelText - 取消按钮文字，默认 '取消'
+         * @param {boolean} options.isDanger - 确认按钮是否为危险样式，默认 false
+         * @returns {Promise<boolean>} 用户是否确认
+         */
+        function showConfirmDialog(options) {
+            return new Promise((resolve) => {
+                const dialog = document.getElementById('confirmDialog');
+                const iconEl = document.getElementById('confirmDialogIcon');
+                const titleEl = document.getElementById('confirmDialogTitle');
+                const messageEl = document.getElementById('confirmDialogMessage');
+                const tipEl = document.getElementById('confirmDialogTip');
+                const tipTextEl = document.getElementById('confirmDialogTipText');
+                const confirmBtn = document.getElementById('confirmDialogConfirmBtn');
+                const cancelBtn = document.getElementById('confirmDialogCancelBtn');
+
+                // 设置图标类型
+                const iconType = options.type || 'warning';
+                iconEl.className = `confirm-dialog-icon ${iconType}`;
+                const icons = { warning: '⚠️', danger: '🗑️', info: 'ℹ️' };
+                iconEl.textContent = icons[iconType] || '⚠️';
+
+                // 设置内容
+                titleEl.textContent = options.title || '确认操作';
+                messageEl.textContent = options.message || '';
+
+                // 设置提示
+                if (options.tip) {
+                    tipEl.style.display = 'flex';
+                    tipTextEl.textContent = options.tip;
+                } else {
+                    tipEl.style.display = 'none';
+                }
+
+                // 设置按钮
+                confirmBtn.textContent = options.confirmText || '确定';
+                cancelBtn.textContent = options.cancelText || '取消';
+
+                // 设置确认按钮样式
+                confirmBtn.className = `confirm-dialog-btn ${options.isDanger ? 'danger' : 'confirm'}`;
+
+                // 清理之前的事件监听
+                const newConfirmBtn = confirmBtn.cloneNode(true);
+                const newCancelBtn = cancelBtn.cloneNode(true);
+                confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+                // 绑定事件
+                const closeDialog = (result) => {
+                    dialog.classList.remove('show');
+                    resolve(result);
+                };
+
+                newConfirmBtn.addEventListener('click', () => closeDialog(true));
+                newCancelBtn.addEventListener('click', () => closeDialog(false));
+
+                // ESC 键关闭
+                const handleKeydown = (e) => {
+                    if (e.key === 'Escape') {
+                        closeDialog(false);
+                        document.removeEventListener('keydown', handleKeydown);
+                    }
+                };
+                document.addEventListener('keydown', handleKeydown);
+
+                // 点击遮罩关闭
+                dialog.onclick = (e) => {
+                    if (e.target === dialog) {
+                        closeDialog(false);
+                    }
+                };
+
+                // 显示浮窗
+                dialog.classList.add('show');
+            });
+        }
+
         // 创建新聊天
         async function createNewChat() {
             // ⭐ 新增：先检查是否需要警告
             const warningCheck = shouldWarnBeforeLeaving();
 
             if (warningCheck.needWarning) {
-                const confirmed = confirm(
-                    `⚠️ 警告：${warningCheck.reason}\n\n` +
-                    `确定要创建新聊天吗？当前对话进度将丢失。\n\n` +
-                    `💡 提示：如果正在等待报告生成，可以放心离开。`
-                );
+                const confirmed = await showConfirmDialog({
+                    title: '创建新聊天',
+                    message: `${warningCheck.reason}\n\n确定要创建新聊天吗？当前对话进度将丢失。`,
+                    tip: '如果正在等待报告生成，可以放心离开。',
+                    type: 'warning',
+                    confirmText: '创建新聊天',
+                    cancelText: '取消'
+                });
 
                 if (!confirmed) {
                     console.log('❌ 用户取消创建新聊天');
@@ -4055,11 +4354,14 @@
             const warningCheck = shouldWarnBeforeLeaving();
 
             if (warningCheck.needWarning) {
-                const confirmed = confirm(
-                    `⚠️ 警告：${warningCheck.reason}\n\n` +
-                    `确定要切换到历史会话吗？当前对话进度将丢失。\n\n` +
-                    `💡 提示：如果正在等待报告生成，可以放心离开。`
-                );
+                const confirmed = await showConfirmDialog({
+                    title: '切换会话',
+                    message: `${warningCheck.reason}\n\n确定要切换到历史会话吗？当前对话进度将丢失。`,
+                    tip: '如果正在等待报告生成，可以放心离开。',
+                    type: 'warning',
+                    confirmText: '切换会话',
+                    cancelText: '取消'
+                });
 
                 if (!confirmed) {
                     console.log('❌ 用户取消切换会话');
@@ -4192,19 +4494,22 @@
             }
 
             // ⭐ 构建确认消息
-            let confirmMessage = '确定要删除这个对话吗？\n\n';
-            confirmMessage += '⚠️ 警告：\n';
-            confirmMessage += '• 对话历史将被永久删除\n';
-
+            let confirmMessage = '对话历史将被永久删除';
             if (relatedReportsCount > 0) {
-                confirmMessage += `• 关联的 ${relatedReportsCount} 个报告也将被删除\n`;
-            } else {
-                confirmMessage += '• 该对话暂无关联报告\n';
+                confirmMessage += `\n关联的 ${relatedReportsCount} 个报告也将被删除`;
             }
+            confirmMessage += '\n\n此操作无法撤销，请谨慎操作！';
 
-            confirmMessage += '\n此操作无法撤销，请谨慎操作！';
+            const confirmed = await showConfirmDialog({
+                title: '删除对话',
+                message: confirmMessage,
+                type: 'danger',
+                confirmText: '删除',
+                cancelText: '取消',
+                isDanger: true
+            });
 
-            if (!confirm(confirmMessage)) {
+            if (!confirmed) {
                 // ⭐ 用户取消删除，恢复警告状态
                 isDeletingSession = false;
                 console.log('❌ 用户取消删除，恢复离开警告');
