@@ -1787,7 +1787,7 @@
 
         .report-action-btn:hover {
             transform: scale(1.1);
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+            box-shadow: 0 4px 12px var(--tiffany-glow);
         }
 
         .report-action-btn:active {
@@ -1795,7 +1795,8 @@
         }
 
         .report-action-btn.share-btn {
-            background: var(--emerald-gradient);
+            background: var(--tiffany);
+            color: var(--bg-card);
         }
 
         .report-card-title {
@@ -2679,7 +2680,11 @@
         <!-- 顶部栏 -->
         <div class="top-bar">
             <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
-            <div class="top-bar-title">🤖 TikTok 达人推荐助手</div>
+            <div class="top-bar-title">
+                <img src="/static/logo.png" alt="Logo"
+                    style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px;">
+                TikTok 达人推荐助手
+            </div>
             <div class="top-bar-actions">
                 <div class="quota-section" style="display: flex; align-items: center; gap: 8px;">
                     <!-- 1. 剩余积分 (Scale Effect) -->
@@ -4101,7 +4106,10 @@
             const welcomeHTML = `
                 <div class="welcome-guide">
                     <div class="welcome-guide-header">
-                        <h2>🎯 TikTok 达人推荐智能助手</h2>
+                        <h2>
+                            <img src="/static/logo.png" alt="Logo" style="width: 32px; height: 32px; vertical-align: middle; margin-right: 8px; margin-top: -4px;">
+                            TikTok 达人推荐智能助手
+                        </h2>
                         <p>帮你快速找到最适合推广商品的 TikTok 达人</p>
                     </div>
 
@@ -4173,7 +4181,16 @@
 
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
-            avatar.textContent = isUser ? '👤' : '🤖';
+            if (isUser) {
+                avatar.textContent = '👤';
+            } else {
+                const logoImg = document.createElement('img');
+                logoImg.src = '/static/logo.png';
+                logoImg.alt = 'Bot';
+                logoImg.style.width = '24px';
+                logoImg.style.height = '24px';
+                avatar.appendChild(logoImg);
+            }
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
@@ -4220,7 +4237,13 @@
 
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
-            avatar.textContent = '🤖';
+
+            const logoImg = document.createElement('img');
+            logoImg.src = '/static/logo.png';
+            logoImg.alt = 'Bot';
+            logoImg.style.width = '24px';
+            logoImg.style.height = '24px';
+            avatar.appendChild(logoImg);
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
@@ -4264,7 +4287,9 @@
             typingDiv.id = 'typing-indicator';
             typingDiv.className = 'message bot';
             typingDiv.innerHTML = `
-                <div class="message-avatar">🤖</div>
+                <div class="message-avatar">
+                    <img src="/static/logo.png" alt="Bot" style="width: 24px; height: 24px;">
+                </div>
                 <div class="message-content">
                     <div class="typing-indicator">
                         <span></span>
