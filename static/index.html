@@ -787,6 +787,131 @@
             border-top: 1px solid var(--dark-border);
         }
 
+        /* 自定义 Select 下拉框 */
+        .custom-select {
+            position: relative;
+            width: 100%;
+        }
+
+        .custom-select-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: var(--bg-emboss);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all var(--duration-fast) var(--ease-standard);
+            font-size: var(--text-md);
+            color: var(--text-primary);
+        }
+
+        .custom-select-trigger:hover {
+            border-color: var(--gold-soft);
+        }
+
+        .custom-select.open .custom-select-trigger {
+            border-color: var(--tiffany);
+            box-shadow: 0 0 0 3px var(--tiffany-glow);
+        }
+
+        [data-theme="dark"] .custom-select-trigger {
+            background: var(--bg-subtle);
+            border-color: var(--gold-faint);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .custom-select-trigger:hover {
+            border-color: var(--gold-soft);
+        }
+
+        [data-theme="dark"] .custom-select.open .custom-select-trigger {
+            border-color: var(--tiffany);
+        }
+
+        .custom-select-arrow {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform var(--duration-fast) var(--ease-standard);
+            color: var(--text-muted);
+        }
+
+        .custom-select.open .custom-select-arrow {
+            transform: rotate(180deg);
+        }
+
+        .custom-select-options {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 10001;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-8px);
+            transition: all var(--duration-fast) var(--ease-standard);
+        }
+
+        .custom-select.open .custom-select-options {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        [data-theme="dark"] .custom-select-options {
+            background: var(--bg-card);
+            border-color: var(--gold-soft);
+        }
+
+        .custom-select-option {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all var(--duration-fast) var(--ease-standard);
+            font-size: var(--text-md);
+            color: var(--text-primary);
+        }
+
+        .custom-select-option:hover {
+            background: var(--bg-subtle);
+        }
+
+        .custom-select-option.selected {
+            background: var(--tiffany-glow);
+            color: var(--tiffany-active);
+            font-weight: 500;
+        }
+
+        [data-theme="dark"] .custom-select-option:hover {
+            background: var(--bg-subtle);
+        }
+
+        [data-theme="dark"] .custom-select-option.selected {
+            background: rgba(129, 216, 207, 0.15);
+            color: var(--tiffany);
+        }
+
+        .custom-select-option:first-child {
+            border-radius: 7px 7px 0 0;
+        }
+
+        .custom-select-option:last-child {
+            border-radius: 0 0 7px 7px;
+        }
+
+        .custom-select-option:only-child {
+            border-radius: 7px;
+        }
+
         /* 个人设置模态框 */
         .settings-section h4 {
             font-family: var(--font-display);
@@ -1228,6 +1353,7 @@
 
         [data-theme="dark"] .modal-content {
             background: var(--dark-bg-elevated);
+            border: 1px solid var(--gold-soft);
         }
 
         .modal-header {
@@ -1301,6 +1427,7 @@
 
         [data-theme="dark"] .confirm-dialog-content {
             background: var(--dark-bg-elevated);
+            border: 1px solid var(--gold-soft);
         }
 
         .confirm-dialog-header {
@@ -2542,10 +2669,16 @@
                 </div>
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 500;">关联会话 (可选)</label>
-                    <select id="appealSession" class="chat-input"
-                        style="width: 100%; border-radius: 8px; height: 46px;">
-                        <option value="">不关联会话</option>
-                    </select>
+                    <div class="custom-select" id="appealSessionSelect">
+                        <div class="custom-select-trigger" onclick="toggleAppealSessionSelect()">
+                            <span class="custom-select-value">不关联会话</span>
+                            <span class="custom-select-arrow">▼</span>
+                        </div>
+                        <div class="custom-select-options" id="appealSessionOptions">
+                            <div class="custom-select-option selected" data-value="" onclick="selectAppealSession('', '不关联会话')">不关联会话</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="appealSession" value="">
                 </div>
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 500;">详情描述 <span
@@ -4107,6 +4240,12 @@
             if (menu && !menu.contains(e.target)) {
                 document.getElementById('userDropdown').classList.remove('show');
             }
+
+            // 关闭自定义下拉框（点击外部）
+            const customSelect = document.getElementById('appealSessionSelect');
+            if (customSelect && !customSelect.contains(e.target)) {
+                customSelect.classList.remove('open');
+            }
         });
 
         // 退出登录
@@ -5597,6 +5736,51 @@
             document.getElementById('appealDetails').value = '';
             document.getElementById('appealSession').value = '';
             document.getElementById('appealMessage').style.display = 'none';
+            // 重置自定义下拉框
+            resetAppealSessionSelect();
+        }
+
+        function resetAppealSessionSelect() {
+            const selectEl = document.getElementById('appealSessionSelect');
+            const valueEl = selectEl.querySelector('.custom-select-value');
+            const hiddenInput = document.getElementById('appealSession');
+
+            selectEl.classList.remove('open');
+            valueEl.textContent = '不关联会话';
+            hiddenInput.value = '';
+
+            // 重置选中状态
+            const options = selectEl.querySelectorAll('.custom-select-option');
+            options.forEach(opt => opt.classList.remove('selected'));
+            const firstOption = selectEl.querySelector('.custom-select-option[data-value=""]');
+            if (firstOption) firstOption.classList.add('selected');
+        }
+
+        function toggleAppealSessionSelect() {
+            const selectEl = document.getElementById('appealSessionSelect');
+            selectEl.classList.toggle('open');
+        }
+
+        function selectAppealSession(value, text) {
+            const selectEl = document.getElementById('appealSessionSelect');
+            const valueEl = selectEl.querySelector('.custom-select-value');
+            const hiddenInput = document.getElementById('appealSession');
+
+            // 更新显示文本和隐藏输入框的值
+            valueEl.textContent = text;
+            hiddenInput.value = value;
+
+            // 更新选中状态
+            const options = selectEl.querySelectorAll('.custom-select-option');
+            options.forEach(opt => {
+                opt.classList.remove('selected');
+                if (opt.dataset.value === value) {
+                    opt.classList.add('selected');
+                }
+            });
+
+            // 关闭下拉框
+            selectEl.classList.remove('open');
         }
 
         async function loadSessionsForAppeal() {
@@ -5604,15 +5788,20 @@
                 const response = await fetchWithAuth('/api/sessions?limit=20');
                 if (response.ok) {
                     const data = await response.json();
-                    const select = document.getElementById('appealSession');
-                    // 保留第一个选项
-                    select.innerHTML = '<option value="">不关联会话</option>';
+                    const optionsContainer = document.getElementById('appealSessionOptions');
+
+                    // 重置为默认选项
+                    optionsContainer.innerHTML = '<div class="custom-select-option selected" data-value="" onclick="selectAppealSession(\'\', \'不关联会话\')">不关联会话</div>';
 
                     data.sessions.forEach(session => {
-                        const option = document.createElement('option');
-                        option.value = session.session_id;
-                        option.textContent = session.title || '未命名会话';
-                        select.appendChild(option);
+                        const title = session.title || '未命名会话';
+                        const escapedTitle = title.replace(/'/g, "\\'");
+                        const option = document.createElement('div');
+                        option.className = 'custom-select-option';
+                        option.dataset.value = session.session_id;
+                        option.textContent = title;
+                        option.onclick = () => selectAppealSession(session.session_id, title);
+                        optionsContainer.appendChild(option);
                     });
                 }
             } catch (error) {
