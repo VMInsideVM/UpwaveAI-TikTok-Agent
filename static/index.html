@@ -1196,6 +1196,12 @@
             margin: 0 12px;
         }
 
+        .message.user .message-content {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
         .message-bubble {
             padding: 12px 16px;
             border-radius: var(--radius-lg);
@@ -4179,18 +4185,7 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
 
-            const avatar = document.createElement('div');
-            avatar.className = 'message-avatar';
-            if (isUser) {
-                avatar.textContent = '👤';
-            } else {
-                const logoImg = document.createElement('img');
-                logoImg.src = `${BASE_PATH}/static/logo.png`;
-                logoImg.alt = 'Bot';
-                logoImg.style.width = '24px';
-                logoImg.style.height = '24px';
-                avatar.appendChild(logoImg);
-            }
+
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
@@ -4220,7 +4215,7 @@
                 contentDiv.appendChild(bubble);
             }
 
-            messageDiv.appendChild(avatar);
+
             messageDiv.appendChild(contentDiv);
 
             messagesDiv.appendChild(messageDiv);
@@ -4235,15 +4230,7 @@
             messageDiv.className = 'message bot';
             messageDiv.id = 'streaming-message';
 
-            const avatar = document.createElement('div');
-            avatar.className = 'message-avatar';
 
-            const logoImg = document.createElement('img');
-            logoImg.src = `${BASE_PATH}/static/logo.png`;
-            logoImg.alt = 'Bot';
-            logoImg.style.width = '24px';
-            logoImg.style.height = '24px';
-            avatar.appendChild(logoImg);
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
@@ -4259,7 +4246,7 @@
             contentDiv.appendChild(bubble);
             contentDiv.appendChild(time);
 
-            messageDiv.appendChild(avatar);
+
             messageDiv.appendChild(contentDiv);
 
             messagesDiv.appendChild(messageDiv);
@@ -4287,9 +4274,6 @@
             typingDiv.id = 'typing-indicator';
             typingDiv.className = 'message bot';
             typingDiv.innerHTML = `
-                <div class="message-avatar">
-                    <img src="${BASE_PATH}/static/logo.png" alt="Bot" style="width: 24px; height: 24px;">
-                </div>
                 <div class="message-content">
                     <div class="typing-indicator">
                         <span></span>
