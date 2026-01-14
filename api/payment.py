@@ -545,7 +545,7 @@ async def get_credit_history(
             from database.models import Report
             report = db.query(Report).filter(Report.report_id == history.related_report_id).first()
             if report:
-                report_title = report.report_name or "达人推荐报告"
+                report_title = report.title or "达人推荐报告"
 
         result.append(CreditHistoryItem(
             history_id=history.history_id,

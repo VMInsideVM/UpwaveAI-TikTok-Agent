@@ -265,7 +265,7 @@ async def generate_report(
     db.refresh(new_report)
 
     # 7. 立即扣除积分（失败时会自动退还）
-    before_credits = usage.total_credits - usage.used_credits + required_credits  # 扣除前的剩余积分
+    before_credits = usage.remaining_credits  # 扣除前的剩余积分
     usage.used_credits += required_credits
     after_credits = usage.remaining_credits  # 扣除后的剩余积分
 
