@@ -869,6 +869,17 @@
             transform: translateY(0);
         }
 
+        /* 向上展开的下拉框 */
+        .custom-select.dropup .custom-select-options {
+            top: auto;
+            bottom: calc(100% + 4px);
+            transform: translateY(8px);
+        }
+
+        .custom-select.dropup.open .custom-select-options {
+            transform: translateY(0);
+        }
+
         [data-theme="dark"] .custom-select-options {
             background: var(--bg-card);
             border-color: var(--gold-soft);
@@ -2506,7 +2517,7 @@
 
         /* ==================== 分享设置模态框样式 ==================== */
         .share-form .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 12px;
         }
 
         .form-label {
@@ -2521,18 +2532,25 @@
         .form-select {
             width: 100%;
             padding: 10px 12px;
-            border: 2px solid #e5e7eb;
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             font-size: 14px;
             transition: all 0.2s;
-            background: white;
+            background: var(--bg-emboss);
+            color: var(--text-primary);
         }
 
         .form-input:focus,
         .form-select:focus {
             outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+            border-color: var(--tiffany);
+            box-shadow: 0 0 0 3px var(--tiffany-glow);
+        }
+
+        [data-theme="dark"] .form-input,
+        [data-theme="dark"] .form-select {
+            background: var(--bg-subtle);
+            border-color: var(--gold-faint);
         }
 
         .form-hint {
@@ -2549,22 +2567,23 @@
         .radio-group {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
 
         .radio-label {
             display: flex;
             align-items: flex-start;
-            padding: 12px;
-            border: 2px solid #e5e7eb;
+            padding: 10px;
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            background: var(--bg-card);
         }
 
         .radio-label:hover {
-            border-color: var(--primary-color);
-            background: rgba(79, 70, 229, 0.02);
+            border-color: var(--tiffany);
+            background: var(--tiffany-glow);
         }
 
         .radio-label input[type="radio"] {
@@ -2574,7 +2593,7 @@
         }
 
         .radio-label input[type="radio"]:checked+.radio-text {
-            color: var(--primary-color);
+            color: var(--tiffany-active);
         }
 
         .radio-text {
@@ -2584,8 +2603,17 @@
         }
 
         .radio-text small {
-            color: #6b7280;
+            color: var(--text-muted);
             font-size: 12px;
+        }
+
+        [data-theme="dark"] .radio-label {
+            background: var(--bg-subtle);
+            border-color: var(--gold-faint);
+        }
+
+        [data-theme="dark"] .radio-label:hover {
+            background: rgba(129, 216, 207, 0.1);
         }
 
         .share-url-container {
@@ -2642,12 +2670,23 @@
         }
 
         .btn-secondary {
-            background: #e5e7eb;
-            color: #374151;
+            background: var(--bg-subtle);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
         }
 
         .btn-secondary:hover {
-            background: #d1d5db;
+            background: var(--bg-emboss);
+            border-color: var(--gold-soft);
+        }
+
+        [data-theme="dark"] .btn-secondary {
+            background: var(--bg-subtle);
+            border-color: var(--gold-faint);
+        }
+
+        [data-theme="dark"] .btn-secondary:hover {
+            background: var(--bg-card);
         }
     </style>
     <!-- QRCode.js for generating QR codes -->
@@ -3189,7 +3228,7 @@
                 </h3>
                 <button class="modal-close" onclick="closeShareModal()">×</button>
             </div>
-            <div class="modal-body" style="padding: 24px;">
+            <div class="modal-body" style="padding: 16px 20px;">
                 <div class="share-form">
                     <!-- 分享模式选择 -->
                     <div class="form-group">
@@ -3228,9 +3267,10 @@
                             <button type="button"
                                 onclick="togglePasswordVisibility('sharePassword', 'toggleSharePasswordBtn')"
                                 id="toggleSharePasswordBtn"
-                                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #666; font-size: 18px; padding: 5px;"
+                                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 5px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;"
                                 title="显示/隐藏密码">
-                                👁️
+                                <img id="toggleSharePasswordIcon" src="" alt="Toggle password"
+                                    style="width: 20px; height: 20px; opacity: 0.6; transition: opacity 0.2s;">
                             </button>
                         </div>
                         <small class="form-hint">访客需要输入此密码才能查看报告</small>
@@ -3239,11 +3279,23 @@
                     <!-- 过期时间 -->
                     <div id="expiryField" class="form-group" style="display: none;">
                         <label class="form-label">过期时间</label>
-                        <select id="expiryDays" class="form-select">
-                            <option value="">永久有效</option>
-                            <option value="7">7天后过期</option>
-                            <option value="30">30天后过期</option>
-                        </select>
+                        <input type="hidden" id="expiryDays" value="">
+                        <div class="custom-select dropup" id="expirySelect">
+                            <div class="custom-select-trigger">
+                                <span class="custom-select-value">永久有效</span>
+                                <span class="custom-select-arrow">
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5"
+                                            stroke-linecap="round" stroke-linejoin="round" />
+                                    </svg>
+                                </span>
+                            </div>
+                            <div class="custom-select-options">
+                                <div class="custom-select-option selected" data-value="">永久有效</div>
+                                <div class="custom-select-option" data-value="7">7天后过期</div>
+                                <div class="custom-select-option" data-value="30">30天后过期</div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 分享链接显示 -->
@@ -3257,7 +3309,7 @@
                     </div>
                 </div>
 
-                <div class="modal-actions" style="margin-top: 24px;">
+                <div class="modal-actions" style="margin-top: 16px;">
                     <button class="btn btn-primary" onclick="saveShareSettings()">保存设置</button>
                     <button class="btn btn-secondary" onclick="closeShareModal()">取消</button>
                 </div>
@@ -3415,7 +3467,63 @@
             if (shareModalIcon) {
                 shareModalIcon.src = `${BASE_PATH}/static/share.svg`; // class added via CSS selector
             }
+
+            // 初始化密码切换图标
+            const toggleSharePasswordIcon = document.getElementById('toggleSharePasswordIcon');
+            if (toggleSharePasswordIcon) {
+                toggleSharePasswordIcon.src = `${BASE_PATH}/static/passshow.svg`;
+            }
+
+            // 初始化自定义下拉框
+            initCustomSelects();
         });
+
+        // 自定义下拉框初始化
+        function initCustomSelects() {
+            document.querySelectorAll('.custom-select').forEach(select => {
+                const trigger = select.querySelector('.custom-select-trigger');
+                const options = select.querySelector('.custom-select-options');
+                const valueDisplay = select.querySelector('.custom-select-value');
+                const hiddenInput = select.previousElementSibling; // 获取关联的hidden input
+
+                // 点击触发器展开/收起
+                trigger.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // 关闭其他已打开的下拉框
+                    document.querySelectorAll('.custom-select.open').forEach(s => {
+                        if (s !== select) s.classList.remove('open');
+                    });
+                    select.classList.toggle('open');
+                });
+
+                // 选择选项
+                options.querySelectorAll('.custom-select-option').forEach(option => {
+                    option.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const value = option.dataset.value;
+                        const text = option.textContent;
+
+                        // 更新显示和hidden input
+                        valueDisplay.textContent = text;
+                        if (hiddenInput && hiddenInput.tagName === 'INPUT') {
+                            hiddenInput.value = value;
+                        }
+
+                        // 更新选中状态
+                        options.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
+                        option.classList.add('selected');
+
+                        // 关闭下拉框
+                        select.classList.remove('open');
+                    });
+                });
+            });
+
+            // 点击外部关闭下拉框
+            document.addEventListener('click', () => {
+                document.querySelectorAll('.custom-select.open').forEach(s => s.classList.remove('open'));
+            });
+        }
         // =========================================
 
         let sessionId = null;
@@ -5862,18 +5970,35 @@
                     document.getElementById('shareUrl').value = data.share_url;
                     document.getElementById('shareUrlDisplay').style.display = 'block';
 
-                    // 提示成功
-                    alert('✓ 分享设置已保存！\n分享链接已生成，您可以复制分享给他人。');
+                    // 更新按钮状态为成功
+                    const saveBtn = document.querySelector('#shareModal .btn-primary');
+                    if (saveBtn) {
+                        const originalText = saveBtn.textContent;
+                        saveBtn.textContent = '✓ 设置已保存';
+                        saveBtn.style.background = '#10b981';
+                        setTimeout(() => {
+                            saveBtn.textContent = originalText;
+                            saveBtn.style.background = '';
+                        }, 2000);
+                    }
                 } else {
-                    alert('✓ 分享设置已保存！\n报告已设为不公开。');
-
-                    // 关闭模态框
+                    // 关闭模态框（私密模式）
                     closeShareModal();
                 }
 
             } catch (error) {
                 console.error('❌ 保存分享设置失败:', error);
-                alert(`保存失败: ${error.message || '未知错误'}`);
+                // 显示错误提示
+                const saveBtn = document.querySelector('#shareModal .btn-primary');
+                if (saveBtn) {
+                    const originalText = saveBtn.textContent;
+                    saveBtn.textContent = `✗ ${error.message || '保存失败'}`;
+                    saveBtn.style.background = '#ef4444';
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.style.background = '';
+                    }, 3000);
+                }
             }
         }
 
@@ -5881,27 +6006,40 @@
         async function copyShareUrl() {
             const shareUrlInput = document.getElementById('shareUrl');
             const url = shareUrlInput.value;
+            const copyBtn = document.querySelector('#shareModal .copy-btn');
 
             if (!url) {
-                alert('分享链接为空');
                 return;
             }
+
+            const showSuccess = () => {
+                if (copyBtn) {
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '✓';
+                    copyBtn.style.background = '#10b981';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                        copyBtn.style.background = '';
+                    }, 2000);
+                }
+            };
+
+            const showError = () => {
+                if (copyBtn) {
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '✗';
+                    copyBtn.style.background = '#ef4444';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                        copyBtn.style.background = '';
+                    }, 2000);
+                }
+            };
 
             try {
                 // 使用 Clipboard API 复制
                 await navigator.clipboard.writeText(url);
-
-                // 视觉反馈
-                const copyBtn = document.querySelector('.copy-btn');
-                const originalText = copyBtn.innerHTML;
-                copyBtn.innerHTML = '✓';
-                copyBtn.style.background = '#10b981';
-
-                setTimeout(() => {
-                    copyBtn.innerHTML = originalText;
-                    copyBtn.style.background = '';
-                }, 2000);
-
+                showSuccess();
                 console.log('✅ 分享链接已复制:', url);
 
             } catch (error) {
@@ -5911,10 +6049,10 @@
 
                 try {
                     document.execCommand('copy');
-                    alert('✓ 链接已复制到剪贴板');
+                    showSuccess();
                 } catch (err) {
                     console.error('❌ 复制失败:', err);
-                    alert('复制失败，请手动复制链接');
+                    showError();
                 }
             }
         }
@@ -5922,16 +6060,14 @@
         // 切换密码显示/隐藏
         function togglePasswordVisibility(inputId, buttonId) {
             const passwordInput = document.getElementById(inputId);
-            const toggleBtn = document.getElementById(buttonId);
+            const toggleIcon = document.getElementById(buttonId.replace('Btn', 'Icon'));
 
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
-                toggleBtn.textContent = '🙈';
-                toggleBtn.title = '隐藏密码';
+                if (toggleIcon) toggleIcon.src = `${BASE_PATH}/static/passhide.svg`;
             } else {
                 passwordInput.type = 'password';
-                toggleBtn.textContent = '👁️';
-                toggleBtn.title = '显示密码';
+                if (toggleIcon) toggleIcon.src = `${BASE_PATH}/static/passshow.svg`;
             }
         }
 

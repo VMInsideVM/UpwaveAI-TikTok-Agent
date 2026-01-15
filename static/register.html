@@ -314,7 +314,7 @@
     <div class="register-container">
         <div class="logo">
             <h1>
-                <img src="/static/logo.png" alt="Logo" style="width: 40px; height: 40px; vertical-align: middle;">
+                <img id="siteLogo" src="" alt="Logo" style="width: 40px; height: 40px; vertical-align: middle;">
                 TikTok 达人推荐
             </h1>
             <p>创建新账户</p>
@@ -402,18 +402,24 @@
         const getFullPath = (p) => BASE_PATH + (p.startsWith('/') ? p : '/' + p);
         const navigateTo = (p) => window.location.href = getFullPath(p);
 
-        // 动态设置 favicon
-        const setFavicon = () => {
+        // 动态设置 favicon 和 logo
+        const setFaviconAndLogo = () => {
             const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
             link.type = 'image/png';
             link.rel = 'icon';
             link.href = `${BASE_PATH}/static/logo.png`;
             document.getElementsByTagName('head')[0].appendChild(link);
+
+            // 设置页面logo
+            const logoImg = document.getElementById('siteLogo');
+            if (logoImg) {
+                logoImg.src = `${BASE_PATH}/static/logo.png`;
+            }
         };
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', setFavicon);
+            document.addEventListener('DOMContentLoaded', setFaviconAndLogo);
         } else {
-            setFavicon();
+            setFaviconAndLogo();
         }
         // =========================================
 

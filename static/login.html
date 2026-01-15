@@ -261,13 +261,15 @@
             top: 50%;
             transform: translateY(-50%);
             cursor: pointer;
-            color: var(--text-secondary);
             user-select: none;
-            font-size: 18px;
+            width: 20px;
+            height: 20px;
+            opacity: 0.6;
+            transition: opacity 0.2s ease;
         }
 
         .password-toggle-icon:hover {
-            color: var(--text-primary);
+            opacity: 1;
         }
     </style>
 </head>
@@ -276,7 +278,7 @@
     <div class="login-container">
         <div class="logo">
             <h1>
-                <img src="/static/logo.png" alt="Logo" style="width: 40px; height: 40px; vertical-align: middle;">
+                <img id="siteLogo" src="" alt="Logo" style="width: 40px; height: 40px; vertical-align: middle;">
                 TikTok 达人推荐
             </h1>
             <p>登录您的账户</p>
@@ -296,7 +298,8 @@
                 <div class="password-toggle">
                     <input type="password" id="password" name="password" required autocomplete="current-password"
                         placeholder="请输入密码">
-                    <span class="password-toggle-icon" onclick="togglePassword()">👁️</span>
+                    <img class="password-toggle-icon" id="passwordToggleIcon" onclick="togglePassword()"
+                        alt="Toggle password visibility">
                 </div>
                 <div class="forgot-password">
                     <a href="#" onclick="event.preventDefault(); navigateTo('/reset-password.html');">忘记密码？</a>
@@ -325,18 +328,30 @@
         const getFullPath = (p) => BASE_PATH + (p.startsWith('/') ? p : '/' + p);
         const navigateTo = (p) => window.location.href = getFullPath(p);
 
-        // 动态设置 favicon
-        const setFavicon = () => {
+        // 动态设置 favicon 和 logo
+        const setFaviconAndLogo = () => {
             const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
             link.type = 'image/png';
             link.rel = 'icon';
             link.href = `${BASE_PATH}/static/logo.png`;
             document.getElementsByTagName('head')[0].appendChild(link);
+
+            // 设置页面logo
+            const logoImg = document.getElementById('siteLogo');
+            if (logoImg) {
+                logoImg.src = `${BASE_PATH}/static/logo.png`;
+            }
+
+            // 设置密码切换图标
+            const passwordToggleIcon = document.getElementById('passwordToggleIcon');
+            if (passwordToggleIcon) {
+                passwordToggleIcon.src = `${BASE_PATH}/static/passshow.svg`;
+            }
         };
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', setFavicon);
+            document.addEventListener('DOMContentLoaded', setFaviconAndLogo);
         } else {
-            setFavicon();
+            setFaviconAndLogo();
         }
         // =========================================
 
@@ -349,13 +364,13 @@
         // 密码显示/隐藏切换
         function togglePassword() {
             const passwordInput = document.getElementById('password');
-            const icon = document.querySelector('.password-toggle-icon');
+            const icon = document.getElementById('passwordToggleIcon');
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
-                icon.textContent = '🙈';
+                icon.src = `${BASE_PATH}/static/passhide.svg`;
             } else {
                 passwordInput.type = 'password';
-                icon.textContent = '👁️';
+                icon.src = `${BASE_PATH}/static/passshow.svg`;
             }
         }
 
