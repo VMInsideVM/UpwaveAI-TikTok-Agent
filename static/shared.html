@@ -299,13 +299,15 @@
                 const response = await fetch(`${BASE_PATH}/api/reports/${reportId}/shared`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: password || null })
+                    body: JSON.stringify({ password: password || null }),
+                    credentials: 'same-origin'  // 确保 Cookie 被保存
                 });
 
                 const data = await response.json();
 
                 if (data.success) {
                     // 访问成功，跳转到报告
+                    // Cookie 已由服务器设置，浏览器会自动携带
                     window.location.href = data.report_url;
                 } else {
                     showError(data.detail || '访问失败');

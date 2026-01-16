@@ -2,14 +2,18 @@
 FastAPI Authentication Dependencies
 FastAPI 认证依赖
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
+import re
 
 from database.connection import get_db
 from database.models import User
 from auth.security import decode_token
+
+# 用于验证 report_id 格式的正则表达式（UUID 格式）
+REPORT_ID_PATTERN = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', re.IGNORECASE)
 
 # HTTP Bearer 认证方案
 security = HTTPBearer()
@@ -227,6 +231,7 @@ async def get_user_from_token_param(
 
 
 async def get_user_or_shared_access(
+    request: Request,
     token: Optional[str] = None,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db)
@@ -234,19 +239,33 @@ async def get_user_or_shared_access(
     """
     获取当前用户或分享访问令牌
 
-    - 支持正常用户认证
-    - 支持分享访问令牌
+    - 支持正常用户认证（Authorization 头或 token 参数）
+    - 支持分享访问令牌（HTTP-Only Cookie）
     - 用于报告查看端点
 
     Returns:
         User or SharedAccessUser: 用户对象或分享访问伪对象
     """
+    # 从路径中提取 report_id（用于查找对应的 Cookie）
+    # 使用正则表达式安全提取，防止路径遍历攻击
+    path_match = re.search(r'/reports/([^/]+)/', request.url.path)
+    report_id = None
+    if path_match:
+        potential_id = path_match.group(1)
+        # 验证 report_id 是有效的 UUID 格式，防止恶意输入
+        if REPORT_ID_PATTERN.match(potential_id):
+            report_id = potential_id
+
     # 优先从 Authorization 头获取令牌
     access_token = None
     if credentials:
         access_token = credentials.credentials
     elif token:
         access_token = token
+    elif report_id:
+        # 尝试从 Cookie 获取分享令牌
+        cookie_name = f"share_token_{report_id}"
+        access_token = request.cookies.get(cookie_name)
 
     if not access_token:
         raise HTTPException(

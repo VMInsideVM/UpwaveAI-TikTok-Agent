@@ -191,12 +191,14 @@ class ReportQueue:
             loop = asyncio.get_event_loop()
             report_path = await loop.run_in_executor(
                 None,
-                report_agent.generate_report,
-                json_file_path,  # json_filename
-                f"为{product_name}推荐达人",  # user_query
-                10,  # target_count
-                f"产品名称: {product_name}",  # product_info
-                progress_callback  # progress_callback
+                lambda: report_agent.generate_report(
+                    json_filename=json_file_path,
+                    user_query=f"为{product_name}推荐达人",
+                    target_count=10,
+                    product_info=f"产品名称: {product_name}",
+                    progress_callback=progress_callback,
+                    report_id=report_id  # 使用 report_id 作为目录名，防止猜测
+                )
             )
 
             # Check if report generation was successful

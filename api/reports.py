@@ -2,8 +2,8 @@
 Reports API Endpoints
 报告管理 API 端点
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional
@@ -15,15 +15,18 @@ from passlib.context import CryptContext
 
 from database.connection import get_db
 from database.models import Report, User, UserUsage, ChatSession, CreditHistory
-from auth.dependencies import get_current_user, get_current_admin_user, get_user_from_token_param, get_user_or_shared_access
+from auth.dependencies import get_current_user, get_user_or_shared_access
 from auth.security import create_access_token
 from background.report_queue import report_queue
+from utils.security import rate_limiter, get_client_ip
 
 router = APIRouter(prefix="/api/reports", tags=["报告"])
 
 # 从环境变量读取部署配置
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8001")  # 例如: "https://upwaveai.com"
 BASE_PATH = os.getenv("BASE_PATH", "")  # 例如: "/agent" 或 ""
+# 环境检测：用于安全相关配置（如 Cookie Secure 标志）
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 
 # 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -358,20 +361,16 @@ async def list_user_reports(
 @router.get("/{report_id}/view")
 async def view_report(
     report_id: str,
-    token: Optional[str] = None,
     current_user = Depends(get_user_or_shared_access),
     db: Session = Depends(get_db)
 ):
     """
     查看报告HTML文件（访问控制）
 
-    支持通过 URL 参数传递 token（用于在新窗口打开）
-    也支持通过 Authorization 头传递 token
-
     支持以下访问方式：
-    1. 报告所有者
-    2. 管理员
-    3. 分享访问（通过分享令牌）
+    1. 报告所有者（通过 Authorization 头）
+    2. 管理员（通过 Authorization 头）
+    3. 分享访问（通过 HTTP-Only Cookie，防止 URL 泄露）
     """
     report = db.query(Report).filter(Report.report_id == report_id).first()
 
@@ -392,9 +391,20 @@ async def view_report(
     elif hasattr(current_user, 'user_id') and current_user.user_id and report.user_id == current_user.user_id:
         pass  # 允许访问
 
-    # 3. 分享访问：检查令牌中的 report_id
+    # 3. 分享访问：检查令牌中的 report_id 且报告必须是分享状态
     elif is_shared_access and current_user.report_id == report_id:
-        pass  # 允许访问
+        # 检查报告是否为 private 模式
+        if report.share_mode == "private":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="此报告未分享"
+            )
+        # 检查分享是否过期
+        if report.share_expires_at and report.share_expires_at < datetime.now():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="分享链接已过期"
+            )
 
     # 4. 其他情况：拒绝访问
     else:
@@ -748,6 +758,7 @@ async def get_share_settings(
 @router.post("/{report_id}/shared")
 async def access_shared_report(
     report_id: str,
+    request: Request,
     access_input: SharedReportAccessInput,
     db: Session = Depends(get_db)
 ):
@@ -756,8 +767,23 @@ async def access_shared_report(
 
     - 无需登录
     - 根据分享模式验证访问权限
-    - 返回报告访问令牌（短期有效）
+    - 通过 HTTP-Only Cookie 返回访问令牌（防止 URL 泄露）
+    - 包含密码暴力破解防护（每分钟最多 5 次尝试）
     """
+    # 密码暴力破解防护：基于 IP + report_id 限流
+    client_ip = get_client_ip(request)
+    rate_limit_key = f"share_access:{client_ip}:{report_id}"
+    is_allowed, remaining = rate_limiter.check_rate_limit(
+        key=rate_limit_key,
+        max_requests=5,  # 每分钟最多 5 次
+        window_seconds=60
+    )
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="尝试次数过多，请稍后再试"
+        )
+
     report = db.query(Report).filter(Report.report_id == report_id).first()
 
     if not report:
@@ -798,7 +824,7 @@ async def access_shared_report(
         if not pwd_context.verify(access_input.password, report.share_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="密码错误"
+                detail=f"密码错误（剩余尝试次数: {remaining}）"
             )
 
     # 生成短期访问令牌（1小时有效）
@@ -811,12 +837,29 @@ async def access_shared_report(
         expires_delta=timedelta(hours=1)
     )
 
-    return {
+    # 使用 HTTP-Only Cookie 返回 token，防止 URL 泄露
+    response = JSONResponse(content={
         "success": True,
-        "access_token": access_token,
-        "report_url": f"{BASE_PATH}/api/reports/{report_id}/view?token={access_token}",
-        "owner_username": report.user.username  # 用于水印
-    }
+        "report_url": f"{BASE_PATH}/api/reports/{report_id}/view",  # URL 不再包含 token
+        "owner_username": report.user.username
+    })
+
+    # 设置 HTTP-Only Cookie
+    # - httponly=True: JavaScript 无法读取，防止 XSS 攻击
+    # - samesite="lax": 防止 CSRF 攻击，同时允许顶级导航携带 Cookie
+    # - secure: 生产环境必须为 True（仅 HTTPS 传输）
+    # - max_age=3600: 1小时过期
+    response.set_cookie(
+        key=f"share_token_{report_id}",
+        value=access_token,
+        max_age=3600,  # 1小时
+        httponly=True,
+        samesite="lax",
+        secure=IS_PRODUCTION,  # 使用环境变量判断，而非 URL 前缀
+        path=f"{BASE_PATH}/api/reports/{report_id}"  # 限制 Cookie 作用范围
+    )
+
+    return response
 
 
 @router.get("/{report_id}/shared/preview")

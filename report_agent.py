@@ -137,7 +137,8 @@ class TikTokInfluencerReportAgent:
         user_query: str,
         target_count: int,
         product_info: str,
-        progress_callback=None
+        progress_callback=None,
+        report_id: str = None
     ) -> str:
         """
         Generate influencer recommendation report.
@@ -257,9 +258,15 @@ class TikTokInfluencerReportAgent:
             print()
             update_progress(80)
 
-            # Create timestamped report directory
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_dir = os.path.join("output/reports", timestamp)
+            # Create report directory using report_id (UUID) for security
+            # Using UUID prevents attackers from guessing directory names
+            if report_id:
+                # 安全：使用 report_id (UUID) 作为目录名，无法被猜测
+                dir_name = report_id
+            else:
+                # 回退方案：使用时间戳（仅用于独立测试）
+                dir_name = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_dir = os.path.join("output/reports", dir_name)
             charts_dir = os.path.join(report_dir, "charts")
             os.makedirs(charts_dir, exist_ok=True)
             print(f"📁 创建报告目录: {report_dir}")

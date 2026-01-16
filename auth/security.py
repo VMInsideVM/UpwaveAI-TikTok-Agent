@@ -18,7 +18,19 @@ pwd_context = CryptContext(
 )
 
 # JWT 配置
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here-change-in-production")
+# 安全警告：JWT_SECRET_KEY 必须在生产环境中设置为强随机密钥
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    # 开发环境允许使用默认值，但会发出警告
+    import sys
+    _is_dev = os.getenv("ENVIRONMENT", "development").lower() in ("development", "dev", "local")
+    if _is_dev:
+        JWT_SECRET_KEY = "dev-only-secret-key-not-for-production"
+        print("⚠️  警告: 使用开发环境默认 JWT_SECRET_KEY，请勿在生产环境使用！", file=sys.stderr)
+    else:
+        print("❌ 错误: 生产环境必须设置 JWT_SECRET_KEY 环境变量", file=sys.stderr)
+        sys.exit(1)
+
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
