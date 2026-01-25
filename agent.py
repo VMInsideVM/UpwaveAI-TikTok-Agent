@@ -1,26 +1,46 @@
 """
 TikTok 达人推荐 LangChain Agent 主控制器
 使用 LangChain 1.0 的 create_agent API
+
+支持两种运行模式（通过环境变量 USE_LANGGRAPH 控制）:
+- USE_LANGGRAPH=false (默认): 使用 LangChain ReAct Agent
+- USE_LANGGRAPH=true: 使用纯 LangGraph Workflow（推荐）
 """
 
 import os
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_agent as langchain_create_agent
-import pandas as pd
-from datetime import datetime
 
-# 解决 asyncio 和同步 Playwright 的冲突
-import nest_asyncio
-nest_asyncio.apply()
-
-from agent_tools import get_all_tools, set_agent_instance
-from main import initialize_playwright, navigate_to_url
-from workflow_enforcer import get_enforcer
-
-# 加载环境变量
+# 加载环境变量（必须在其他导入之前）
 load_dotenv()
+
+# ============================================================
+# LangGraph 模式切换
+# ============================================================
+
+USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
+
+if USE_LANGGRAPH:
+    # 使用纯 LangGraph Workflow 模式
+    print("🚀 启用 LangGraph Workflow 模式")
+    from agent_langgraph import TikTokInfluencerAgent, create_agent
+    # 直接导出 LangGraph 版本，下面的类定义会被跳过
+else:
+    # 使用传统 LangChain ReAct Agent 模式
+    print("📦 使用 LangChain ReAct Agent 模式")
+
+    from langchain_openai import ChatOpenAI
+    from langchain.agents import create_agent as langchain_create_agent
+    import pandas as pd
+    from datetime import datetime
+
+    # 解决 asyncio 和同步 Playwright 的冲突
+    import nest_asyncio
+    nest_asyncio.apply()
+
+    from agent_tools import get_all_tools, set_agent_instance
+    from main import initialize_playwright, navigate_to_url
+    from workflow_enforcer import get_enforcer
 
 
 class TikTokInfluencerAgent:
@@ -900,14 +920,25 @@ class TikTokInfluencerAgent:
             return f"❌ 导出失败: {str(e)}"
 
 
-def create_agent() -> TikTokInfluencerAgent:
-    """创建并返回 Agent 实例"""
-    return TikTokInfluencerAgent()
+# 仅当使用 ReAct 模式时定义 create_agent
+if not USE_LANGGRAPH:
+    def create_agent(
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        username: Optional[str] = None
+    ) -> TikTokInfluencerAgent:
+        """创建并返回 Agent 实例"""
+        return TikTokInfluencerAgent(
+            user_id=user_id,
+            session_id=session_id,
+            username=username
+        )
 
 
 if __name__ == "__main__":
     # 测试 Agent
     print("🧪 测试 Agent 初始化...")
+    print(f"📦 当前模式: {'LangGraph Workflow' if USE_LANGGRAPH else 'LangChain ReAct'}")
 
     try:
         agent = create_agent()
