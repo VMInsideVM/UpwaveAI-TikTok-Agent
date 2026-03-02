@@ -11,10 +11,10 @@
 
 | 配置项 | 值 | 状态 |
 |--------|-----|------|
-| **商户号** | `***REMOVED_MCH_ID***` | ✅ |
-| **AppID** | `***REMOVED_APP_ID***` | ✅ |
-| **APIv3密钥** | `bnvf6q9f...` (已配置) | ✅ |
-| **证书序列号** | `***REMOVED_SERIAL***` | ✅ |
+| **商户号** | `<见.env配置>` | ✅ |
+| **AppID** | `<见.env配置>` | ✅ |
+| **APIv3密钥** | `<见.env配置>` | ✅ |
+| **证书序列号** | `<见.env配置>` | ✅ |
 | **商户私钥** | `certs/wechat/apiclient_key.pem` | ✅ (1704字节) |
 | **平台证书** | `certs/wechat/pub_key.pem` | ✅ (451字节) |
 | **回调URL** | `https://foreignly-harmonizable-hosea.ngrok-free.dev/api/payment/callback/wechat` | ✅ |
@@ -94,7 +94,7 @@ tail -f C:\Users\Hank\AppData\Local\Temp\claude\...\tasks\b02634b.output
 **关键日志**:
 ```
 创建微信支付订单...
-商户号: ***REMOVED_MCH_ID***
+商户号: <YOUR_MCH_ID>
 订单号: ORD20251227...
 金额: 299 (分)
 ✅ 微信支付订单创建成功
@@ -176,7 +176,7 @@ curl https://foreignly-harmonizable-hosea.ngrok-free.dev/api/health
 ```bash
 # 1. 验证证书序列号
 openssl x509 -in certs/wechat/pub_key.pem -noout -serial
-# 输出应该包含: ***REMOVED_SERIAL***
+# 输出应该包含你在 .env 中配置的证书序列号
 
 # 2. 如果不匹配，需要重新下载平台证书
 # 从微信支付商户平台下载最新的平台证书

@@ -12,10 +12,11 @@ import shutil
 from pathlib import Path
 
 # 设置UTF-8编码输出（解决Windows下emoji显示问题）
-if sys.platform == 'win32':
+if sys.platform == "win32":
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 def clear_python_cache():
@@ -23,14 +24,14 @@ def clear_python_cache():
     print("🧹 清理Python缓存...")
 
     # 清理 __pycache__ 目录
-    for pycache_dir in Path('.').rglob('__pycache__'):
+    for pycache_dir in Path(".").rglob("__pycache__"):
         try:
             shutil.rmtree(pycache_dir)
         except Exception as e:
             pass
 
     # 清理 .pyc 文件
-    for pyc_file in Path('.').rglob('*.pyc'):
+    for pyc_file in Path(".").rglob("*.pyc"):
         try:
             pyc_file.unlink()
         except Exception as e:
@@ -41,18 +42,21 @@ def clear_python_cache():
 
 def print_banner():
     """打印启动横幅"""
-    print("""
+    print(
+        """
 ╔══════════════════════════════════════════════════════════╗
 ║     🤖 TikTok 达人推荐聊天机器人启动助手 🤖             ║
 ╚══════════════════════════════════════════════════════════╝
-    """)
+    """
+    )
 
 
 def check_port(port: int) -> bool:
     """检查端口是否被占用"""
     import socket
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex(('127.0.0.1', port))
+    result = sock.connect_ex(("127.0.0.1", port))
     sock.close()
     return result == 0
 
@@ -66,7 +70,7 @@ def find_pid_by_port(port: int) -> list:
             capture_output=True,
             text=True,
             encoding="utf-8",
-            errors="ignore"
+            errors="ignore",
         )
 
         # 解析输出
@@ -91,9 +95,7 @@ def kill_process(pid: int) -> bool:
     """终止指定 PID 的进程"""
     try:
         subprocess.run(
-            ["taskkill", "/PID", str(pid), "/F"],
-            check=True,
-            capture_output=True
+            ["taskkill", "/PID", str(pid), "/F"], check=True, capture_output=True
         )
         return True
     except subprocess.CalledProcessError:
@@ -126,9 +128,6 @@ def clear_port(port: int) -> bool:
     else:
         print(f"⚠️  部分进程清理失败 ({success_count}/{len(pids)})\n")
         return False
-
-
-
 
 
 def check_playwright_api() -> bool:
@@ -169,7 +168,8 @@ def check_dependencies() -> bool:
 
 def print_playwright_instructions():
     """打印 Playwright API 启动说明"""
-    print("""
+    print(
+        """
 📌 如何启动 Playwright API:
 
     python start_api.py
@@ -177,7 +177,8 @@ def print_playwright_instructions():
 或者:
 
     python playwright_api.py
-    """)
+    """
+    )
 
 
 def start_chatbot_service():
@@ -195,7 +196,10 @@ def start_chatbot_service():
 
         # 2. 创建管理员账户（如果不存在）
         admin_username = os.getenv("INITIAL_ADMIN_USERNAME", "admin")
-        admin_password = os.getenv("INITIAL_ADMIN_PASSWORD", "***REMOVED***")
+        admin_password = os.getenv("INITIAL_ADMIN_PASSWORD")
+        if not admin_password:
+            print("❌ 请设置环境变量 INITIAL_ADMIN_PASSWORD")
+            return
         admin_email = os.getenv("INITIAL_ADMIN_EMAIL", "admin@fastmoss.com")
 
         create_admin_user(admin_username, admin_password, admin_email)
@@ -228,6 +232,7 @@ def start_chatbot_service():
     except Exception as e:
         print(f"\n❌ 启动失败: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -250,7 +255,7 @@ def main():
         print_playwright_instructions()
         print("\n" + "=" * 60)
         response = input("\n是否继续启动? (y/n): ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("\n❌ 启动已取消")
             print("\n💡 提示: 请先启动所需的依赖服务，然后重新运行此脚本")
             return

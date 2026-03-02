@@ -6,11 +6,15 @@
 2. 查看报告详情
 """
 
+import os
 import requests
-import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 配置
 API_BASE_URL = "http://127.0.0.1:8001"
+
 
 def test_admin_login():
     """测试管理员登录"""
@@ -22,8 +26,8 @@ def test_admin_login():
         f"{API_BASE_URL}/api/auth/login",
         json={
             "email": "admin@example.com",
-            "password": "***REMOVED***"
-        }
+            "password": os.getenv("INITIAL_ADMIN_PASSWORD", ""),
+        },
     )
 
     if response.status_code == 200:
@@ -45,16 +49,10 @@ def test_update_user_info(token, user_id):
     print("测试 2: 修改用户信息")
     print("=" * 60)
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     # 先获取当前用户信息
-    users_response = requests.get(
-        f"{API_BASE_URL}/api/admin/users",
-        headers=headers
-    )
+    users_response = requests.get(f"{API_BASE_URL}/api/admin/users", headers=headers)
 
     if users_response.status_code != 200:
         print(f"❌ 获取用户列表失败: {users_response.text}")
@@ -68,7 +66,7 @@ def test_update_user_info(token, user_id):
     # 使用第一个非管理员用户进行测试
     test_user = None
     for user in users:
-        if not user['is_admin']:
+        if not user["is_admin"]:
             test_user = user
             break
 
@@ -76,7 +74,7 @@ def test_update_user_info(token, user_id):
         print("❌ 没有找到非管理员用户")
         return False
 
-    user_id = test_user['user_id']
+    user_id = test_user["user_id"]
     print(f"\n测试用户: {test_user['username']} ({user_id})")
     print(f"当前信息:")
     print(f"  用户名: {test_user['username']}")
@@ -85,14 +83,10 @@ def test_update_user_info(token, user_id):
 
     # 测试修改用户名
     print(f"\n【测试 2.1】修改用户名")
-    update_data = {
-        "username": f"test_modified_{test_user['username']}"
-    }
+    update_data = {"username": f"test_modified_{test_user['username']}"}
 
     response = requests.put(
-        f"{API_BASE_URL}/api/admin/users/{user_id}",
-        headers=headers,
-        json=update_data
+        f"{API_BASE_URL}/api/admin/users/{user_id}", headers=headers, json=update_data
     )
 
     if response.status_code == 200:
@@ -106,14 +100,10 @@ def test_update_user_info(token, user_id):
 
     # 测试修改邮箱
     print(f"\n【测试 2.2】修改邮箱")
-    update_data = {
-        "email": f"modified_{test_user['email']}"
-    }
+    update_data = {"email": f"modified_{test_user['email']}"}
 
     response = requests.put(
-        f"{API_BASE_URL}/api/admin/users/{user_id}",
-        headers=headers,
-        json=update_data
+        f"{API_BASE_URL}/api/admin/users/{user_id}", headers=headers, json=update_data
     )
 
     if response.status_code == 200:
@@ -127,14 +117,10 @@ def test_update_user_info(token, user_id):
 
     # 测试修改手机号
     print(f"\n【测试 2.3】修改手机号")
-    update_data = {
-        "phone_number": "13900000001"
-    }
+    update_data = {"phone_number": "13900000001"}
 
     response = requests.put(
-        f"{API_BASE_URL}/api/admin/users/{user_id}",
-        headers=headers,
-        json=update_data
+        f"{API_BASE_URL}/api/admin/users/{user_id}", headers=headers, json=update_data
     )
 
     if response.status_code == 200:
@@ -148,14 +134,10 @@ def test_update_user_info(token, user_id):
 
     # 测试修改密码
     print(f"\n【测试 2.4】修改密码")
-    update_data = {
-        "password": "new_test_password_123"
-    }
+    update_data = {"password": "new_test_password_123"}
 
     response = requests.put(
-        f"{API_BASE_URL}/api/admin/users/{user_id}",
-        headers=headers,
-        json=update_data
+        f"{API_BASE_URL}/api/admin/users/{user_id}", headers=headers, json=update_data
     )
 
     if response.status_code == 200:
@@ -171,22 +153,26 @@ def test_update_user_info(token, user_id):
     update_data = {
         "username": f"final_{test_user['username']}",
         "email": f"final_{test_user['email']}",
-        "phone_number": "13900000002"
+        "phone_number": "13900000002",
     }
 
     response = requests.put(
-        f"{API_BASE_URL}/api/admin/users/{user_id}",
-        headers=headers,
-        json=update_data
+        f"{API_BASE_URL}/api/admin/users/{user_id}", headers=headers, json=update_data
     )
 
     if response.status_code == 200:
         result = response.json()
         print(f"✅ 修改成功")
         print(f"   变更内容:")
-        print(f"     用户名: {result['old_info']['username']} → {result['new_info']['username']}")
-        print(f"     邮箱: {result['old_info']['email']} → {result['new_info']['email']}")
-        print(f"     手机号: {result['old_info'].get('phone_number', '未设置')} → {result['new_info']['phone_number']}")
+        print(
+            f"     用户名: {result['old_info']['username']} → {result['new_info']['username']}"
+        )
+        print(
+            f"     邮箱: {result['old_info']['email']} → {result['new_info']['email']}"
+        )
+        print(
+            f"     手机号: {result['old_info'].get('phone_number', '未设置')} → {result['new_info']['phone_number']}"
+        )
     else:
         print(f"❌ 修改失败: {response.text}")
         return False
@@ -194,15 +180,13 @@ def test_update_user_info(token, user_id):
     # 测试唯一性检查（尝试使用已存在的用户名）
     print(f"\n【测试 2.6】唯一性检查（应该失败）")
     if len(users) > 1:
-        another_user = users[1 if users[0]['user_id'] == user_id else 0]
-        update_data = {
-            "username": another_user['username']
-        }
+        another_user = users[1 if users[0]["user_id"] == user_id else 0]
+        update_data = {"username": another_user["username"]}
 
         response = requests.put(
             f"{API_BASE_URL}/api/admin/users/{user_id}",
             headers=headers,
-            json=update_data
+            json=update_data,
         )
 
         if response.status_code == 400:
@@ -221,16 +205,10 @@ def test_get_report_detail(token):
     print("测试 3: 查看报告详情")
     print("=" * 60)
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     # 获取报告列表
-    response = requests.get(
-        f"{API_BASE_URL}/api/admin/reports",
-        headers=headers
-    )
+    response = requests.get(f"{API_BASE_URL}/api/admin/reports", headers=headers)
 
     if response.status_code != 200:
         print(f"❌ 获取报告列表失败: {response.text}")
@@ -247,7 +225,7 @@ def test_get_report_detail(token):
 
     # 测试查看第一个报告的详情
     test_report = reports[0]
-    report_id = test_report['report_id']
+    report_id = test_report["report_id"]
 
     print(f"\n查看报告: {test_report['title']}")
     print(f"  报告ID: {report_id}")
@@ -256,8 +234,7 @@ def test_get_report_detail(token):
 
     # 获取详情
     response = requests.get(
-        f"{API_BASE_URL}/api/admin/reports/{report_id}",
-        headers=headers
+        f"{API_BASE_URL}/api/admin/reports/{report_id}", headers=headers
     )
 
     if response.status_code != 200:
@@ -276,18 +253,18 @@ def test_get_report_detail(token):
     print(f"   会话ID: {detail['session_id']}")
     print(f"   报告路径: {detail.get('report_path', '无')}")
 
-    if detail.get('report_content'):
-        content_preview = detail['report_content'][:100]
+    if detail.get("report_content"):
+        content_preview = detail["report_content"][:100]
         print(f"   内容预览: {content_preview}...")
     else:
         print(f"   内容: 无")
 
-    if detail.get('report_data'):
+    if detail.get("report_data"):
         print(f"   JSON数据: 包含 {len(detail['report_data'])} 条记录")
     else:
         print(f"   JSON数据: 无")
 
-    if detail.get('error_message'):
+    if detail.get("error_message"):
         print(f"   错误信息: {detail['error_message']}")
 
     return True
@@ -323,7 +300,7 @@ def main():
     results = [
         ("管理员登录", True),
         ("修改用户信息", success_update),
-        ("查看报告详情", success_report)
+        ("查看报告详情", success_report),
     ]
 
     for test_name, passed in results:
@@ -349,4 +326,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ 测试过程中发生错误: {e}")
         import traceback
+
         traceback.print_exc()

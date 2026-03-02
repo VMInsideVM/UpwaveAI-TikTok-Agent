@@ -2,6 +2,7 @@
 Database Connection Manager
 数据库连接管理
 """
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from contextlib import contextmanager
@@ -19,7 +20,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///chatbot.db")
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-    echo=False  # 设置为 True 可以看到 SQL 日志
+    echo=False,  # 设置为 True 可以看到 SQL 日志
 )
 
 # 创建 SessionLocal 类
@@ -113,7 +114,7 @@ def create_admin_user(username: str, password: str, email: str) -> bool:
                 hashed_password=hashed_pw,
                 is_admin=True,
                 is_active=True,
-                is_verified=True
+                is_verified=True,
             )
 
             db.add(admin_user)
@@ -123,7 +124,7 @@ def create_admin_user(username: str, password: str, email: str) -> bool:
             usage = UserUsage(
                 user_id=admin_user.user_id,
                 total_credits=999999,  # 管理员无限积分
-                used_credits=0
+                used_credits=0,
             )
 
             db.add(usage)
@@ -161,8 +162,8 @@ if __name__ == "__main__":
     # 创建管理员
     create_admin_user(
         username="admin",
-        password="***REMOVED***",
-        email="admin@example.com"
+        password=os.getenv("INITIAL_ADMIN_PASSWORD", "changeme"),
+        email="admin@example.com",
     )
 
     # 测试查询

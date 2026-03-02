@@ -23,8 +23,8 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        username: 'testuser',
-                        password: 'test1234'
+                        username: prompt('请输入用户名:'),
+                        password: prompt('请输入密码:')
                     })
                 });
 

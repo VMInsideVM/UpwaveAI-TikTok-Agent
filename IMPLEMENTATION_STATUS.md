@@ -134,7 +134,7 @@ python start_chatbot.py
 # 1. 先用管理员登录
 curl -X POST http://127.0.0.1:8001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"***REMOVED***"}'
+  -d '{"username":"admin","password":"<YOUR_ADMIN_PASSWORD>"}'
 
 # 2. 生成邀请码
 curl -X POST http://127.0.0.1:8001/api/admin/invitation-codes \
@@ -191,9 +191,9 @@ curl http://127.0.0.1:8001/api/auth/me \
 ## 🔑 重要提醒
 
 1. **管理员账户**:
-   - 用户名: admin
-   - 密码: ***REMOVED***
-   - 邮箱: admin@fastmoss.com
+   - 用户名: 见环境变量 `INITIAL_ADMIN_USERNAME`
+   - 密码: 见环境变量 `INITIAL_ADMIN_PASSWORD`
+   - 邮箱: 见环境变量 `INITIAL_ADMIN_EMAIL`
    - ⚠️ 请在首次登录后立即修改密码！
 
 2. **JWT 密钥**:

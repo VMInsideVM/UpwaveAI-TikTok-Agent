@@ -2,6 +2,7 @@
 修复管理员账户脚本
 Fix Admin Account Script
 """
+
 from database.connection import get_db_context, hash_password
 from database.models import User, UserUsage
 import os
@@ -9,11 +10,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def fix_admin_account():
     """修复或重置管理员账户"""
 
     admin_username = os.getenv("INITIAL_ADMIN_USERNAME", "admin")
-    admin_password = os.getenv("INITIAL_ADMIN_PASSWORD", "***REMOVED***")
+    admin_password = os.getenv("INITIAL_ADMIN_PASSWORD")
+    if not admin_password:
+        print("❌ 请设置环境变量 INITIAL_ADMIN_PASSWORD")
+        return
     admin_email = os.getenv("INITIAL_ADMIN_EMAIL", "admin@fastmoss.com")
 
     with get_db_context() as db:
@@ -37,9 +42,9 @@ def fix_admin_account():
         admin_user.is_verified = True
 
         # 检查并修复积分记录
-        usage = db.query(UserUsage).filter(
-            UserUsage.user_id == admin_user.user_id
-        ).first()
+        usage = (
+            db.query(UserUsage).filter(UserUsage.user_id == admin_user.user_id).first()
+        )
 
         if usage:
             print(f"✅ 找到积分记录")
@@ -50,9 +55,7 @@ def fix_admin_account():
         else:
             print(f"⚠️  积分记录不存在，创建新记录")
             usage = UserUsage(
-                user_id=admin_user.user_id,
-                total_credits=999999,
-                used_credits=0
+                user_id=admin_user.user_id, total_credits=999999, used_credits=0
             )
             db.add(usage)
 

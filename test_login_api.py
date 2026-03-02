@@ -1,18 +1,17 @@
 """
 测试登录API
 """
+
 import requests
 import json
 
 API_BASE_URL = "http://127.0.0.1:8001"
 
+
 def test_login(username, password):
     """测试登录"""
     url = f"{API_BASE_URL}/api/auth/login"
-    payload = {
-        "username": username,
-        "password": password
-    }
+    payload = {"username": username, "password": password}
 
     print(f"\n测试登录: {username}")
     print(f"请求URL: {url}")
@@ -20,9 +19,7 @@ def test_login(username, password):
 
     try:
         response = requests.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json"}
+            url, json=payload, headers={"Content-Type": "application/json"}
         )
 
         print(f"\n状态码: {response.status_code}")
@@ -47,15 +44,21 @@ def test_login(username, password):
     except Exception as e:
         print(f"\n❌ 请求异常: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
+
 if __name__ == "__main__":
-    # 测试testuser
-    test_login("testuser", "test1234")
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    admin_password = os.getenv("INITIAL_ADMIN_PASSWORD", "")
 
     # 测试admin
-    test_login("admin", "***REMOVED***")
+    test_login("admin", admin_password)
 
     # 测试错误密码
-    test_login("testuser", "wrongpassword")
+    test_login("admin", "wrongpassword")

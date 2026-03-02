@@ -2,6 +2,7 @@
 阿里云短信服务
 处理验证码发送和验证
 """
+
 import os
 import random
 import string
@@ -19,18 +20,24 @@ from database.models import SMSVerification
 # 验证码哈希上下文（使用更快的 rounds 数）
 sms_code_context = CryptContext(
     schemes=["bcrypt"],
-    bcrypt__default_rounds=4  # 短信验证码用较少的 rounds（仅需临时存储）
+    bcrypt__default_rounds=4,  # 短信验证码用较少的 rounds（仅需临时存储）
 )
 
 # 阿里云配置
-ALIYUN_ACCESS_KEY_ID = os.getenv("ALIYUN_ACCESS_KEY_ID", "***REMOVED***")
-ALIYUN_ACCESS_KEY_SECRET = os.getenv("ALIYUN_ACCESS_KEY_SECRET", "***REMOVED***")
+ALIYUN_ACCESS_KEY_ID = os.getenv("ALIYUN_ACCESS_KEY_ID", "")
+ALIYUN_ACCESS_KEY_SECRET = os.getenv("ALIYUN_ACCESS_KEY_SECRET", "")
 ALIYUN_SMS_SIGN_NAME = os.getenv("ALIYUN_SMS_SIGN_NAME", "杭州升澜智能科技有限公司")
 
 # 短信模板 ID
-SMS_TEMPLATE_REGISTER = os.getenv("SMS_TEMPLATE_REGISTER", "SMS_499310186")  # 注册验证码
-SMS_TEMPLATE_RESET_PASSWORD = os.getenv("SMS_TEMPLATE_RESET_PASSWORD", "SMS_499080375")  # 密码重置
-SMS_TEMPLATE_REPORT_READY = os.getenv("SMS_TEMPLATE_REPORT_READY", "SMS_499100445")  # 报告完成通知
+SMS_TEMPLATE_REGISTER = os.getenv(
+    "SMS_TEMPLATE_REGISTER", "SMS_499310186"
+)  # 注册验证码
+SMS_TEMPLATE_RESET_PASSWORD = os.getenv(
+    "SMS_TEMPLATE_RESET_PASSWORD", "SMS_499080375"
+)  # 密码重置
+SMS_TEMPLATE_REPORT_READY = os.getenv(
+    "SMS_TEMPLATE_REPORT_READY", "SMS_499100445"
+)  # 报告完成通知
 
 # 验证码配置
 SMS_CODE_LENGTH = int(os.getenv("SMS_CODE_LENGTH", "6"))
@@ -50,14 +57,14 @@ class SMSService:
         config = open_api_models.Config(
             access_key_id=ALIYUN_ACCESS_KEY_ID,
             access_key_secret=ALIYUN_ACCESS_KEY_SECRET,
-            endpoint='dysmsapi.aliyuncs.com'
+            endpoint="dysmsapi.aliyuncs.com",
         )
         self.client = DysmsapiClient(config)
 
     @staticmethod
     def generate_code() -> str:
         """生成 6 位随机数字验证码"""
-        return ''.join(random.choices(string.digits, k=SMS_CODE_LENGTH))
+        return "".join(random.choices(string.digits, k=SMS_CODE_LENGTH))
 
     @staticmethod
     def validate_phone_format(phone: str) -> bool:
@@ -66,10 +73,13 @@ class SMSService:
         格式: 1[3-9]\\d{9}
         """
         import re
-        pattern = r'^1[3-9]\d{9}$'
+
+        pattern = r"^1[3-9]\d{9}$"
         return bool(re.match(pattern, phone))
 
-    def check_rate_limit(self, db: Session, phone: str, ip_address: str) -> Tuple[bool, str]:
+    def check_rate_limit(
+        self, db: Session, phone: str, ip_address: str
+    ) -> Tuple[bool, str]:
         """
         检查发送频率限制
 
@@ -82,22 +92,36 @@ class SMSService:
         one_day_ago = now_naive() - timedelta(days=1)
 
         # 检查手机号频率限制（每小时 5 次）
-        phone_count = db.query(SMSVerification).filter(
-            SMSVerification.phone_number == phone,
-            SMSVerification.created_at >= one_hour_ago
-        ).count()
+        phone_count = (
+            db.query(SMSVerification)
+            .filter(
+                SMSVerification.phone_number == phone,
+                SMSVerification.created_at >= one_hour_ago,
+            )
+            .count()
+        )
 
         if phone_count >= RATE_LIMIT_PER_PHONE_HOUR:
-            return False, f"该手机号每小时最多发送 {RATE_LIMIT_PER_PHONE_HOUR} 次验证码，请稍后再试"
+            return (
+                False,
+                f"该手机号每小时最多发送 {RATE_LIMIT_PER_PHONE_HOUR} 次验证码，请稍后再试",
+            )
 
         # 检查 IP 频率限制（每天 5 次）
-        ip_count = db.query(SMSVerification).filter(
-            SMSVerification.ip_address == ip_address,
-            SMSVerification.created_at >= one_day_ago
-        ).count()
+        ip_count = (
+            db.query(SMSVerification)
+            .filter(
+                SMSVerification.ip_address == ip_address,
+                SMSVerification.created_at >= one_day_ago,
+            )
+            .count()
+        )
 
         if ip_count >= RATE_LIMIT_PER_IP_DAY:
-            return False, f"您的IP今日验证码发送次数已达上限（{RATE_LIMIT_PER_IP_DAY}次），请明天再试"
+            return (
+                False,
+                f"您的IP今日验证码发送次数已达上限（{RATE_LIMIT_PER_IP_DAY}次），请明天再试",
+            )
 
         return True, ""
 
@@ -107,7 +131,7 @@ class SMSService:
         phone: str,
         code_type: str,
         ip_address: str,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         发送短信验证码
@@ -136,9 +160,9 @@ class SMSService:
 
         # 4. 选择短信模板
         template_map = {
-            'register': SMS_TEMPLATE_REGISTER,
-            'reset_password': SMS_TEMPLATE_RESET_PASSWORD,
-            'change_phone': SMS_TEMPLATE_REGISTER  # 修改手机号使用注册模板
+            "register": SMS_TEMPLATE_REGISTER,
+            "reset_password": SMS_TEMPLATE_RESET_PASSWORD,
+            "change_phone": SMS_TEMPLATE_REGISTER,  # 修改手机号使用注册模板
         }
         template_code = template_map.get(code_type, SMS_TEMPLATE_REGISTER)
 
@@ -148,13 +172,13 @@ class SMSService:
                 phone_numbers=phone,
                 sign_name=ALIYUN_SMS_SIGN_NAME,
                 template_code=template_code,
-                template_param=f'{{"code":"{code}"}}'  # 模板变量 ${code}
+                template_param=f'{{"code":"{code}"}}',  # 模板变量 ${code}
             )
 
             response = self.client.send_sms(request)
 
             # 检查发送结果
-            if response.body.code != 'OK':
+            if response.body.code != "OK":
                 error_msg = f"短信发送失败: {response.body.message}"
                 print(f"❌ Aliyun SMS Error: {error_msg}")
                 return False, "短信发送失败，请稍后重试"
@@ -176,22 +200,20 @@ class SMSService:
             ip_address=ip_address,
             user_id=user_id,
             expires_at=expires_at,
-            max_attempts=MAX_ATTEMPTS
+            max_attempts=MAX_ATTEMPTS,
         )
 
         db.add(verification)
         db.commit()
 
-        print(f"✅ SMS sent to {phone}: {code} (expires in {SMS_CODE_EXPIRE_MINUTES} min)")
+        print(
+            f"✅ SMS sent to {phone}: {code} (expires in {SMS_CODE_EXPIRE_MINUTES} min)"
+        )
 
         return True, f"验证码已发送至 {phone}，{SMS_CODE_EXPIRE_MINUTES} 分钟内有效"
 
     def verify_code(
-        self,
-        db: Session,
-        phone: str,
-        code: str,
-        code_type: str
+        self, db: Session, phone: str, code: str, code_type: str
     ) -> Tuple[bool, str, Optional[SMSVerification]]:
         """
         验证短信验证码
@@ -200,11 +222,16 @@ class SMSService:
             (is_valid, message, verification_record)
         """
         # 1. 查找最近的未验证记录
-        verification = db.query(SMSVerification).filter(
-            SMSVerification.phone_number == phone,
-            SMSVerification.code_type == code_type,
-            SMSVerification.is_verified == False
-        ).order_by(SMSVerification.created_at.desc()).first()
+        verification = (
+            db.query(SMSVerification)
+            .filter(
+                SMSVerification.phone_number == phone,
+                SMSVerification.code_type == code_type,
+                SMSVerification.is_verified == False,
+            )
+            .order_by(SMSVerification.created_at.desc())
+            .first()
+        )
 
         if not verification:
             return False, "验证码不存在或已使用", None
@@ -249,15 +276,19 @@ class SMSService:
 
         one_day_ago = now_naive() - timedelta(days=1)
 
-        deleted_count = db.query(SMSVerification).filter(
-            SMSVerification.created_at < one_day_ago
-        ).delete()
+        deleted_count = (
+            db.query(SMSVerification)
+            .filter(SMSVerification.created_at < one_day_ago)
+            .delete()
+        )
 
         db.commit()
 
         return deleted_count
 
-    def send_report_ready_notification(self, phone: str, product_name: str) -> Tuple[bool, str]:
+    def send_report_ready_notification(
+        self, phone: str, product_name: str
+    ) -> Tuple[bool, str]:
         """
         发送报告完成通知短信
 
@@ -274,14 +305,14 @@ class SMSService:
                 phone_numbers=phone,
                 sign_name=ALIYUN_SMS_SIGN_NAME,
                 template_code=SMS_TEMPLATE_REPORT_READY,
-                template_param=f'{{"product":"{product_name}"}}'
+                template_param=f'{{"product":"{product_name}"}}',
             )
 
             # 发送短信
             response = self.client.send_sms(request)
 
             # 检查发送结果
-            if response.body.code == 'OK':
+            if response.body.code == "OK":
                 print(f"✅ 报告完成通知短信发送成功: {phone}")
                 return True, "短信发送成功"
             else:

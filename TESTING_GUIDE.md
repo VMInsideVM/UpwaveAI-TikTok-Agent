@@ -65,7 +65,7 @@ python start_chatbot.py
 1. 访问 http://127.0.0.1:8001/login.html
 2. 输入：
    - 用户名: `admin`
-   - 密码: `***REMOVED***`
+   - 密码: `<见.env中INITIAL_ADMIN_PASSWORD>`
 3. 点击"登录"
 
 **预期结果**:
@@ -215,7 +215,7 @@ curl http://127.0.0.1:8001/api/health
 ```bash
 curl -X POST http://127.0.0.1:8001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"***REMOVED***"}'
+  -d '{"username":"admin","password":"<YOUR_ADMIN_PASSWORD>"}'
 ```
 
 ### 生成邀请码（需要 Admin Token）
@@ -274,27 +274,14 @@ curl -X POST http://127.0.0.1:8001/api/sessions \
 
 ### 管理员账户
 ```
-用户名: admin
-密码: ***REMOVED***
+用户名: 见环境变量 INITIAL_ADMIN_USERNAME
+密码: 见环境变量 INITIAL_ADMIN_PASSWORD
 配额: 999999 (无限)
 ```
 
 ### 测试用户账户
 ```
-用户名: testuser
-邮箱: test@example.com
-密码: test1234
-配额: 10/10
-
-用户名: testuser2
-邮箱: test2@example.com
-密码: test12345
-配额: 1/1
-```
-
-### 有效邀请码
-```
-XVGVWWFJ9VWZRJDK (未使用)
+请自行通过注册流程创建测试用户
 ```
 
 ---
